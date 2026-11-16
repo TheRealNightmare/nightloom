@@ -39,10 +39,11 @@ jobs:
           path: ~/.cache/pre-commit
           key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
 
-      # mypy runs in its own job below.
+      # mypy runs in its own job below; the web hooks (Prettier, ESLint) run
+      # in the `web` job, which has Node and the pnpm dependencies.
       - run: uv run pre-commit run --all-files --show-diff-on-failure
         env:
-          SKIP: mypy
+          SKIP: mypy,web-prettier,web-eslint
 
   typecheck:
     name: Type check
@@ -87,6 +88,55 @@ jobs:
         with:
           name: coverage
           path: coverage.xml
+          retention-days: 14
+          if-no-files-found: error
+
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Node version from .node-version (current Active LTS).
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+
+      # Node 25+ no longer bundles Corepack. Corepack then provides the exact
+      # pnpm version pinned in package.json ("packageManager").
+      - name: Enable Corepack (pnpm)
+        run: |
+          npm install --global corepack@0.36.0
+          corepack enable
+          pnpm --version
+        env:
+          COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: make web-lint
+      - run: make web-typecheck
+      - run: make web-test
+      - run: make web-build
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: web-coverage
+          path: apps/web/coverage/
           retention-days: 14
           if-no-files-found: error
 
@@ -137,6 +187,35 @@ jobs:
           fi
           echo "/api/v1/ready returned 503 as expected."
 
+      - name: Build web image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: false
+          load: true
+          tags: nightloom-web:ci
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+
+      - name: Smoke test web image
+        run: |
+          set -euo pipefail
+          docker run -d --name nightloom-web -p 127.0.0.1:8080:8080 nightloom-web:ci
+          if ! timeout 30 bash -c \
+            'until curl -fsS -o /dev/null http://127.0.0.1:8080/healthz; do sleep 1; done'; then
+            echo "::error title=Smoke test::Web container did not become healthy within 30s."
+            docker logs nightloom-web
+            exit 1
+          fi
+          read -r code type < <(curl -sS -o /dev/null -w '%{http_code} %{content_type}' http://127.0.0.1:8080/)
+          if [[ "$code" != "200" || "$type" != text/html* ]]; then
+            echo "::error title=Smoke test::Expected / to return 200 text/html, got $code $type."
+            docker logs nightloom-web
+            exit 1
+          fi
+          echo "/ returned $code $type."
+
   integration:
     name: Integration
     runs-on: ubuntu-latest
@@ -160,6 +239,13 @@ jobs:
         run: make up
 
       - run: make test-integration
+
+      - name: Check the API through the web proxy
+        run: |
+          set -euo pipefail
+          curl -fsS http://127.0.0.1:8080/api/v1/health
+          echo
+          curl -fsS -o /dev/null -w '/ returned %{http_code} %{content_type}\n' http://127.0.0.1:8080/
 
       - name: Dump stack logs
         if: failure()

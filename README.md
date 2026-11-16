@@ -9,21 +9,27 @@ Nightloom is an open-source, self-hosted OSINT tool that collects **public** inf
 
 > 🚧 **Status: early development.** Nothing below is implemented yet. This README describes what is **planned**. See the [roadmap](docs/ROADMAP.md) for progress.
 
+## Preview
+
+The web UI is a skeleton for now: a graph canvas with a built-in **demo investigation** (fictional `example.org` data, clearly labelled "Demo data"), a details and provenance panel, an entity-type legend, search, and a live API status indicator. There is no login and no real data yet. A screenshot will be added here once the UI settles.
+
 ## Quick start (developers)
 
-Only an API skeleton and the local infrastructure exist so far. With [uv](https://docs.astral.sh/uv/) and `make` installed:
+So far there is an API skeleton, the local infrastructure and the web UI skeleton. With [uv](https://docs.astral.sh/uv/), [Node.js](https://nodejs.org/) 26 LTS (with [Corepack](https://github.com/nodejs/corepack) for pnpm) and `make` installed:
 
 ```sh
-make install   # install dependencies
-make check     # lint, type-check and test
-make api       # run the API at http://127.0.0.1:8000/api/docs
+make install       # install the Python dependencies
+make web-install   # install the web dependencies (pnpm)
+make check-all     # lint, type-check and test everything
+make api           # run the API at http://127.0.0.1:8000/api/docs
+make web-dev       # in a second terminal: the UI at http://127.0.0.1:5173
 ```
 
-With [Docker](https://docs.docker.com/get-started/get-docker/) and Docker Compose you can run the whole stack (API, PostgreSQL, Neo4j, Valkey and S3-compatible object storage):
+With [Docker](https://docs.docker.com/get-started/get-docker/) and Docker Compose you can run the whole stack (web UI, API, PostgreSQL, Neo4j, Valkey and S3-compatible object storage):
 
 ```sh
 cp .env.example .env   # then change the passwords
-make up
+make up                # then open http://127.0.0.1:8080
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md#development-setup) for the full development setup and [Running the stack](CONTRIBUTING.md#running-the-stack).

@@ -90,12 +90,52 @@ The Python code lives in a [uv](https://docs.astral.sh/uv/) workspace (Python 3.
 
 Run `make` (or `make help`) to list all targets; `make fmt` formats code and applies lint fixes.
 
+### Web frontend
+
+The UI lives in [`apps/web`](apps/web/) (React, Vite, TypeScript, [Sigma.js](https://www.sigmajs.org/) with [graphology](https://graphology.github.io/)). It is a [pnpm](https://pnpm.io/) workspace rooted at the repository root, so `pnpm-lock.yaml` sits next to `uv.lock`.
+
+1. Install [Node.js](https://nodejs.org/) 26 (the current Active LTS; [`.node-version`](.node-version) has the major version, which most version managers read). Then enable [Corepack](https://github.com/nodejs/corepack), which provides the exact pnpm version pinned in `package.json`. Node 25 and later no longer ship Corepack, so install it first:
+
+   ```sh
+   npm install --global corepack
+   corepack enable
+   ```
+
+2. Install the locked dependencies:
+
+   ```sh
+   make web-install
+   ```
+
+3. Start the API (`make api`, or the whole stack with `make up`) and, in a second terminal, the web dev server:
+
+   ```sh
+   make web-dev
+   ```
+
+   Open <http://127.0.0.1:5173>. The dev server proxies `/api` to `http://127.0.0.1:8000`; if you changed `API_HOST_PORT`, set `NIGHTLOOM_API_PROXY_TARGET` (e.g. `NIGHTLOOM_API_PROXY_TARGET=http://127.0.0.1:8001 make web-dev`). The UI works without the API too: the status indicator then shows **API offline**.
+
+4. Check your changes (the same checks CI runs):
+
+   ```sh
+   make check-web   # ESLint + Prettier, tsc, Vitest with coverage (≥ 80%)
+   make web-build   # production build into apps/web/dist
+   make check-all   # Python and web checks together
+   ```
+
+   `make web-fmt` formats the code and applies ESLint fixes. The pre-commit hook runs Prettier and ESLint whenever files under `apps/web/` are staged.
+
+The graph shows a built-in demo fixture ([`src/demo/sampleGraph.ts`](apps/web/src/demo/sampleGraph.ts)). Keep it fictional: only `example.org` names, documentation IP ranges (RFC 5737) and AS numbers (RFC 5398), and no person entities. Its tests enforce this. Keep graph logic in pure functions ([`src/graph/view.ts`](apps/web/src/graph/view.ts)) so it can be tested without WebGL; component tests replace sigma with a stand-in.
+
+Add dependencies with `pnpm --dir apps/web add <package>` (or `add -D` for tooling) and commit the updated `pnpm-lock.yaml`.
+
 ## Running the stack
 
 [`deploy/compose.yaml`](deploy/compose.yaml) runs the API together with its infrastructure. It needs [Docker](https://docs.docker.com/get-started/get-docker/) with the Compose plugin and about 1.5 GB of free RAM (Neo4j uses most of it).
 
 | Service | Image | Role |
 | --- | --- | --- |
+| `web` | built from `apps/web/Dockerfile` | Web UI (nginx), proxies `/api/` to `api` |
 | `api` | built from `apps/api/Dockerfile` | Nightloom API |
 | `migrate` | same image as `api` | One-shot: applies database migrations, then exits |
 | `postgres` | PostgreSQL 18 | Relational store |
@@ -128,6 +168,7 @@ Every port is published on `127.0.0.1` only:
 
 | What | URL |
 | --- | --- |
+| Web UI | <http://127.0.0.1:8080> (the API is also reachable through it under `/api/`) |
 | API docs | <http://127.0.0.1:8000/api/docs> |
 | Neo4j Browser | <http://127.0.0.1:7474> (user `neo4j`, password `NEO4J_PASSWORD`; Bolt on `127.0.0.1:7687`) |
 | S3 endpoint | <http://127.0.0.1:8333> (keys `NIGHTLOOM_S3_ACCESS_KEY` / `NIGHTLOOM_S3_SECRET_KEY`, bucket `NIGHTLOOM_S3_BUCKET`) |
@@ -177,18 +218,17 @@ Every pull request and every push to `main` runs the [CI workflow](.github/workf
 
 | Job | What it checks |
 | --- | --- |
-| `lint` | All pre-commit hooks except mypy (Ruff lint and format, YAML/TOML checks, whitespace) |
+| `lint` | All pre-commit hooks except mypy and the web hooks (Ruff lint and format, YAML/TOML checks, whitespace) |
 | `typecheck` | `make typecheck` (mypy, strict) |
 | `test` | `make test` (unit tests, at least 90% coverage); the coverage report is uploaded as an artifact |
-| `docker` | `deploy/compose.yaml` is valid, the API image builds, and the container started on its own answers `/api/v1/health` with 200 and `/api/v1/ready` with 503 |
-| `integration` | Starts the full stack with `make up` and runs `make test-integration`; dumps the container logs on failure |
+| `web` | `pnpm install --frozen-lockfile`, then `make web-lint`, `web-typecheck`, `web-test` (at least 80% coverage; the report is uploaded as an artifact) and `web-build` |
+| `docker` | `deploy/compose.yaml` is valid; the API image builds and, started on its own, answers `/api/v1/health` with 200 and `/api/v1/ready` with 503; the web image builds and serves `/` as HTML |
+| `integration` | Starts the full stack with `make up`, runs `make test-integration` and checks `/api/v1/health` through the web container's proxy; dumps the container logs on failure |
 | `dco` | Pull requests only: every non-merge commit has a `Signed-off-by:` trailer (see [DCO](#developer-certificate-of-origin-dco)) |
 
-Each job installs dependencies with `uv sync --locked`, so CI fails if `uv.lock` is out of date. Run `uv lock` and commit the result whenever you change dependencies.
+The Python jobs install dependencies with `uv sync --locked` and the web job with `pnpm install --frozen-lockfile`, so CI fails if `uv.lock` or `pnpm-lock.yaml` is out of date. Commit the updated lockfile whenever you change dependencies.
 
-A pull request can only be merged when all jobs are green and every commit is signed off. Run `make check` locally before pushing to catch most failures early.
-
-Coming later: [pnpm](https://pnpm.io/) for the web frontend.
+A pull request can only be merged when all jobs are green and every commit is signed off. Run `make check-all` locally before pushing to catch most failures early.
 
 ## Writing a Shuttle
 

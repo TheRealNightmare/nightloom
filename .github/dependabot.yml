@@ -25,6 +25,19 @@ updates:
       python:
         update-types: [minor, patch]
 
+  # pnpm workspace (root package.json + apps/web), from pnpm-lock.yaml.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: build
+      include: scope # -> "build(deps): ..." / "build(deps-dev): ..."
+    groups:
+      npm:
+        update-types: [minor, patch]
+
   # Base images in apps/api/Dockerfile.
   - package-ecosystem: docker
     directory: /apps/api
@@ -36,6 +49,19 @@ updates:
       include: scope # -> "build(deps): ..."
     groups:
       docker:
+        update-types: [minor, patch]
+
+  # Base images in apps/web/Dockerfile (Node build stage, nginx runtime).
+  - package-ecosystem: docker
+    directory: /apps/web
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: build
+      include: scope # -> "build(deps): ..."
+    groups:
+      docker-web:
         update-types: [minor, patch]
 
   # Service images in deploy/compose.yaml.
