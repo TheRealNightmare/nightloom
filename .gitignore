@@ -1,0 +1,45 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.egg-info/
+build/
+dist/
+
+# --- Node ---
+node_modules/
+.vite/
+coverage/
+.pnpm-store/
+npm-debug.log*
+pnpm-debug.log*
+
+# --- Environment files (keep .env.example) ---
+.env
+.env.*
+!.env.example
+
+# --- Editors ---
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Local data ---
+data/
+.docker-data/
+*.log

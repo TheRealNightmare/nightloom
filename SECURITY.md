@@ -1,0 +1,30 @@
+# Security Policy
+
+## Supported versions
+
+Nightloom is in early development and has no releases yet. Only the `main` branch is supported; fixes land there.
+
+| Version | Supported |
+| --- | --- |
+| `main` branch | ✅ |
+| Anything else | ❌ |
+
+## Reporting a vulnerability
+
+**Do not open a public issue for security vulnerabilities.**
+
+Report privately through GitHub's private vulnerability reporting:
+
+1. Go to the repository's **Security** tab.
+2. Click **Report a vulnerability**.
+3. Describe the issue, affected component or commit, steps to reproduce and potential impact.
+
+Direct link: <https://github.com/TheRealNightmare/nightloom/security/advisories/new>
+
+The maintainers will acknowledge your report, investigate, and coordinate a fix and disclosure with you. Please give us reasonable time to address the issue before any public disclosure.
+
+## Scope
+
+In scope: vulnerabilities in Nightloom's own code and default configuration — for example authentication or authorization bypass, exposure of users' stored API keys, injection (including Cypher injection), or a guardrail from [ETHICS.md](ETHICS.md) that can be bypassed.
+
+Out of scope: vulnerabilities in third-party data sources or services that Shuttles query; report those to their owners.
