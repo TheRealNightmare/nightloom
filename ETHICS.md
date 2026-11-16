@@ -29,13 +29,13 @@ Do not use Nightloom for:
 
 | Guardrail | What it means |
 | --- | --- |
-| Stated purpose | Every case requires a written purpose before any collection starts. |
-| Audit log | Every action — searches, Shuttle runs, exports, deletions — is recorded in a [full audit log](docs/ARCHITECTURE.md#audit-log) that is append-only and tamper-evident. Sign-ins, user management and refused requests are recorded today; case actions will be recorded as cases are built. |
-| Gated person-related Shuttles | Shuttles that touch people are opt-in per case and **never** run during auto-pivot. |
+| Stated purpose | [Every case needs a stated purpose](docs/ARCHITECTURE.md#cases) and a legal basis before any collection starts, and its creator acknowledges this document. The legal bases are: `owned_assets`, `authorized_engagement` (with a note naming the engagement), `threat_intelligence`, `journalism`, `academic_research`, `self_assessment` and `other` (with a note explaining it). Changing a case's purpose or legal basis needs a recorded reason. |
+| Audit log | Every action — searches, Shuttle runs, exports, deletions — is recorded in a [full audit log](docs/ARCHITECTURE.md#audit-log) that is append-only and tamper-evident. Sign-ins, user management, case and membership changes, and refused requests are recorded today. |
+| Gated person-related Shuttles | Shuttles that touch people are opt-in per case (`allow_person_entities`, off by default; turning it on needs a recorded reason) and **never** run during auto-pivot. |
 | Polite collection | Respects `robots.txt` and per-source rate limits. |
 | Verified ownership for active scans | Active (non-passive) Shuttles run only against assets whose ownership has been verified. |
 | PII redaction on export | Exports can redact personal data and do so by default where it applies. |
-| Retention and deletion | Configurable data retention; deleting a case removes its data. |
+| Retention and deletion | Configurable data retention (a case can already store a retention period; it is not enforced yet); deleting a case removes its data, while its audit trail is kept. |
 
 ## Your responsibility
 

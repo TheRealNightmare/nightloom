@@ -38,6 +38,7 @@ The connection defaults match the local stack's published ports and the placehol
 - `POST /api/v1/auth/login`, `POST /api/v1/auth/logout`, `GET /api/v1/auth/me`, `POST /api/v1/auth/password`: sign-in with server-side sessions in cookies.
 - `GET|POST /api/v1/users`, `PATCH /api/v1/users/{id}`, `DELETE /api/v1/users/{id}/sessions`: user management (admins).
 - `GET /api/v1/audit`, `POST /api/v1/audit/verify`: the audit log and its hash-chain check (admins). See [Audit log](../../docs/ARCHITECTURE.md#audit-log).
+- `GET|POST /api/v1/cases`, `GET|PATCH|DELETE /api/v1/cases/{id}`, `GET|PUT /api/v1/cases/{id}/members`, `DELETE /api/v1/cases/{id}/members/{user_id}`, `GET /api/v1/cases/{id}/audit`: investigation cases and their members (access by case membership only). See [Cases](../../docs/ARCHITECTURE.md#cases).
 
 Every response carries an `X-Request-ID` header (the caller's, if it is 8–64 characters of `A-Z a-z 0-9 . _ -`, otherwise a new UUID4); log lines and audit events carry the same ID.
 

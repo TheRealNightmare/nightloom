@@ -58,7 +58,8 @@ class AuditEvent(Base):
     outcome: Mapped[str] = mapped_column(Text)
     target_type: Mapped[str | None] = mapped_column(Text)
     target_id: Mapped[str | None] = mapped_column(Text)
-    # No foreign key until the cases table exists.
+    # Deliberately no foreign key to cases: the audit trail outlives a deleted
+    # case, and these rows may never change (see migration 0004_cases).
     case_id: Mapped[uuid.UUID | None] = mapped_column()
     details: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     # Unique: every event has at most one successor, so the chain cannot fork.
