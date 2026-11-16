@@ -50,7 +50,23 @@ The local stack is defined in [`deploy/compose.yaml`](../deploy/compose.yaml) (s
 - **Static hosting.** nginx falls back to `index.html` for client-side routes, caches the content-hashed `/assets/` for a year, revalidates `index.html` on every load, and sends a strict Content Security Policy (same origin only, plus `blob:` for workers and images) with other security headers.
 - **API status.** Once signed in, the top bar polls `GET /api/v1/ready` every 15 seconds and shows *Ready*, *Degraded* (listing the failing checks) or *API offline*.
 - **Sign-in.** See [Web authentication flow](#web-authentication-flow).
-- **Demo data.** Until the graph API exists, the UI shows a typed fixture ([`src/demo/sampleGraph.ts`](../apps/web/src/demo/sampleGraph.ts)) shaped like the [data model](#data-model): entity types and provenance fields on every node and edge. It is entirely fictional (`example.org`, RFC 5737 IP addresses, RFC 5398 AS numbers, no people) and labelled "Demo data" in the UI.
+- **Routes.** [React Router](https://reactrouter.com/) in data mode ([`src/app/routes.tsx`](../apps/web/src/app/routes.tsx)). Every route sits under the auth gate, so a signed-out visitor sees the sign-in screen at the address they opened and stays there after signing in. nginx serves `index.html` for these paths, so deep links and reloads work.
+
+  | Path | Page |
+  | --- | --- |
+  | `/` | redirects to `/cases` |
+  | `/cases` | your cases: title search (debounced), status filter, *Load more* (keyset cursor); *New case* for admins and analysts |
+  | `/cases/new` | create a case: purpose, legal basis (+ note), person entities (+ reason), retention, ethics confirmation; checked locally with the server's rules, and the server's `422` messages are shown on their fields |
+  | `/cases/:caseId` | redirects to the `graph` tab; the header shows title (renamed inline by editors and owners), status, legal basis, your role and the purpose |
+  | `/cases/:caseId/graph` | empty until Shuttles exist; never shows demo data |
+  | `/cases/:caseId/members` | members; owners add by email, change roles and remove; anyone can leave |
+  | `/cases/:caseId/activity` | the case's audit events with readable labels (owners and editors) |
+  | `/cases/:caseId/settings` | purpose, legal basis, person entities, retention (a dialog asks for the change reason where the API needs one), close / reopen / archive, delete by typing the title (owners) |
+  | `/demo` | the demo graph (loaded on demand, so sigma is not in the main bundle) |
+  | anything else | "Page not found" |
+
+  Tabs a role cannot use are hidden, mirroring the API's [capability table](#cases); opening one directly shows "You don't have permission". A case that does not exist and one you are not a member of both show the same "Case not found" page, as the API answers `404` for both.
+- **Demo data.** Until the graph API exists, the `/demo` page shows a typed fixture ([`src/demo/sampleGraph.ts`](../apps/web/src/demo/sampleGraph.ts)) shaped like the [data model](#data-model): entity types and provenance fields on every node and edge. It is entirely fictional (`example.org`, RFC 5737 IP addresses, RFC 5398 AS numbers, no people) and labelled "Demo data" in the UI.
 - **Testable without WebGL.** Highlighting, filtering and search are pure functions over the graph; sigma only applies their results through its node and edge reducers.
 
 ### Health and readiness
@@ -110,6 +126,7 @@ The web UI ([`apps/web/src/auth/`](../apps/web/src/auth/), [`src/api/client.ts`]
 - **Sign-in.** The form posts to `/auth/login`. The UI shows only fixed messages: *Invalid email or password.* for `401`, *Too many attempts. Try again in N minutes.* for `429` (from `Retry-After`, rounded up), and generic network, timeout and unavailable messages. Server text is never shown, except validation messages (`422`).
 - **CSRF.** For every `POST`, `PUT`, `PATCH` and `DELETE` the client reads the `nightloom_csrf` cookie and repeats it in the `X-CSRF-Token` header; `GET` requests carry no header.
 - **Session expiry.** A `401` on any request other than sign-in means the session ended (expired, revoked by an admin, or signed out by a password change elsewhere). The client notifies `AuthProvider`, which drops the user and shows the sign-in screen with *Your session has ended. Please sign in again.*
+- **Error types.** Besides the sign-in errors, the client turns `403` into `ForbiddenError`, `404` into `NotFoundError` and `409` into `ConflictError` (with the server's message, e.g. the last-owner rule), and `422` into `ValidationError` with one message per field (pydantic's "Value error, " prefix removed). Case calls live in [`src/api/cases.ts`](../apps/web/src/api/cases.ts), with types mirroring the API's schemas.
 - **Sign-out.** Calls `POST /auth/logout`, then clears the local state even if that call fails; an orphaned server session still expires on its own.
 - **Password change.** A modal checks the policy locally (12–128 characters, confirmation matches, differs from the current one), then posts to `/auth/password`; the server checks again, and its validation messages are shown next to the fields. On success the other sessions are signed out and this one stays.
 

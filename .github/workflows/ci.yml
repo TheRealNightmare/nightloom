@@ -194,25 +194,52 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # Readiness comes from the image's own HEALTHCHECK, polled every 2s
+      # here instead of every 30s. Requests retry transport errors, because a
+      # container can reset the first connections right after turning healthy.
       - name: Smoke test API image
         run: |
           set -euo pipefail
-          docker run -d --name nightloom-api -p 127.0.0.1:8000:8000 nightloom-api:ci
-          if timeout 60 bash -c \
-            'until curl -fsS http://127.0.0.1:8000/api/v1/health; do sleep 2; done'; then
-            echo
-            echo "API is healthy."
-          else
-            echo "::error title=Smoke test::API did not answer /api/v1/health with 200 within 60s."
-            docker logs nightloom-api
+          container=nightloom-api
+          fail() {
+            echo "::error title=Smoke test::$1"
+            docker logs "$container" || true
             exit 1
+          }
+          docker run -d --name "$container" --health-interval 2s \
+            -p 127.0.0.1:8000:8000 nightloom-api:ci
+
+          state=""
+          deadline=$((SECONDS + 60))
+          while (( SECONDS < deadline )); do
+            if ! state=$(docker inspect -f '{{.State.Status}} {{.State.Health.Status}}' "$container"); then
+              fail "Cannot inspect the API container."
+            fi
+            [[ "$state" == "running healthy" || "$state" != running* ]] && break
+            sleep 1
+          done
+          if [[ "$state" != "running healthy" ]]; then
+            fail "API container did not become healthy within 60s (state: ${state:-unknown})."
           fi
-          # Nothing else is running, so readiness must report the dependencies as down.
-          code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/v1/ready)
+          echo "API container is healthy."
+
+          if ! health=$(curl -fsS --retry 5 --retry-all-errors --retry-delay 1 \
+            http://127.0.0.1:8000/api/v1/health); then
+            fail "API did not answer /api/v1/health with 200."
+          fi
+          echo "/api/v1/health: $health"
+
+          # Nothing else is running, so readiness must report the dependencies
+          # as down (503). Retry only transport errors (status 000): curl's
+          # --retry would also retry the expected 503.
+          code=000
+          for _ in 1 2 3 4 5; do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/v1/ready) || true
+            [[ "$code" != "000" ]] && break
+            sleep 1
+          done
           if [[ "$code" != "503" ]]; then
-            echo "::error title=Smoke test::Expected /api/v1/ready to return 503 without dependencies, got $code."
-            docker logs nightloom-api
-            exit 1
+            fail "Expected /api/v1/ready to return 503 without dependencies, got $code."
           fi
           echo "/api/v1/ready returned 503 as expected."
 
@@ -230,20 +257,48 @@ jobs:
       - name: Smoke test web image
         run: |
           set -euo pipefail
-          docker run -d --name nightloom-web -p 127.0.0.1:8080:8080 nightloom-web:ci
-          if ! timeout 30 bash -c \
-            'until curl -fsS -o /dev/null http://127.0.0.1:8080/healthz; do sleep 1; done'; then
-            echo "::error title=Smoke test::Web container did not become healthy within 30s."
-            docker logs nightloom-web
+          container=nightloom-web
+          fail() {
+            echo "::error title=Smoke test::$1"
+            docker logs "$container" || true
             exit 1
+          }
+          docker run -d --name "$container" --health-interval 2s \
+            -p 127.0.0.1:8080:8080 nightloom-web:ci
+
+          state=""
+          deadline=$((SECONDS + 60))
+          while (( SECONDS < deadline )); do
+            if ! state=$(docker inspect -f '{{.State.Status}} {{.State.Health.Status}}' "$container"); then
+              fail "Cannot inspect the web container."
+            fi
+            [[ "$state" == "running healthy" || "$state" != running* ]] && break
+            sleep 1
+          done
+          if [[ "$state" != "running healthy" ]]; then
+            fail "Web container did not become healthy within 60s (state: ${state:-unknown})."
           fi
-          read -r code type < <(curl -sS -o /dev/null -w '%{http_code} %{content_type}' http://127.0.0.1:8080/)
+          echo "Web container is healthy."
+
+          if ! result=$(curl -sS --retry 5 --retry-all-errors --retry-delay 1 \
+            -o /dev/null -w '%{http_code} %{content_type}' http://127.0.0.1:8080/); then
+            fail "Request to / failed: ${result:-no answer}."
+          fi
+          code=${result%% *}
+          type=${result#* }
           if [[ "$code" != "200" || "$type" != text/html* ]]; then
-            echo "::error title=Smoke test::Expected / to return 200 text/html, got $code $type."
-            docker logs nightloom-web
-            exit 1
+            fail "Expected / to return 200 text/html, got $code $type."
           fi
           echo "/ returned $code $type."
+
+      - name: Container logs
+        if: failure()
+        run: |
+          for container in nightloom-api nightloom-web; do
+            echo "::group::docker logs $container"
+            docker logs "$container" 2>&1 || echo "($container was not started)"
+            echo "::endgroup::"
+          done
 
   integration:
     name: Integration
@@ -351,18 +406,38 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
+          # Dependabot cannot sign off its commits; they are machine-made
+          # dependency bumps, so they are skipped (and listed). Everyone else
+          # must sign off.
+          bot_name='dependabot[bot]'
+          bot_email='49699333+dependabot[bot]@users.noreply.github.com'
+
           # Plain assignment (not process substitution) so a git error fails the step.
           commits=$(git rev-list --no-merges "$BASE_SHA..$HEAD_SHA")
           unsigned=()
+          skipped=()
           for sha in $commits; do
+            author_name=$(git show -s --format='%an' "$sha")
+            author_email=$(git show -s --format='%ae' "$sha")
+            if [[ "$author_name" == "$bot_name" || "$author_email" == "$bot_email" ]]; then
+              skipped+=("$sha")
+              continue
+            fi
             signoff=$(git show -s --format='%(trailers:key=Signed-off-by,valueonly)' "$sha")
             if [[ -z "${signoff//[[:space:]]/}" ]]; then
               unsigned+=("$sha")
             fi
           done
 
+          if (( ${#skipped[@]} > 0 )); then
+            echo "Skipped ${#skipped[@]} commit(s) authored by $bot_name:"
+            for sha in "${skipped[@]}"; do
+              echo "  $(git rev-parse --short "$sha")"
+            done
+          fi
+
           if (( ${#unsigned[@]} == 0 )); then
-            echo "All commits in $BASE_SHA..$HEAD_SHA are signed off."
+            echo "All other commits in $BASE_SHA..$HEAD_SHA are signed off."
             exit 0
           fi
 
