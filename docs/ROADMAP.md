@@ -9,7 +9,7 @@ Milestones are ordered but not dated. Checked items are done; everything else is
 - [x] CI (lint, tests, DCO check)
 - [x] Docker Compose infrastructure (PostgreSQL, Neo4j, Valkey, S3-compatible object storage)
 - [x] Database wiring
-- [ ] Web skeleton (React + Vite + TypeScript)
+- [x] Web skeleton (React + Vite + TypeScript)
 - [ ] Authentication
 - [ ] Cases with stated purpose + audit log
 - [ ] Entity schema with provenance

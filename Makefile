@@ -19,8 +19,12 @@ STACK_ENV = set -a && . ./$(ENV_FILE) && set +a && \
 
 ALEMBIC := uv run alembic -c apps/api/alembic.ini
 
-.PHONY: help install lint fmt typecheck test test-integration check api \
-	up down logs ps reset compose-config migrate revision
+# Web frontend (pnpm workspace at the repository root; app in apps/web).
+WEB := pnpm --dir apps/web
+
+.PHONY: help install lint fmt typecheck test test-integration check check-all api \
+	up down logs ps reset compose-config migrate revision \
+	web-install web-dev web-lint web-fmt web-typecheck web-test web-build check-web
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -46,7 +50,9 @@ test: ## Run unit tests with coverage
 test-integration: ## Run integration tests against the running stack (needs `make up`)
 	@$(STACK_ENV) uv run pytest -m integration --no-cov
 
-check: lint typecheck test ## Run lint, typecheck and tests
+check: lint typecheck test ## Run lint, typecheck and tests (Python)
+
+check-all: check check-web ## Run every check: Python and web
 
 api: ## Run the API dev server on http://127.0.0.1:8000
 	uv run python -m nightloom_api
@@ -80,6 +86,31 @@ migrate: ## Apply database migrations (runs the one-shot migrate service)
 revision: ## Autogenerate a migration against the running stack: make revision m="add cases"
 	@if [ -z "$(m)" ]; then echo 'Usage: make revision m="short description"'; exit 1; fi
 	@$(STACK_ENV) $(ALEMBIC) revision --autogenerate -m "$(m)"
+
+web-install: ## Install the web frontend's locked dependencies (pnpm)
+	pnpm install --frozen-lockfile
+
+web-dev: ## Run the web dev server on http://127.0.0.1:5173 (proxies /api to :8000)
+	$(WEB) dev
+
+web-lint: ## Lint the web frontend (ESLint) and check formatting (Prettier)
+	$(WEB) exec eslint . --max-warnings=0
+	$(WEB) exec prettier --check .
+
+web-fmt: ## Format the web frontend and apply lint fixes
+	$(WEB) exec prettier --write .
+	$(WEB) exec eslint . --fix
+
+web-typecheck: ## Type-check the web frontend (tsc, strict)
+	$(WEB) typecheck
+
+web-test: ## Run the web unit tests with coverage
+	$(WEB) test:coverage
+
+web-build: ## Build the web frontend into apps/web/dist
+	$(WEB) build
+
+check-web: web-lint web-typecheck web-test ## Run lint, typecheck and tests (web)
 
 compose-config: ## Validate deploy/compose.yaml
 	$(COMPOSE) config --quiet

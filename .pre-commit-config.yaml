@@ -7,6 +7,8 @@ repos:
         # Two trailing spaces are a Markdown line break (see .editorconfig).
         args: [--markdown-linebreak-ext=md]
       - id: check-yaml
+        # pnpm writes the lockfile as two YAML documents.
+        exclude: ^pnpm-lock\.yaml$
       - id: check-toml
       - id: check-added-large-files
       - id: check-merge-conflict
@@ -26,4 +28,23 @@ repos:
         language: system
         types: [python]
         # mypy reads its file list from pyproject.toml; check the whole project.
+        pass_filenames: false
+
+  # Web frontend (apps/web). These run only when files under apps/web/ are
+  # staged, so Python-only commits stay fast. They need `make web-install`.
+  # ESLint is type-aware, so it checks the whole project, not just the
+  # staged files.
+  - repo: local
+    hooks:
+      - id: web-prettier
+        name: prettier (web)
+        entry: pnpm --dir apps/web exec prettier --check .
+        language: system
+        files: ^apps/web/
+        pass_filenames: false
+      - id: web-eslint
+        name: eslint (web)
+        entry: pnpm --dir apps/web exec eslint . --max-warnings=0
+        language: system
+        files: ^apps/web/.*\.(ts|tsx|js|jsx|mjs|cjs)$
         pass_filenames: false

@@ -1,0 +1,5 @@
+packages:
+  - apps/web
+minimumReleaseAgeExclude:
+  - '@testing-library/user-event@14.6.12'
+  - eslint-plugin-react-refresh@0.5.8

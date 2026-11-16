@@ -14,10 +14,11 @@ htmlcov/
 build/
 dist/
 
-# --- Node ---
+# --- Node (pnpm workspace, apps/web) ---
 node_modules/
 .vite/
 coverage/
+*.tsbuildinfo
 .pnpm-store/
 npm-debug.log*
 pnpm-debug.log*

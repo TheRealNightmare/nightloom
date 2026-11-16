@@ -1,0 +1,69 @@
+# Nightloom web: serves the built SPA and proxies /api/ to the API.
+#
+# Rendered by the image's entrypoint (envsubst) into
+# /etc/nginx/conf.d/default.conf. Variables:
+#   NIGHTLOOM_API_UPSTREAM  API base URL, default http://api:8000
+#   NGINX_LOCAL_RESOLVERS   set by the entrypoint from /etc/resolv.conf
+
+# Re-resolve the API's name at request time (Docker's DNS), so nginx starts
+# even when the API is not running yet and follows it across restarts.
+resolver ${NGINX_LOCAL_RESOLVERS} valid=10s ipv6=off;
+
+server {
+    listen 8080;
+    listen [::]:8080;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    server_tokens off;
+    charset utf-8;
+
+    gzip on;
+    gzip_vary on;
+    gzip_comp_level 6;
+    gzip_min_length 1024;
+    gzip_proxied any;
+    gzip_types text/css application/javascript application/json image/svg+xml text/plain;
+
+    # Container healthcheck; not logged.
+    location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
+    # API reverse proxy. The API sets its own headers (its docs page needs a
+    # different CSP), so the static-site headers below are not added here.
+    location /api/ {
+        set $api_upstream "${NIGHTLOOM_API_UPSTREAM}";
+        proxy_pass $api_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 60s;
+    }
+
+    # Content-hashed build output: cache for a year.
+    location /assets/ {
+        include /etc/nginx/snippets/security-headers.conf;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        try_files $uri =404;
+    }
+
+    # The entry point must always be revalidated so new deployments show up.
+    location = /index.html {
+        include /etc/nginx/snippets/security-headers.conf;
+        add_header Cache-Control "no-cache" always;
+    }
+
+    # Everything else: static files, or the SPA entry point for client routes.
+    location / {
+        include /etc/nginx/snippets/security-headers.conf;
+        try_files $uri $uri/ /index.html;
+    }
+}

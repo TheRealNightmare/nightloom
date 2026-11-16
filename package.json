@@ -1,0 +1,10 @@
+{
+  "name": "nightloom",
+  "private": true,
+  "description": "Nightloom JavaScript workspace (web frontend). Python lives in the uv workspace.",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@12.21.0",
+  "engines": {
+    "node": ">=26 <27"
+  }
+}
