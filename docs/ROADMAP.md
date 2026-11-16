@@ -14,7 +14,8 @@ Milestones are ordered but not dated. Checked items are done; everything else is
 - [x] Web sign-in (login screen, session handling, password change)
 - [ ] User management UI
 - [x] Audit log (append-only, hash-chained; sign-in and user-management events)
-- [ ] Cases with stated purpose
+- [x] Cases backend (stated purpose, legal basis, membership, audit)
+- [ ] Cases UI
 - [ ] Entity schema with provenance
 - [ ] Shuttle SDK + Celery worker + first DNS Shuttle
 

@@ -8,6 +8,7 @@ import pytest
 from alembic import command
 from sqlalchemy import inspect, select, text
 from sqlalchemy.engine import Connection
+from sqlalchemy.exc import IntegrityError
 
 from nightloom_api import cli
 from nightloom_api.auth import passwords
@@ -17,6 +18,10 @@ from nightloom_api.infra import Infra
 from support import PASSWORD, TEST_DATABASE_URL, alembic_config, call_in_thread
 
 pytestmark = pytest.mark.db
+
+
+TABLES = ("users", "sessions", "audit_events", "cases", "case_members")
+ENUM_TYPES = ("user_role", "case_legal_basis", "case_status", "case_member_role")
 
 
 def table_names(connection: Connection) -> set[str]:
@@ -29,9 +34,15 @@ async def test_migration_downgrades_and_upgrades(infra: Infra) -> None:
 
     call_in_thread(lambda: command.downgrade(config, "0001_baseline"))
     async with infra.engine.connect() as conn:
-        assert not {"users", "sessions", "audit_events"} & await conn.run_sync(table_names)
-        # The enum type is dropped too, or the next upgrade would fail.
-        assert await conn.scalar(text("SELECT 1 FROM pg_type WHERE typname = 'user_role'")) is None
+        assert not set(TABLES) & await conn.run_sync(table_names)
+        # The enum types are dropped too, or the next upgrade would fail.
+        for enum in ENUM_TYPES:
+            assert (
+                await conn.scalar(
+                    text("SELECT 1 FROM pg_type WHERE typname = :name"), {"name": enum}
+                )
+                is None
+            )
         # So is the append-only trigger function.
         assert (
             await conn.scalar(
@@ -42,7 +53,7 @@ async def test_migration_downgrades_and_upgrades(infra: Infra) -> None:
 
     call_in_thread(lambda: command.upgrade(config, "head"))
     async with infra.engine.connect() as conn:
-        assert {"users", "sessions", "audit_events"} <= await conn.run_sync(table_names)
+        assert set(TABLES) <= await conn.run_sync(table_names)
         assert await conn.scalar(
             text("SELECT 1 FROM pg_trigger WHERE tgname = 'audit_events_append_only'")
         )
@@ -121,3 +132,56 @@ async def test_cli_end_to_end(infra: Infra) -> None:
     assert code == 1
     assert err.strip() == "error: A user with this email already exists."
     assert PASSWORD not in out + err
+
+
+async def test_cases_downgrade_keeps_the_audit_trail(infra: Infra) -> None:
+    """0004 can be undone on its own; audit_events (no FK to cases) is untouched."""
+    config = alembic_config()
+    await infra.engine.dispose()
+
+    call_in_thread(lambda: command.downgrade(config, "0003_audit_events"))
+    async with infra.engine.connect() as conn:
+        tables = await conn.run_sync(table_names)
+        assert "audit_events" in tables
+        assert not {"cases", "case_members"} & tables
+
+    call_in_thread(lambda: command.upgrade(config, "head"))
+    async with infra.engine.connect() as conn:
+        foreign_keys = await conn.run_sync(
+            lambda sync: inspect(sync).get_foreign_keys("audit_events")
+        )
+    assert [fk["referred_table"] for fk in foreign_keys] == ["users"]
+
+
+async def test_database_enforces_case_rules(infra: Infra) -> None:
+    """The CHECK constraints back up the API's validation."""
+    good = (
+        "INSERT INTO cases (id, title, purpose, legal_basis, legal_basis_note, "
+        "ethics_ack_version, ethics_ack_at, status, closed_at, retention_days) VALUES "
+        "(gen_random_uuid(), :title, :purpose, :basis, :note, '2026-11', now(), :status, "
+        ":closed_at, :retention)"
+    )
+    valid: dict[str, object] = {
+        "title": "A title",
+        "purpose": "p" * 30,
+        "basis": "owned_assets",
+        "note": None,
+        "status": "open",
+        "closed_at": None,
+        "retention": None,
+    }
+    async with infra.engine.begin() as conn:
+        await conn.execute(text(good), valid)
+
+    for change in (
+        {"title": "ab"},
+        {"purpose": "p" * 29},
+        {"basis": "other"},
+        {"basis": "authorized_engagement", "note": "  "},
+        {"note": "n" * 1001},
+        {"retention": 0},
+        {"status": "closed"},
+    ):
+        with pytest.raises(IntegrityError):
+            async with infra.engine.begin() as conn:
+                await conn.execute(text(good), {**valid, **change})

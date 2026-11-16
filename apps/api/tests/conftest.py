@@ -192,7 +192,12 @@ async def _reset_state(infra: Infra) -> None:
         # audit_events is append-only; as its owner the test role may switch
         # the trigger off for the duration of this transaction.
         await conn.execute(text(f"ALTER TABLE audit_events DISABLE TRIGGER {APPEND_ONLY_TRIGGER}"))
-        await conn.execute(text("TRUNCATE audit_events, users, sessions RESTART IDENTITY CASCADE"))
+        await conn.execute(
+            text(
+                "TRUNCATE audit_events, case_members, cases, users, sessions "
+                "RESTART IDENTITY CASCADE"
+            )
+        )
         await conn.execute(text(f"ALTER TABLE audit_events ENABLE TRIGGER {APPEND_ONLY_TRIGGER}"))
     await infra.cache.flushdb()
 
