@@ -68,7 +68,7 @@ The Python code lives in a [uv](https://docs.astral.sh/uv/) workspace (Python 3.
    make install
    ```
 
-3. Start PostgreSQL and Valkey (the tests need them; this needs [Docker](https://docs.docker.com/get-started/get-docker/), see [Tests](#tests)), then run the linters, type checker and tests (the same checks a pull request must pass):
+3. Start PostgreSQL, Valkey and Neo4j (the tests need them; this needs [Docker](https://docs.docker.com/get-started/get-docker/), see [Tests](#tests)), then run the linters, type checker and tests (the same checks a pull request must pass):
 
    ```sh
    make deps-up
@@ -152,7 +152,7 @@ Add dependencies with `pnpm --dir apps/web add <package>` (or `add -D` for tooli
 | --- | --- | --- |
 | `web` | built from `apps/web/Dockerfile` | Web UI (nginx), proxies `/api/` to `api` |
 | `api` | built from `apps/api/Dockerfile` | Nightloom API |
-| `migrate` | same image as `api` | One-shot: applies database migrations, then exits |
+| `migrate` | same image as `api` | One-shot: applies the PostgreSQL migrations and the Neo4j schema, then exits |
 | `postgres` | PostgreSQL 18 | Relational store |
 | `neo4j` | Neo4j Community Edition | Graph store |
 | `valkey` | Valkey (Redis-compatible) | Queue broker and cache |
@@ -209,7 +209,7 @@ It runs `python -m nightloom_api.cli create-admin` in a one-off `api` container.
 
 Run `make compose-config` to validate the Compose file after editing it.
 
-`make ps` lists `migrate` as `Exited (0)` once the migrations have been applied; that is expected. Check that the API can reach every dependency with:
+`make ps` lists `migrate` as `Exited (0)` once the migrations and the Neo4j schema have been applied; that is expected. Check that the API can reach every dependency with:
 
 ```sh
 curl http://127.0.0.1:8000/api/v1/ready
@@ -217,10 +217,10 @@ curl http://127.0.0.1:8000/api/v1/ready
 
 ### Database migrations
 
-The schema is managed by Alembic ([`apps/api/alembic/`](apps/api/alembic/)). `make up` applies all migrations before the API starts.
+The PostgreSQL schema is managed by Alembic ([`apps/api/alembic/`](apps/api/alembic/)). The Neo4j schema (constraints and indexes for entity nodes) is applied by `python -m nightloom_api.graph.schema apply`, which is idempotent; `python -m nightloom_api.graph.schema show` lists it. `make up` applies both before the API starts.
 
 ```sh
-make migrate                       # apply pending migrations to the running stack
+make migrate                       # apply pending migrations and the Neo4j schema to the running stack
 make revision m="add cases table"  # autogenerate a new revision from the ORM models
 ```
 
@@ -228,22 +228,23 @@ make revision m="add cases table"  # autogenerate a new revision from the ORM mo
 
 ### Tests
 
-The API tests come in three kinds:
+The tests live in `apps/api/tests/` and `packages/core/tests/` (the shared entity model: table-driven normalizer tests and [Hypothesis](https://hypothesis.readthedocs.io/) property tests, which need no services). They come in four kinds:
 
 | Kind | Marker | Needs | Run with |
 | --- | --- | --- | --- |
 | Unit | none | nothing | `make test-unit` (quick, no coverage gate) |
-| Database | `@pytest.mark.db` (in `apps/api/tests/db/`) | PostgreSQL and Valkey | `make test` |
+| Database | `@pytest.mark.db` (in `apps/api/tests/db/`) | PostgreSQL, Valkey and Neo4j | `make test` |
+| Graph | `@pytest.mark.graph` (in `apps/api/tests/db/`) | Neo4j | `make test` |
 | Integration | `@pytest.mark.integration` (in `apps/api/tests/integration/`) | the whole stack | `make test-integration` |
 
-`make test` runs the unit **and** database tests with a coverage gate of 90%, so start the two services first. `make deps-up` starts only PostgreSQL and Valkey from the Compose file (`make up` works too):
+`make test` runs the unit, database **and** graph tests with a coverage gate of 90% (over `nightloom_api` and `nightloom_core`), so start the services first. `make deps-up` starts only PostgreSQL, Valkey and Neo4j from the Compose file (`make up` works too):
 
 ```sh
 make deps-up
 make test
 ```
 
-The database tests never touch your development data: they use a separate `nightloom_test` database, created on first use, and Valkey database 15. Migrations are applied once per test run; every test starts with empty tables and an empty Valkey database. `make test` builds both URLs from `.env` (or `.env.example`) and your `*_HOST_PORT` overrides; set `NIGHTLOOM_TEST_DATABASE_URL` and `NIGHTLOOM_TEST_VALKEY_URL` to point them elsewhere (as CI does). As a safety net the tests refuse a database whose name does not contain `test` and Valkey database 0. Code that depends on the time (session expiry) reads it from `nightloom_api.auth.clock.utcnow`, which tests replace to move the clock.
+The database tests never touch your development data: they use a separate `nightloom_test` database, created on first use, and Valkey database 15. Migrations are applied once per test run; every test starts with empty tables and an empty Valkey database. `make test` builds both URLs from `.env` (or `.env.example`) and your `*_HOST_PORT` overrides; set `NIGHTLOOM_TEST_DATABASE_URL` and `NIGHTLOOM_TEST_VALKEY_URL` to point them elsewhere (as CI does). As a safety net the tests refuse a database whose name does not contain `test` and Valkey database 0. Neo4j Community Edition has a single database, so the graph tests use the stack's Neo4j (`NIGHTLOOM_TEST_NEO4J_URI` and `NIGHTLOOM_TEST_NEO4J_PASSWORD`, derived from `.env`); they only create and delete graphs of their own random case IDs, and every graph query is scoped to one case, so your cases are never touched. Code that depends on the time (session expiry) reads it from `nightloom_api.auth.clock.utcnow`, which tests replace to move the clock.
 
 Integration tests talk to the real stack and are skipped unless you ask for them:
 
@@ -262,7 +263,7 @@ Every pull request and every push to `main` runs the [CI workflow](.github/workf
 | --- | --- |
 | `lint` | All pre-commit hooks except mypy and the web hooks (Ruff lint and format, YAML/TOML checks, whitespace) |
 | `typecheck` | `make typecheck` (mypy, strict) |
-| `test` | `make test` (unit and database tests, at least 90% coverage) against PostgreSQL and Valkey service containers; the coverage report is uploaded as an artifact |
+| `test` | `make test` (unit, database and graph tests, at least 90% coverage) against PostgreSQL, Valkey and Neo4j service containers; the coverage report is uploaded as an artifact |
 | `web` | `pnpm install --frozen-lockfile`, then `make web-lint`, `web-typecheck`, `web-test` (at least 80% coverage; the report is uploaded as an artifact) and `web-build` |
 | `docker` | `deploy/compose.yaml` is valid; the API image builds and, started on its own, answers `/api/v1/health` with 200 and `/api/v1/ready` with 503; the web image builds and serves `/` as HTML |
 | `integration` | Starts the full stack with `make up`, runs `make test-integration`, checks `/api/v1/health` through the web container's proxy, then installs Playwright's Chromium and runs `make e2e` with throwaway CI-only credentials; dumps the container logs and uploads the Playwright report on failure |

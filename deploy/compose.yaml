@@ -122,21 +122,30 @@ services:
       retries: 20
       start_period: 15s
 
-  # One-shot: applies database migrations, then exits. `api` starts only after
+  # One-shot: applies the PostgreSQL migrations and the Neo4j schema
+  # (constraints and indexes, idempotent), then exits. `api` starts only after
   # it exits successfully. Rerun it with `make migrate`.
   migrate:
     image: nightloom-api:dev
     # Built by the `api` service below (same image).
     pull_policy: never
-    command: ["alembic", "upgrade", "head"]
+    command:
+      - sh
+      - -c
+      - alembic upgrade head && python -m nightloom_api.graph.schema apply
     restart: "no"
     depends_on:
       postgres:
+        condition: service_healthy
+      neo4j:
         condition: service_healthy
     environment:
       NIGHTLOOM_ENV: ${NIGHTLOOM_ENV:-development}
       NIGHTLOOM_LOG_LEVEL: ${NIGHTLOOM_LOG_LEVEL:-INFO}
       NIGHTLOOM_DATABASE_URL: ${NIGHTLOOM_DATABASE_URL:?set NIGHTLOOM_DATABASE_URL in .env}
+      NIGHTLOOM_NEO4J_URI: ${NIGHTLOOM_NEO4J_URI:?set NIGHTLOOM_NEO4J_URI in .env}
+      NIGHTLOOM_NEO4J_USER: ${NIGHTLOOM_NEO4J_USER:?set NIGHTLOOM_NEO4J_USER in .env}
+      NIGHTLOOM_NEO4J_PASSWORD: ${NIGHTLOOM_NEO4J_PASSWORD:?set NIGHTLOOM_NEO4J_PASSWORD in .env}
     # The image's HEALTHCHECK probes the HTTP server, which this container never runs.
     healthcheck:
       disable: true

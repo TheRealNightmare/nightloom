@@ -23,10 +23,13 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     --mount=type=bind,source=apps/api/pyproject.toml,target=apps/api/pyproject.toml \
+    --mount=type=bind,source=packages/core/pyproject.toml,target=packages/core/pyproject.toml \
     uv sync --locked --no-dev --no-install-workspace --package nightloom-api
 
-# Then the API itself, installed non-editable so the venv is self-contained.
+# Then the API and the shared entity model (nightloom-core), installed
+# non-editable so the venv is self-contained.
 COPY pyproject.toml uv.lock ./
+COPY packages/core ./packages/core
 COPY apps/api ./apps/api
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --no-editable --package nightloom-api

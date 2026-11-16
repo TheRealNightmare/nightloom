@@ -20,7 +20,7 @@ So far there is an API with authentication and user management, the local infras
 ```sh
 make install       # install the Python dependencies
 make web-install   # install the web dependencies (pnpm)
-make deps-up       # start PostgreSQL and Valkey (Docker), needed by the tests
+make deps-up       # start PostgreSQL, Valkey and Neo4j (Docker), needed by the tests
 make check-all     # lint, type-check and test everything
 make api           # run the API at http://127.0.0.1:8000/api/docs
 make web-dev       # in a second terminal: the UI at http://127.0.0.1:5173

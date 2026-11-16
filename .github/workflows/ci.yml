@@ -67,9 +67,11 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # The database tests (marker `db`) need PostgreSQL and Valkey. Same image
-    # tags as deploy/compose.yaml. Service containers cannot take a command,
-    # so Valkey runs without a password here; it is only reachable from this job.
+    # The database and graph tests (markers `db`, `graph`) need PostgreSQL,
+    # Valkey and Neo4j. Same image tags as deploy/compose.yaml. Service
+    # containers cannot take a command, so Valkey runs without a password here;
+    # it is only reachable from this job. The Neo4j password is a CI-only
+    # throwaway for this disposable container.
     services:
       postgres:
         image: postgres:18.7-alpine
@@ -93,9 +95,28 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
+      neo4j:
+        image: neo4j:2026.10.2-community
+        env:
+          NEO4J_AUTH: neo4j/ci-neo4j-password
+          NEO4J_server_memory_heap_initial__size: 512m
+          NEO4J_server_memory_heap_max__size: 512m
+          NEO4J_server_memory_pagecache_size: 256m
+          NEO4J_dbms_usage__report_enabled: "false"
+        ports:
+          - 7687:7687
+        # Healthy once Bolt accepts the credentials, not just when HTTP is up.
+        options: >-
+          --health-cmd "cypher-shell -u neo4j -p ci-neo4j-password 'RETURN 1'"
+          --health-interval 5s
+          --health-timeout 20s
+          --health-retries 30
+          --health-start-period 20s
     env:
       NIGHTLOOM_TEST_DATABASE_URL: postgresql+asyncpg://nightloom:ci-postgres-password@127.0.0.1:5432/nightloom_test
       NIGHTLOOM_TEST_VALKEY_URL: redis://127.0.0.1:6379/15
+      NIGHTLOOM_TEST_NEO4J_URI: bolt://127.0.0.1:7687
+      NIGHTLOOM_TEST_NEO4J_PASSWORD: ci-neo4j-password
     steps:
       - uses: actions/checkout@v7
         with:

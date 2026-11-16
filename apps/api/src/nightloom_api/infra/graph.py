@@ -1,11 +1,14 @@
 """Neo4j access through the official async driver."""
 
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from fastapi import Request
 from neo4j import AsyncDriver, AsyncGraphDatabase
 
 from nightloom_api.config import Settings
+
+if TYPE_CHECKING:
+    from nightloom_api.graph.repository import GraphRepository
 
 # Seconds the driver may spend opening a single connection.
 CONNECT_TIMEOUT_SECONDS = 5.0
@@ -36,3 +39,10 @@ async def ping(driver: AsyncDriver) -> None:
 def get_graph(request: Request) -> AsyncDriver:
     """FastAPI dependency: the shared Neo4j driver."""
     return cast(AsyncDriver, request.app.state.infra.graph)
+
+
+def get_graph_repository(request: Request) -> "GraphRepository":
+    """FastAPI dependency: case graphs on the shared Neo4j driver."""
+    from nightloom_api.graph.repository import GraphRepository
+
+    return GraphRepository(get_graph(request))

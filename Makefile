@@ -20,12 +20,16 @@ STACK_ENV = set -a && . ./$(ENV_FILE) && set +a && \
 
 # Shell prefix for `make test`: points the database-backed tests at a separate
 # `nightloom_test` database and Valkey database 15 on the published ports, so
-# they never touch development data. Only these two variables are exported (the
+# they never touch development data, and at Neo4j on its published Bolt port
+# (Community Edition has a single database; the tests only create and delete
+# graphs of their own random case IDs). Only these variables are exported (the
 # env file is read in a subshell); values already set in the environment win,
 # which is how CI passes its own service URLs.
 TEST_ENV = export $$(. ./$(ENV_FILE) && \
 	echo "NIGHTLOOM_TEST_DATABASE_URL=$${NIGHTLOOM_TEST_DATABASE_URL:-postgresql+asyncpg://$${POSTGRES_USER}:$${POSTGRES_PASSWORD}@127.0.0.1:$${POSTGRES_HOST_PORT:-5432}/nightloom_test}" \
-	     "NIGHTLOOM_TEST_VALKEY_URL=$${NIGHTLOOM_TEST_VALKEY_URL:-redis://:$${VALKEY_PASSWORD}@127.0.0.1:$${VALKEY_HOST_PORT:-6379}/15}") &&
+	     "NIGHTLOOM_TEST_VALKEY_URL=$${NIGHTLOOM_TEST_VALKEY_URL:-redis://:$${VALKEY_PASSWORD}@127.0.0.1:$${VALKEY_HOST_PORT:-6379}/15}" \
+	     "NIGHTLOOM_TEST_NEO4J_URI=$${NIGHTLOOM_TEST_NEO4J_URI:-bolt://127.0.0.1:$${NEO4J_BOLT_HOST_PORT:-7687}}" \
+	     "NIGHTLOOM_TEST_NEO4J_PASSWORD=$${NIGHTLOOM_TEST_NEO4J_PASSWORD:-$${NEO4J_PASSWORD}}") &&
 
 ALEMBIC := uv run alembic -c apps/api/alembic.ini
 
@@ -54,11 +58,11 @@ fmt: ## Format code and apply lint fixes
 typecheck: ## Run mypy (strict)
 	uv run mypy
 
-test: ## Run unit and database tests with coverage (needs `make deps-up` or `make up`)
+test: ## Run unit, database and graph tests with coverage (needs `make deps-up` or `make up`)
 	@$(TEST_ENV) uv run pytest
 
 test-unit: ## Run only the tests that need no services (no coverage gate)
-	uv run pytest -m "not db and not integration" --no-cov
+	uv run pytest -m "not db and not graph and not integration" --no-cov
 
 test-integration: ## Run integration tests against the running stack (needs `make up`)
 	@$(STACK_ENV) uv run pytest -m integration --no-cov
@@ -77,8 +81,8 @@ up: ## Start the local stack (creates .env from .env.example if missing)
 	fi
 	docker compose -f deploy/compose.yaml --env-file .env up -d --build --wait
 
-deps-up: ## Start only PostgreSQL and Valkey (enough for `make test`)
-	$(COMPOSE) up -d --wait postgres valkey
+deps-up: ## Start only PostgreSQL, Valkey and Neo4j (enough for `make test`)
+	$(COMPOSE) up -d --wait postgres valkey neo4j
 
 down: ## Stop the local stack (keeps data volumes)
 	$(COMPOSE) down
@@ -95,7 +99,7 @@ reset: ## Stop the stack and DELETE all its data volumes (asks first)
 	if [ "$$answer" != "yes" ]; then echo "Aborted."; exit 1; fi
 	$(COMPOSE) down -v --remove-orphans
 
-migrate: ## Apply database migrations (runs the one-shot migrate service)
+migrate: ## Apply the database migrations and the Neo4j schema (one-shot migrate service)
 	$(COMPOSE) build api
 	$(COMPOSE) run --rm migrate
 

@@ -3,14 +3,15 @@
 # This is a *virtual* workspace root: it has no [project] table and is never
 # built or installed. It only holds the member list, shared dev tooling and
 # tool configuration. Add new members (packages/sdk, apps/worker, shuttles/*)
-# to `members` below.
+# to `members` below. packages/core (nightloom-core) is the shared entity model.
 
 [tool.uv.workspace]
-members = ["apps/api"]
+members = ["apps/api", "packages/core"]
 
 [dependency-groups]
 dev = [
     "httpx>=0.28",
+    "hypothesis>=6.170.15",
     "mypy>=1.18",
     "pre-commit>=4.3",
     "pytest>=8.4",
@@ -25,7 +26,7 @@ dev = [
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-src = ["apps/api/src", "apps/api/tests"]
+src = ["apps/api/src", "apps/api/tests", "packages/core/src", "packages/core/tests"]
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF", "N", "ASYNC", "S"]
@@ -35,7 +36,7 @@ select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF", "N", "ASYNC", "S"]
 "**/tests/**/*.py" = ["S101", "S105", "S106"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["nightloom_api"]
+known-first-party = ["nightloom_api", "nightloom_core"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -46,9 +47,15 @@ quote-style = "double"
 python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
-files = ["apps/api/src", "apps/api/tests", "apps/api/alembic/env.py"]
+files = [
+    "apps/api/src",
+    "apps/api/tests",
+    "apps/api/alembic/env.py",
+    "packages/core/src",
+    "packages/core/tests",
+]
 # apps/api/tests holds `support`, the test helper module.
-mypy_path = ["apps/api/src", "apps/api/tests"]
+mypy_path = ["apps/api/src", "apps/api/tests", "packages/core/src"]
 
 # aioboto3 ships no type information. Only its Session factory is used; the S3
 # client it returns is typed via types-aiobotocore-s3 (S3Client).
@@ -64,13 +71,14 @@ warn_required_dynamic_aliases = true
 # --- pytest / coverage ------------------------------------------------------
 
 [tool.pytest.ini_options]
-testpaths = ["apps/api/tests"]
+testpaths = ["apps/api/tests", "packages/core/tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 # `support` (shared test helpers) is imported from here.
 pythonpath = ["apps/api/tests"]
 markers = [
     "db: needs PostgreSQL and Valkey (`make deps-up`); part of `make test`",
+    "graph: needs Neo4j (`make deps-up`); part of `make test`",
     "integration: needs the running stack (`make up`); run with `make test-integration`",
 ]
 addopts = [
@@ -81,6 +89,7 @@ addopts = [
     "-m",
     "not integration",
     "--cov=nightloom_api",
+    "--cov=nightloom_core",
     "--cov-report=term-missing",
     "--cov-fail-under=90",
 ]

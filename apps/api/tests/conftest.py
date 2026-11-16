@@ -18,7 +18,9 @@ from nightloom_api.audit.service import Actor
 from nightloom_api.auth import clock, service
 from nightloom_api.auth.models import Role, User
 from nightloom_api.config import Settings, get_settings
-from nightloom_api.infra import Infra
+from nightloom_api.graph.repository import GraphRepository
+from nightloom_api.graph.schema import apply_schema
+from nightloom_api.infra import Infra, graph
 from nightloom_api.infra.errors import describe_error
 from nightloom_api.main import create_app
 from support import (
@@ -26,10 +28,13 @@ from support import (
     APPEND_ONLY_TRIGGER,
     PASSWORD,
     TEST_DATABASE_URL,
+    TEST_NEO4J_PASSWORD,
     TEST_VALKEY_URL,
     FakeClock,
+    TrackingGraphRepository,
     alembic_config,
     call_in_thread,
+    graph_test_settings,
     run_in_thread,
 )
 
@@ -124,7 +129,7 @@ async def closed_port() -> int:
 
 
 # --- Database-backed tests (marker `db`) --------------------------------------
-# These fixtures need PostgreSQL and Valkey; see support.py for the URLs.
+# These fixtures need PostgreSQL, Valkey and Neo4j; see support.py for the URLs.
 
 
 async def _ensure_test_database() -> None:
@@ -162,32 +167,80 @@ async def _check_test_valkey() -> None:
         await client.aclose()
 
 
-DB_HINT = "Start PostgreSQL and Valkey with `make deps-up` (or `make up`), then run `make test`."
+async def _prepare_neo4j() -> None:
+    """Check that Neo4j answers and apply the graph schema (idempotent)."""
+    driver = graph.create_driver(graph_test_settings())
+    try:
+        await graph.ping(driver)
+        await apply_schema(driver)
+    finally:
+        await driver.close()
+
+
+DB_HINT = (
+    "Start PostgreSQL, Valkey and Neo4j with `make deps-up` (or `make up`), then run `make test`."
+)
+
+
+def _fail_unusable(name: str, exc: Exception) -> None:
+    secrets = [TEST_DATABASE_URL, TEST_VALKEY_URL, TEST_NEO4J_PASSWORD]
+    pytest.fail(f"{name} is not usable: {describe_error(exc, secrets)}. {DB_HINT}", False)
 
 
 @pytest.fixture(scope="session")
-def migrated_database() -> str:
-    """Create the test database if needed and migrate it to head, once per session."""
-    secrets = [TEST_DATABASE_URL, TEST_VALKEY_URL]
+def neo4j_ready() -> None:
+    """Neo4j answers and has the graph schema, checked once per session."""
+    try:
+        run_in_thread(_prepare_neo4j)
+    except Exception as exc:
+        _fail_unusable("Neo4j", exc)
+
+
+@pytest.fixture(scope="session")
+def migrated_database(neo4j_ready: None) -> str:
+    """Create the test database if needed and migrate it to head, once per session.
+
+    Also needs Neo4j: deleting a case deletes its graph.
+    """
     for name, check in (("PostgreSQL", _ensure_test_database), ("Valkey", _check_test_valkey)):
         try:
             run_in_thread(check)
         except Exception as exc:
-            pytest.fail(f"{name} is not usable: {describe_error(exc, secrets)}. {DB_HINT}", False)
+            _fail_unusable(name, exc)
     call_in_thread(lambda: command.upgrade(alembic_config(), "head"))
     return TEST_DATABASE_URL
 
 
 @pytest.fixture
 def db_settings(migrated_database: str) -> Settings:
-    return Settings(
-        env="test",
-        database_url=SecretStr(migrated_database),
-        valkey_url=SecretStr(TEST_VALKEY_URL),
+    return graph_test_settings().model_copy(
+        update={
+            "database_url": SecretStr(migrated_database),
+            "valkey_url": SecretStr(TEST_VALKEY_URL),
+        }
     )
 
 
+@pytest.fixture
+async def graph_repo(neo4j_ready: None) -> AsyncIterator[TrackingGraphRepository]:
+    """A repository on the test Neo4j. Graphs of case IDs from ``new_case()`` are deleted after."""
+    driver = graph.create_driver(graph_test_settings())
+    repo = TrackingGraphRepository(driver)
+    try:
+        yield repo
+    finally:
+        for case_id in repo.used:
+            await repo.delete_case_graph(case_id)
+        await driver.close()
+
+
 async def _reset_state(infra: Infra) -> None:
+    # Graphs of the test database's cases (random IDs, never real ones).
+    async with infra.sessionmaker() as db:
+        case_ids = list((await db.execute(text("SELECT id FROM cases"))).scalars())
+    repo = GraphRepository(infra.graph)
+    for case_id in case_ids:
+        await repo.delete_case_graph(case_id)
     async with infra.engine.begin() as conn:
         # audit_events is append-only; as its owner the test role may switch
         # the trigger off for the duration of this transaction.

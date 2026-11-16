@@ -37,7 +37,9 @@ from nightloom_api.cases.schemas import (
     MemberOut,
     MemberPut,
 )
+from nightloom_api.graph.repository import GraphRepository
 from nightloom_api.infra.db import get_session, get_sessionmaker
+from nightloom_api.infra.graph import get_graph_repository
 
 router = APIRouter(prefix="/cases", tags=["cases"])
 
@@ -170,11 +172,16 @@ async def update_case(
     },
 )
 async def delete_case(
-    body: CaseDelete, access: ManagedLocked, db: DbSession, make_session: Sessionmaker
+    body: CaseDelete,
+    access: ManagedLocked,
+    db: DbSession,
+    make_session: Sessionmaker,
+    graph: Annotated[GraphRepository, Depends(get_graph_repository)],
 ) -> None:
-    """Delete a case and its memberships (owners). ``confirm_title`` must equal the title.
+    """Delete a case, its members and its graph (owners). ``confirm_title`` must equal the title.
 
-    The case's audit events are kept.
+    The case's audit events are kept. The graph is deleted after the case,
+    and a failure there is recorded but does not fail the request.
     """
     case_id = access.case.id
     try:
@@ -191,6 +198,7 @@ async def delete_case(
             target_id=case_id,
         )
         raise_http(error)
+    await service.delete_case_dependents(graph, make_session, case_id, actor=access.actor)
 
 
 @router.get("/{case_id}/audit", response_model=AuditPage, responses=_CASE_ERRORS)
