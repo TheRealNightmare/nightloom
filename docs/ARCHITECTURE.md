@@ -10,15 +10,15 @@ flowchart LR
 
     api --> pg[("PostgreSQL<br/>users, cases, jobs, audit log")]
     api --> neo[("Neo4j<br/>investigation graph")]
-    api --> minio[("MinIO<br/>evidence files")]
-    api -->|enqueue jobs| redis[("Redis<br/>broker")]
+    api --> s3[("S3 object storage<br/>SeaweedFS by default<br/>evidence files")]
+    api -->|enqueue jobs| valkey[("Valkey<br/>broker + cache")]
     api --> llm["LLM providers<br/>via LiteLLM"]
 
-    redis -->|consume jobs| worker["worker<br/>Celery"]
+    valkey -->|consume jobs| worker["worker<br/>Celery"]
     worker --> shuttles["Shuttles<br/>(plugins)"]
     shuttles -->|public sources| internet(("Public data<br/>sources"))
     worker -->|entities + edges| neo
-    worker -->|evidence| minio
+    worker -->|evidence| s3
     worker -->|job status| pg
 ```
 
@@ -31,8 +31,16 @@ flowchart LR
 | `shuttles/` | Built-in Shuttles |
 | PostgreSQL | Users, cases, jobs, audit log, encrypted API keys |
 | Neo4j | Entities and relationships |
-| Redis | Celery broker, rate-limit counters, result cache |
-| MinIO | Evidence files (screenshots, raw responses, documents) |
+| Valkey (Redis-compatible) | Celery broker, rate-limit counters, result cache |
+| S3-compatible object storage (SeaweedFS by default) | Evidence files (screenshots, raw responses, documents) |
+
+### Infrastructure choices
+
+The local stack is defined in [`deploy/compose.yaml`](../deploy/compose.yaml) (see [Running the stack](../CONTRIBUTING.md#running-the-stack)).
+
+- **Object storage is accessed only through the S3 API**, so any S3-compatible service works. The stack ships [SeaweedFS](https://github.com/seaweedfs/seaweedfs) (Apache-2.0) as the default. MinIO was the original plan, but its community edition no longer publishes Docker images and has been archived.
+- **Valkey instead of Redis.** [Valkey](https://valkey.io/) is a BSD-licensed, Redis-compatible fork. Redis itself is no longer under a permissive open-source license. Clients talk the Redis protocol, so standard Redis libraries work unchanged.
+- **Neo4j Community Edition** (GPLv3) runs as a separate server that Nightloom talks to over Bolt. It is not bundled into Nightloom's code.
 
 ## Data model
 
@@ -54,7 +62,7 @@ Every node **and** edge carries:
 | `first_seen` / `last_seen` | When it was first and most recently observed |
 | `confidence` | 0–1 |
 | `admiralty` | Admiralty rating, `A1`–`F6` (source reliability × information credibility) |
-| `evidence` | Pointer to the evidence object in MinIO |
+| `evidence` | Pointer to the evidence object in S3 object storage |
 | `case_id` | The case it belongs to |
 
 ### Deduplication
