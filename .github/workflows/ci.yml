@@ -141,6 +141,37 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
+  # The shared entity model must produce identical canonical keys on every
+  # supported interpreter (ipaddress changed its output between 3.12 patch
+  # releases). Runs only packages/core's tests, which need no services, on the
+  # oldest and newest 3.12 and on 3.13, with Python versions managed by uv.
+  core-compat:
+    name: Core on Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12.0", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Show the interpreter
+        run: uv run --python "$PYTHON" --no-project python --version
+        env:
+          PYTHON: ${{ matrix.python }}
+
+      - run: make test-core-compat CORE_COMPAT_PYTHONS="$PYTHON"
+        env:
+          PYTHON: ${{ matrix.python }}
+
   web:
     name: Web
     runs-on: ubuntu-latest

@@ -150,6 +150,80 @@ def registrable_domain(value: str) -> str | None:
 # --- addresses and networks -------------------------------------------------------------
 
 
+# Canonical text for addresses and networks is built here from the integer
+# value, never from ``ipaddress``'s ``str()``/``.compressed``: how those print
+# IPv6 addresses with an embedded IPv4 address changed between Python patch
+# releases (``::ffff:c000:201`` on 3.12.3, ``::ffff:192.0.2.1`` later), and a
+# key must be byte-identical wherever it is computed (API, worker, Shuttles).
+#
+# - IPv4: dotted decimal.
+# - IPv4-mapped IPv6 (``::ffff:0:0/96``) is the IPv4 host itself, so it becomes
+#   the plain IPv4 address (one node per host).
+# - Every other IPv6 address, including IPv4-compatible (``::a.b.c.d``,
+#   deprecated), 6to4 (``2002::/16``) and NAT64 (``64:ff9b::/96``), stays IPv6
+#   in pure hex: lower-case, no leading zeros, the longest run of two or more
+#   zero groups (the first one on a tie) replaced by ``::`` (RFC 5952).
+#   These are distinct addresses on the wire, so they are not folded into IPv4.
+
+_IPV4_MAPPED_PREFIX = 0xFFFF << 32
+_IPV4_MAPPED_MASK = ((1 << 96) - 1) << 32
+
+
+def format_ipv4(number: int) -> str:
+    """Dotted decimal for a 32-bit integer."""
+    return ".".join(str(number >> shift & 0xFF) for shift in (24, 16, 8, 0))
+
+
+def format_ipv6(number: int) -> str:
+    """RFC 5952 text for a 128-bit integer, always in pure hex (no dotted IPv4 tail)."""
+    groups = [number >> shift & 0xFFFF for shift in range(112, -16, -16)]
+    best_start, best_length, start = -1, 0, -1
+    for index, group in enumerate([*groups, 1]):  # the sentinel closes a trailing run
+        if group == 0:
+            start = index if start < 0 else start
+            continue
+        if start >= 0 and index - start > best_length:
+            best_start, best_length = start, index - start
+        start = -1
+    hexes = [f"{group:x}" for group in groups]
+    if best_length < 2:
+        return ":".join(hexes)
+    head = ":".join(hexes[:best_start])
+    tail = ":".join(hexes[best_start + best_length :])
+    return f"{head}::{tail}"
+
+
+def _ipv4_mapped(number: int) -> int | None:
+    """The IPv4 address inside an IPv4-mapped IPv6 address, else ``None``."""
+    if number & _IPV4_MAPPED_MASK == _IPV4_MAPPED_PREFIX:
+        return number & 0xFFFFFFFF
+    return None
+
+
+def canonical_ip(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> str:
+    """The canonical text of an address (see the rules above)."""
+    number = int(address)
+    if address.version == 4:
+        return format_ipv4(number)
+    mapped = _ipv4_mapped(number)
+    return format_ipv4(mapped) if mapped is not None else format_ipv6(number)
+
+
+def canonical_network(network: ipaddress.IPv4Network | ipaddress.IPv6Network) -> str:
+    """The canonical CIDR text of a network.
+
+    An IPv6 network entirely inside ``::ffff:0:0/96`` (prefix 96 or longer)
+    becomes the equivalent IPv4 network: ``::ffff:192.0.2.0/120`` → ``192.0.2.0/24``.
+    """
+    number, prefix = int(network.network_address), network.prefixlen
+    if network.version == 4:
+        return f"{format_ipv4(number)}/{prefix}"
+    mapped = _ipv4_mapped(number)
+    if mapped is not None and prefix >= 96:
+        return f"{format_ipv4(mapped)}/{prefix - 96}"
+    return f"{format_ipv6(number)}/{prefix}"
+
+
 def _ip(text: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
     if "%" in text:
         raise NormalizationError("IPv6 zone identifiers (%...) are not accepted.")
@@ -160,8 +234,8 @@ def _ip(text: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
 
 
 def normalize_ip(value: str) -> str:
-    """An IPv4 or IPv6 address in its compressed form (``2001:db8::1``)."""
-    return _ip(_token(value, "IP address")).compressed
+    """An IP address in canonical form (``2001:db8::1``; ``::ffff:192.0.2.1`` → ``192.0.2.1``)."""
+    return canonical_ip(_ip(_token(value, "IP address")))
 
 
 def normalize_netblock(value: str) -> str:
@@ -170,9 +244,10 @@ def normalize_netblock(value: str) -> str:
     if "%" in text:
         raise NormalizationError("IPv6 zone identifiers (%...) are not accepted.")
     try:
-        return ipaddress.ip_network(text, strict=False).compressed
+        network = ipaddress.ip_network(text, strict=False)
     except ValueError as exc:
         raise NormalizationError("Not a valid network (expected CIDR, e.g. 192.0.2.0/24).") from exc
+    return canonical_network(network)
 
 
 _ASN = re.compile(r"(?:AS)?\s*([0-9]{1,10})", re.IGNORECASE)
@@ -210,14 +285,18 @@ DEFAULT_PORTS = {"http": 80, "https": 443, "ftp": 21}
 
 
 def _host(hostname: str, bracketed: bool) -> str:
-    """A URL or service host: an IP address (IPv6 in brackets) or a domain name."""
+    """A URL or service host: an IP address (IPv6 in brackets) or a domain name.
+
+    An IPv4-mapped IPv6 host becomes its plain IPv4 address, without brackets.
+    """
     if bracketed:
         address = _ip(hostname)
         if address.version != 6:
             raise NormalizationError("Only IPv6 addresses go in brackets.")
-        return f"[{address.compressed}]"
+        canonical = canonical_ip(address)
+        return canonical if ":" not in canonical else f"[{canonical}]"
     try:
-        return ipaddress.IPv4Address(hostname).compressed
+        return canonical_ip(ipaddress.IPv4Address(hostname))
     except ValueError:
         pass
     domain = normalize_domain(hostname)
@@ -273,7 +352,7 @@ def normalize_service(value: str) -> str:
     if raw_host.startswith("["):
         host = _host(raw_host[1:-1], bracketed=True)
     else:
-        host = _ip(raw_host).compressed
+        host = canonical_ip(_ip(raw_host))
     port = int(match.group("port"))
     if not 1 <= port <= 65535:
         raise NormalizationError("A port is between 1 and 65535.")
@@ -546,6 +625,10 @@ def parse_key(key: str) -> tuple[EntityType, str]:
 __all__ = [
     "NormalizationError",
     "Normalized",
+    "canonical_ip",
+    "canonical_network",
+    "format_ipv4",
+    "format_ipv6",
     "normalize",
     "normalize_asn",
     "normalize_certificate",

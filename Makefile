@@ -36,7 +36,18 @@ ALEMBIC := uv run alembic -c apps/api/alembic.ini
 # Web frontend (pnpm workspace at the repository root; app in apps/web).
 WEB := pnpm --dir apps/web
 
-.PHONY: help install lint fmt typecheck test test-unit test-integration check check-all api \
+# Python versions the shared entity model (packages/core) is tested on by
+# `make test-core-compat` and the CI `core-compat` job: the oldest and newest
+# supported 3.12 patch releases and 3.13. Canonical keys must be identical on
+# all of them (ipaddress, for one, changed its output between 3.12 patches).
+CORE_COMPAT_PYTHONS ?= 3.12.0 3.12 3.13
+# Only nightloom-core and its test tools, without the workspace's lock or dev group.
+CORE_COMPAT_RUN = uv run --python $(1) --no-project --with ./packages/core \
+	--with "pytest>=8.4" --with "hypothesis>=6.170.15" \
+	pytest packages/core/tests -q -p no:cacheprovider -o addopts="" \
+	-W ignore::pytest.PytestConfigWarning
+
+.PHONY: help install lint fmt typecheck test test-unit test-core-compat test-integration check check-all api \
 	up deps-up down logs ps reset compose-config migrate revision create-admin \
 	web-install web-dev web-lint web-fmt web-typecheck web-test web-build check-web e2e
 
@@ -63,6 +74,12 @@ test: ## Run unit, database and graph tests with coverage (needs `make deps-up` 
 
 test-unit: ## Run only the tests that need no services (no coverage gate)
 	uv run pytest -m "not db and not graph and not integration" --no-cov
+
+test-core-compat: ## Run the packages/core tests on every Python in CORE_COMPAT_PYTHONS
+	@set -e; for python in $(CORE_COMPAT_PYTHONS); do \
+		echo "== packages/core on Python $$python"; \
+		$(call CORE_COMPAT_RUN,$$python); \
+	done
 
 test-integration: ## Run integration tests against the running stack (needs `make up`)
 	@$(STACK_ENV) uv run pytest -m integration --no-cov

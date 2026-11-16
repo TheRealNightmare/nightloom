@@ -232,7 +232,7 @@ The tests live in `apps/api/tests/` and `packages/core/tests/` (the shared entit
 
 | Kind | Marker | Needs | Run with |
 | --- | --- | --- | --- |
-| Unit | none | nothing | `make test-unit` (quick, no coverage gate) |
+| Unit | none | nothing | `make test-unit` (quick, no coverage gate); `make test-core-compat` runs the `packages/core` tests on every Python in `CORE_COMPAT_PYTHONS` (3.12.0, the latest 3.12 and 3.13, installed by uv) |
 | Database | `@pytest.mark.db` (in `apps/api/tests/db/`) | PostgreSQL, Valkey and Neo4j | `make test` |
 | Graph | `@pytest.mark.graph` (in `apps/api/tests/db/`) | Neo4j | `make test` |
 | Integration | `@pytest.mark.integration` (in `apps/api/tests/integration/`) | the whole stack | `make test-integration` |
@@ -263,6 +263,7 @@ Every pull request and every push to `main` runs the [CI workflow](.github/workf
 | --- | --- |
 | `lint` | All pre-commit hooks except mypy and the web hooks (Ruff lint and format, YAML/TOML checks, whitespace) |
 | `typecheck` | `make typecheck` (mypy, strict) |
+| `core-compat` | `make test-core-compat` for one Python each (3.12.0, latest 3.12, 3.13): the `packages/core` tests, so canonical keys stay identical across interpreters |
 | `test` | `make test` (unit, database and graph tests, at least 90% coverage) against PostgreSQL, Valkey and Neo4j service containers; the coverage report is uploaded as an artifact |
 | `web` | `pnpm install --frozen-lockfile`, then `make web-lint`, `web-typecheck`, `web-test` (at least 80% coverage; the report is uploaded as an artifact) and `web-build` |
 | `docker` | `deploy/compose.yaml` is valid; the API image builds and, started on its own, answers `/api/v1/health` with 200 and `/api/v1/ready` with 503; the web image builds and serves `/` as HTML |

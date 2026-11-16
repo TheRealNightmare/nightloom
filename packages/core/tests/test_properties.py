@@ -51,28 +51,73 @@ def test_domain_idempotent_on_arbitrary_text(raw: str) -> None:
     assert_idempotent(n.normalize_domain, raw)
 
 
+ipv4_int = st.integers(min_value=0, max_value=2**32 - 1)
+
+
+def _v6(number: int) -> ipaddress.IPv6Address:
+    return ipaddress.IPv6Address(number)
+
+
+# Embedded-IPv4 forms whose text differs between Python releases.
+embedded_ipv6 = st.one_of(
+    ipv4_int.map(lambda v4: _v6(0xFFFF << 32 | v4)),  # IPv4-mapped
+    ipv4_int.map(_v6),  # IPv4-compatible
+    ipv4_int.map(lambda v4: _v6(0x64FF9B << 96 | v4)),  # NAT64
+    st.tuples(ipv4_int, st.integers(0, 2**80 - 1)).map(
+        lambda t: _v6(0x2002 << 112 | t[0] << 80 | t[1])  # 6to4
+    ),
+)
+any_ip = st.one_of(st.ip_addresses(), embedded_ipv6)
 ip_text = st.one_of(
-    st.ip_addresses().map(str),
+    any_ip.map(str),
     st.ip_addresses(v=6).map(lambda ip: ip.exploded.upper()),
+    embedded_ipv6.map(lambda ip: ip.exploded),
     st.ip_addresses(v=4).map(lambda ip: f" {ip} "),
 )
+
+
+def _same_host(canonical: str, raw: str) -> bool:
+    """The canonical text names the raw address (IPv4-mapped compares as IPv4)."""
+    address = ipaddress.ip_address(raw.strip())
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+        address = address.ipv4_mapped
+    return ipaddress.ip_address(canonical) == address
 
 
 @given(ip_text)
 def test_ip_idempotent(raw: str) -> None:
     once = n.normalize_ip(raw)
     assert n.normalize_ip(once) == once
-    assert ipaddress.ip_address(once) == ipaddress.ip_address(raw.strip())
+    assert _same_host(once, raw)
+    assert "." not in once or ":" not in once  # never a dotted tail on IPv6
 
 
-@given(st.ip_addresses(), st.data())
+@given(any_ip)
+def test_explicit_formatter_round_trips(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> None:
+    text = n.format_ipv4(int(ip)) if ip.version == 4 else n.format_ipv6(int(ip))
+    assert int(ipaddress.ip_address(text)) == int(ip)
+    assert text == text.lower()
+
+
+@given(any_ip, st.data())
 def test_netblock_idempotent(
     ip: ipaddress.IPv4Address | ipaddress.IPv6Address, data: st.DataObject
 ) -> None:
     prefix = data.draw(st.integers(min_value=0, max_value=ip.max_prefixlen))
     once = n.normalize_netblock(f"{ip}/{prefix}")
     assert n.normalize_netblock(once) == once
-    assert ipaddress.ip_network(once).prefixlen == prefix
+    network = ipaddress.ip_network(once)
+    mapped = ip.version == 6 and prefix >= 96 and int(ip) >> 32 == 0xFFFF
+    assert network.prefixlen == (prefix - 96 if mapped else prefix)
+    assert network.version == (4 if mapped else ip.version)
+
+
+@given(embedded_ipv6, st.integers(min_value=1, max_value=65535))
+def test_url_and_service_hosts_are_idempotent(ip: ipaddress.IPv6Address, port: int) -> None:
+    url = n.normalize_url(f"http://[{ip}]:{port}/")
+    assert n.normalize_url(url) == url
+    service = n.normalize_service(f"[{ip}]:{port}/tcp")
+    assert n.normalize_service(service) == service
 
 
 local_part = st.text(

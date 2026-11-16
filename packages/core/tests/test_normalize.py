@@ -11,6 +11,9 @@ from nightloom_core.normalize import NormalizationError, Normalized
 
 Case = tuple[str, str]
 
+# Test data, not a bind address.
+UNSPECIFIED_V4 = "0.0.0.0"  # noqa: S104
+
 
 def full_width(text: str) -> str:
     """ASCII letters as their full-width forms (U+FF21...), spaces as U+3000."""
@@ -136,8 +139,16 @@ IPS_VALID: list[Case] = [
     ("2001:0db8:0000:0000:0000:0000:0000:0001", "2001:db8::1"),
     ("2001:db8:0:0:1:0:0:1", "2001:db8::1:0:0:1"),
     ("::", "::"),
-    ("::ffff:192.0.2.1", "::ffff:192.0.2.1"),
-    ("::FFFF:c000:201", "::ffff:192.0.2.1"),
+    # IPv4-mapped IPv6 is the IPv4 host itself.
+    ("::ffff:192.0.2.1", "192.0.2.1"),
+    ("::FFFF:c000:201", "192.0.2.1"),
+    ("0:0:0:0:0:ffff:c000:0201", "192.0.2.1"),
+    ("::ffff:0.0.0.0", UNSPECIFIED_V4),
+    # Other embedded-IPv4 forms stay IPv6, in pure hex.
+    ("::192.0.2.1", "::c000:201"),  # IPv4-compatible (deprecated)
+    ("2002:c000:0201::1", "2002:c000:201::1"),  # 6to4
+    ("64:ff9b::192.0.2.1", "64:ff9b::c000:201"),  # NAT64 well-known prefix
+    ("::ffff:0:192.0.2.1", "::ffff:0:c000:201"),  # SIIT, not mapped
     ("fe80::1", "fe80::1"),
 ]
 IPS_INVALID = [
@@ -172,6 +183,16 @@ NETBLOCKS_VALID: list[Case] = [
     ("2001:DB8::1/32", "2001:db8::/32"),
     ("2001:db8:0:0::/64", "2001:db8::/64"),
     ("0.0.0.0/0", "0.0.0.0/0"),
+    # IPv4-mapped networks (prefix 96 or longer) become IPv4 networks.
+    ("::ffff:192.0.2.0/120", "192.0.2.0/24"),
+    ("::FFFF:c000:2ff/120", "192.0.2.0/24"),
+    ("::ffff:192.0.2.1/128", "192.0.2.1/32"),
+    ("::ffff:0.0.0.0/96", "0.0.0.0/0"),
+    # Anything wider, or any other embedded form, stays IPv6 in pure hex.
+    ("::ffff:0.0.0.0/95", "::fffe:0:0/95"),  # wider than ::ffff:0:0/96
+    ("::192.0.2.0/120", "::c000:200/120"),
+    ("64:ff9b::192.0.2.0/120", "64:ff9b::c000:200/120"),
+    ("2002:c000:200::/40", "2002:c000:200::/40"),
 ]
 NETBLOCKS_INVALID = ["", "192.0.2.0/33", "2001:db8::/129", "198.51.100.0/", "abc/24", "fe80::/64%1"]
 
@@ -259,6 +280,10 @@ URLS_VALID: list[Case] = [
     ("https://example.org./", "https://example.org/"),
     ("https://example.org/Case/Sensitive?Q=A", "https://example.org/Case/Sensitive?Q=A"),
     ("https://example.org:/", "https://example.org/"),
+    ("http://[::ffff:192.0.2.1]:80/", "http://192.0.2.1/"),
+    ("https://[::FFFF:c000:201]:8443/x", "https://192.0.2.1:8443/x"),
+    ("http://[::192.0.2.1]/", "http://[::c000:201]/"),
+    ("http://[64:ff9b::192.0.2.1]/", "http://[64:ff9b::c000:201]/"),
 ]
 URLS_INVALID = [
     "",
@@ -298,6 +323,8 @@ SERVICES_VALID: list[Case] = [
     ("192.0.2.1:53/UDP", "192.0.2.1:53/udp"),
     ("[2001:DB8::1]:22/tcp", "[2001:db8::1]:22/tcp"),
     ("192.0.2.1:00080/tcp", "192.0.2.1:80/tcp"),
+    ("[::ffff:192.0.2.1]:443/tcp", "192.0.2.1:443/tcp"),
+    ("[64:ff9b::192.0.2.1]:53/udp", "[64:ff9b::c000:201]:53/udp"),
 ]
 SERVICES_INVALID = [
     "",
@@ -348,6 +375,8 @@ EMAILS_INVALID = [
     "a" * 65 + "@example.org",
     "user@*.example.org",
     "user@192.0.2.1",
+    "user@[192.0.2.1]",  # address literals are not accepted as email domains
+    "user@[::ffff:192.0.2.1]",
     "üser@example.org",
 ]
 
@@ -591,3 +620,62 @@ def test_normalize_accepts_plain_strings_as_type() -> None:
 def test_parse_key_rejects_non_canonical_keys(key: str) -> None:
     with pytest.raises(NormalizationError, match="Not a canonical entity key"):
         n.parse_key(key)
+
+
+# --- explicit address formatting ---------------------------------------------------------
+# Expected strings are written out by hand: nothing here may depend on how a
+# given Python release's ``ipaddress`` prints an address.
+
+FORMAT_IPV6_CASES = [
+    (0, "::"),
+    (1, "::1"),
+    (1 << 112, "1::"),
+    (0x2001_0DB8_0000_0000_0000_0000_0000_0001, "2001:db8::1"),
+    (0x2001_0DB8_0000_0000_0001_0000_0000_0001, "2001:db8::1:0:0:1"),  # first of equal runs
+    (0x2001_0DB8_0000_0001_0000_0000_0000_0001, "2001:db8:0:1::1"),  # longest run wins
+    (0x2001_0DB8_0000_0001_0001_0001_0001_0001, "2001:db8:0:1:1:1:1:1"),  # single 0 kept
+    (0x2001_0DB8_0001_0001_0001_0001_0001_0000, "2001:db8:1:1:1:1:1:0"),
+    (0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF, "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"),
+    (0x0000_0000_0000_0000_0000_FFFF_C000_0201, "::ffff:c000:201"),  # mapped, as hex
+    (0x0000_0000_0000_0000_0000_0000_C000_0201, "::c000:201"),  # IPv4-compatible
+    (0x2002_C000_0201_0000_0000_0000_0000_0001, "2002:c000:201::1"),  # 6to4
+    (0x0064_FF9B_0000_0000_0000_0000_C000_0201, "64:ff9b::c000:201"),  # NAT64
+    (0xFE80_0000_0000_0000_0000_0000_0000_0000, "fe80::"),
+    (0x0001_0000_0000_0000_0000_0000_0000_0001, "1::1"),
+]
+
+
+@pytest.mark.parametrize(("number", "expected"), FORMAT_IPV6_CASES)
+def test_format_ipv6(number: int, expected: str) -> None:
+    assert n.format_ipv6(number) == expected
+
+
+@pytest.mark.parametrize(
+    ("number", "expected"),
+    [(0, UNSPECIFIED_V4), (0xC0000201, "192.0.2.1"), (0xFFFFFFFF, "255.255.255.255")],
+)
+def test_format_ipv4(number: int, expected: str) -> None:
+    assert n.format_ipv4(number) == expected
+
+
+TRICKY_ADDRESSES = {
+    "::ffff:192.0.2.1": "192.0.2.1",
+    "::ffff:c000:201": "192.0.2.1",
+    "::ffff:0:0": UNSPECIFIED_V4,
+    "::ffff:255.255.255.255": "255.255.255.255",
+    "::192.0.2.1": "::c000:201",
+    "::0.0.0.1": "::1",
+    "::ffff:0:c000:201": "::ffff:0:c000:201",
+    "64:ff9b::192.0.2.1": "64:ff9b::c000:201",
+    "64:ff9b:1::c000:201": "64:ff9b:1::c000:201",
+    "2002:c000:201::": "2002:c000:201::",
+    "2002:c000:0201:0:0:0:0:1": "2002:c000:201::1",
+    "1:0:0:2:0:0:0:3": "1:0:0:2::3",
+    "0:0:1:0:0:0:0:0": "0:0:1::",
+}
+
+
+def test_tricky_addresses_have_fixed_keys() -> None:
+    """The exact canonical keys, identical on every supported Python version."""
+    keys = {raw: n.normalize(EntityType.IP_ADDRESS, raw).key for raw in TRICKY_ADDRESSES}
+    assert keys == {raw: f"ip_address:{out}" for raw, out in TRICKY_ADDRESSES.items()}
