@@ -85,7 +85,7 @@ services:
       start_period: 5s
 
   seaweedfs:
-    image: chrislusf/seaweedfs:4.53
+    image: chrislusf/seaweedfs:4.54
     restart: unless-stopped
     # `weed mini` runs master, volume, filer and the S3 gateway in one process.
     # WebDAV, the admin UI and the Iceberg/Lance catalogs are not needed.
@@ -122,6 +122,25 @@ services:
       retries: 20
       start_period: 15s
 
+  # One-shot: applies database migrations, then exits. `api` starts only after
+  # it exits successfully. Rerun it with `make migrate`.
+  migrate:
+    image: nightloom-api:dev
+    # Built by the `api` service below (same image).
+    pull_policy: never
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NIGHTLOOM_ENV: ${NIGHTLOOM_ENV:-development}
+      NIGHTLOOM_LOG_LEVEL: ${NIGHTLOOM_LOG_LEVEL:-INFO}
+      NIGHTLOOM_DATABASE_URL: ${NIGHTLOOM_DATABASE_URL:?set NIGHTLOOM_DATABASE_URL in .env}
+    # The image's HEALTHCHECK probes the HTTP server, which this container never runs.
+    healthcheck:
+      disable: true
+
   api:
     build:
       context: ..
@@ -129,6 +148,8 @@ services:
     image: nightloom-api:dev
     restart: unless-stopped
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       neo4j:

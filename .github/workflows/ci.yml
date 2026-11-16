@@ -128,6 +128,48 @@ jobs:
             docker logs nightloom-api
             exit 1
           fi
+          # Nothing else is running, so readiness must report the dependencies as down.
+          code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/v1/ready)
+          if [[ "$code" != "503" ]]; then
+            echo "::error title=Smoke test::Expected /api/v1/ready to return 503 without dependencies, got $code."
+            docker logs nightloom-api
+            exit 1
+          fi
+          echo "/api/v1/ready returned 503 as expected."
+
+  integration:
+    name: Integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - run: uv sync --locked
+
+      # The example values are fine for a throwaway CI stack.
+      - run: cp .env.example .env
+
+      - name: Start the stack (waits until healthy)
+        run: make up
+
+      - run: make test-integration
+
+      - name: Dump stack logs
+        if: failure()
+        run: |
+          make ps
+          docker compose -f deploy/compose.yaml --env-file .env logs --no-color --timestamps
+
+      - name: Stop the stack
+        if: always()
+        run: make down
 
   dco:
     name: DCO sign-off

@@ -40,6 +40,9 @@ RUN groupadd --system --gid 10001 nightloom \
 
 # Owned by root and read-only for the app user.
 COPY --from=builder /app/.venv /app/.venv
+# Database migrations, run by the Compose `migrate` service: `alembic upgrade head`.
+COPY apps/api/alembic.ini /app/alembic.ini
+COPY apps/api/alembic /app/alembic
 
 ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1 \
