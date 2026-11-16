@@ -1,0 +1,91 @@
+name: Shuttle request
+description: Propose a new data-source plugin (Shuttle).
+title: "shuttle: "
+labels: ["shuttle", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Shuttles query **public** data sources only. Requests for sources behind logins, leaked-credential testing, facial recognition or real-time location tracking will be closed — see ETHICS.md.
+  - type: input
+    id: source_name
+    attributes:
+      label: Source name
+      placeholder: e.g. crt.sh
+    validations:
+      required: true
+  - type: input
+    id: source_url
+    attributes:
+      label: Source URL
+      placeholder: https://
+    validations:
+      required: true
+  - type: input
+    id: input_types
+    attributes:
+      label: Input entity type(s)
+      description: What the Shuttle takes as input.
+      placeholder: e.g. Domain
+    validations:
+      required: true
+  - type: input
+    id: output_types
+    attributes:
+      label: Output entity type(s)
+      description: What the Shuttle produces.
+      placeholder: e.g. Subdomain, Certificate
+    validations:
+      required: true
+  - type: dropdown
+    id: access
+    attributes:
+      label: Access requirements
+      options:
+        - Free, no API key
+        - Free tier with API key
+        - Paid API key only
+        - Not sure
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Passive or active?
+      description: Passive = queries a third party only. Active = sends traffic to the target itself.
+      options:
+        - Passive
+        - Active
+    validations:
+      required: true
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Risk level
+      options:
+        - Infrastructure
+        - Person-related
+    validations:
+      required: true
+  - type: input
+    id: tos_url
+    attributes:
+      label: Terms of service link
+      description: Link to the source's terms of service or API usage policy.
+      placeholder: https://
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Rate limits, example responses, why this source is useful.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: The source's terms of service allow this kind of automated use.
+          required: true
+        - label: The Shuttle would use public data only and complies with ETHICS.md.
+          required: true
