@@ -15,11 +15,12 @@ The web UI is a skeleton for now: a graph canvas with a built-in **demo investig
 
 ## Quick start (developers)
 
-So far there is an API skeleton, the local infrastructure and the web UI skeleton. With [uv](https://docs.astral.sh/uv/), [Node.js](https://nodejs.org/) 26 LTS (with [Corepack](https://github.com/nodejs/corepack) for pnpm) and `make` installed:
+So far there is an API with authentication and user management, the local infrastructure and the web UI skeleton. With [uv](https://docs.astral.sh/uv/), [Node.js](https://nodejs.org/) 26 LTS (with [Corepack](https://github.com/nodejs/corepack) for pnpm) and `make` installed:
 
 ```sh
 make install       # install the Python dependencies
 make web-install   # install the web dependencies (pnpm)
+make deps-up       # start PostgreSQL and Valkey (Docker), needed by the tests
 make check-all     # lint, type-check and test everything
 make api           # run the API at http://127.0.0.1:8000/api/docs
 make web-dev       # in a second terminal: the UI at http://127.0.0.1:5173
@@ -30,7 +31,10 @@ With [Docker](https://docs.docker.com/get-started/get-docker/) and Docker Compos
 ```sh
 cp .env.example .env   # then change the passwords
 make up                # then open http://127.0.0.1:8080
+make create-admin email=you@example.org name="Your Name"   # first admin; prompts for a password
 ```
+
+There is no public sign-up: the first admin is created from the command line, and admins add everyone else. Sign-in is API-only for now (`POST /api/v1/auth/login`); the web UI does not have a login screen yet.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md#development-setup) for the full development setup and [Running the stack](CONTRIBUTING.md#running-the-stack).
 

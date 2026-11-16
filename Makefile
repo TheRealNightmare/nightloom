@@ -17,13 +17,22 @@ STACK_ENV = set -a && . ./$(ENV_FILE) && set +a && \
 	NIGHTLOOM_S3_ENDPOINT="http://127.0.0.1:$${S3_HOST_PORT:-8333}" \
 	NIGHTLOOM_TEST_API_URL="http://127.0.0.1:$${API_HOST_PORT:-8000}"
 
+# Shell prefix for `make test`: points the database-backed tests at a separate
+# `nightloom_test` database and Valkey database 15 on the published ports, so
+# they never touch development data. Only these two variables are exported (the
+# env file is read in a subshell); values already set in the environment win,
+# which is how CI passes its own service URLs.
+TEST_ENV = export $$(. ./$(ENV_FILE) && \
+	echo "NIGHTLOOM_TEST_DATABASE_URL=$${NIGHTLOOM_TEST_DATABASE_URL:-postgresql+asyncpg://$${POSTGRES_USER}:$${POSTGRES_PASSWORD}@127.0.0.1:$${POSTGRES_HOST_PORT:-5432}/nightloom_test}" \
+	     "NIGHTLOOM_TEST_VALKEY_URL=$${NIGHTLOOM_TEST_VALKEY_URL:-redis://:$${VALKEY_PASSWORD}@127.0.0.1:$${VALKEY_HOST_PORT:-6379}/15}") &&
+
 ALEMBIC := uv run alembic -c apps/api/alembic.ini
 
 # Web frontend (pnpm workspace at the repository root; app in apps/web).
 WEB := pnpm --dir apps/web
 
-.PHONY: help install lint fmt typecheck test test-integration check check-all api \
-	up down logs ps reset compose-config migrate revision \
+.PHONY: help install lint fmt typecheck test test-unit test-integration check check-all api \
+	up deps-up down logs ps reset compose-config migrate revision create-admin \
 	web-install web-dev web-lint web-fmt web-typecheck web-test web-build check-web
 
 help: ## Show this help
@@ -44,8 +53,11 @@ fmt: ## Format code and apply lint fixes
 typecheck: ## Run mypy (strict)
 	uv run mypy
 
-test: ## Run unit tests with coverage
-	uv run pytest
+test: ## Run unit and database tests with coverage (needs `make deps-up` or `make up`)
+	@$(TEST_ENV) uv run pytest
+
+test-unit: ## Run only the tests that need no services (no coverage gate)
+	uv run pytest -m "not db and not integration" --no-cov
 
 test-integration: ## Run integration tests against the running stack (needs `make up`)
 	@$(STACK_ENV) uv run pytest -m integration --no-cov
@@ -63,6 +75,9 @@ up: ## Start the local stack (creates .env from .env.example if missing)
 		echo "Created .env from .env.example. Change the change-me-... passwords in it."; \
 	fi
 	docker compose -f deploy/compose.yaml --env-file .env up -d --build --wait
+
+deps-up: ## Start only PostgreSQL and Valkey (enough for `make test`)
+	$(COMPOSE) up -d --wait postgres valkey
 
 down: ## Stop the local stack (keeps data volumes)
 	$(COMPOSE) down
@@ -86,6 +101,13 @@ migrate: ## Apply database migrations (runs the one-shot migrate service)
 revision: ## Autogenerate a migration against the running stack: make revision m="add cases"
 	@if [ -z "$(m)" ]; then echo 'Usage: make revision m="short description"'; exit 1; fi
 	@$(STACK_ENV) $(ALEMBIC) revision --autogenerate -m "$(m)"
+
+create-admin: ## Create an admin user in the stack: make create-admin email=you@example.org name="Your Name"
+	@if [ -z "$(email)" ] || [ -z "$(name)" ]; then \
+		echo 'Usage: make create-admin email=you@example.org name="Your Name"'; exit 1; \
+	fi
+	$(COMPOSE) run --rm api python -m nightloom_api.cli create-admin \
+		--email "$(email)" --display-name "$(name)"
 
 web-install: ## Install the web frontend's locked dependencies (pnpm)
 	pnpm install --frozen-lockfile

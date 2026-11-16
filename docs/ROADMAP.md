@@ -10,7 +10,8 @@ Milestones are ordered but not dated. Checked items are done; everything else is
 - [x] Docker Compose infrastructure (PostgreSQL, Neo4j, Valkey, S3-compatible object storage)
 - [x] Database wiring
 - [x] Web skeleton (React + Vite + TypeScript)
-- [ ] Authentication
+- [x] Auth backend (sessions, CSRF, roles, user management, sign-in rate limits)
+- [ ] Sign-in and user management UI
 - [ ] Cases with stated purpose + audit log
 - [ ] Entity schema with provenance
 - [ ] Shuttle SDK + Celery worker + first DNS Shuttle

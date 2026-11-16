@@ -78,6 +78,12 @@ def test_main_runs_uvicorn(
 ) -> None:
     calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
     monkeypatch.setenv("NIGHTLOOM_ENV", env)
+    # Production refuses the built-in placeholder secrets.
+    monkeypatch.setenv("NIGHTLOOM_DATABASE_URL", "postgresql+asyncpg://u:real-pw@db/x")
+    monkeypatch.setenv("NIGHTLOOM_NEO4J_PASSWORD", "real-pw")
+    monkeypatch.setenv("NIGHTLOOM_VALKEY_URL", "redis://:real-pw@cache/0")
+    monkeypatch.setenv("NIGHTLOOM_S3_ACCESS_KEY", "real-ak")
+    monkeypatch.setenv("NIGHTLOOM_S3_SECRET_KEY", "real-sk")
     monkeypatch.delenv("NIGHTLOOM_LOG_LEVEL", raising=False)
     monkeypatch.setattr("uvicorn.run", lambda *a, **kw: calls.append((a, kw)))
 

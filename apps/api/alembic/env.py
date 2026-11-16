@@ -8,12 +8,12 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
+import nightloom_api.auth.models  # noqa: F401 - registers users and sessions
 from nightloom_api.config import get_settings
 from nightloom_api.infra.db import Base
 
 # Import model modules here as they are added, so autogenerate sees their
-# tables on Base.metadata, e.g.:
-#   import nightloom_api.cases.models
+# tables on Base.metadata (like nightloom_api.auth.models above).
 
 config = context.config
 if config.config_file_name is not None:
@@ -23,6 +23,11 @@ target_metadata = Base.metadata
 
 
 def _database_url() -> str:
+    # Callers that drive Alembic from Python (the test suite) can pass a URL
+    # explicitly; otherwise it comes from NIGHTLOOM_DATABASE_URL.
+    url = config.attributes.get("database_url")
+    if isinstance(url, str):
+        return url
     return get_settings().database_url.get_secret_value()
 
 

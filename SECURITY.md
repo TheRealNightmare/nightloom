@@ -23,6 +23,10 @@ Direct link: <https://github.com/TheRealNightmare/nightloom/security/advisories/
 
 The maintainers will acknowledge your report, investigate, and coordinate a fix and disclosure with you. Please give us reasonable time to address the issue before any public disclosure.
 
+## Security design
+
+How authentication works (server-side sessions, CSRF protection, password hashing, roles and sign-in rate limits) is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#authentication). Reading it first makes a report easier to write and to triage.
+
 ## Scope
 
 In scope: vulnerabilities in Nightloom's own code and default configuration — for example authentication or authorization bypass, exposure of users' stored API keys, injection (including Cypher injection), or a guardrail from [ETHICS.md](ETHICS.md) that can be bypassed.
