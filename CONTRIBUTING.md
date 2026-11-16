@@ -68,9 +68,10 @@ The Python code lives in a [uv](https://docs.astral.sh/uv/) workspace (Python 3.
    make install
    ```
 
-3. Run the linters, type checker and tests (the same checks a pull request must pass):
+3. Start PostgreSQL and Valkey (the tests need them; this needs [Docker](https://docs.docker.com/get-started/get-docker/), see [Tests](#tests)), then run the linters, type checker and tests (the same checks a pull request must pass):
 
    ```sh
+   make deps-up
    make check
    ```
 
@@ -177,6 +178,16 @@ Every port is published on `127.0.0.1` only:
 
 If one of these ports is already taken on your machine (for example by a local PostgreSQL), set the matching `*_HOST_PORT` variable in `.env`, e.g. `POSTGRES_HOST_PORT=5433`. Containers still reach each other on the default ports.
 
+### First admin
+
+There is no public sign-up. With the stack running, create the first admin; the command prompts for the password twice (12–128 characters) and fails if the email is already taken:
+
+```sh
+make create-admin email=you@example.org name="Your Name"
+```
+
+It runs `python -m nightloom_api.cli create-admin` in a one-off `api` container. Sign in with `POST /api/v1/auth/login`; admins then create everyone else through `/api/v1/users`. To pipe the password in instead (for scripts), call the CLI with `--password-stdin`. See [Authentication](docs/ARCHITECTURE.md#authentication) for the design.
+
 `make down` stops the stack and keeps your data in Docker volumes. Database passwords are only applied when a volume is first created, so changing them in `.env` afterwards requires a reset.
 
 > [!WARNING]
@@ -201,9 +212,26 @@ make revision m="add cases table"  # autogenerate a new revision from the ORM mo
 
 `make revision` runs Alembic on your machine against the stack's PostgreSQL on `127.0.0.1`, so run `make up` first. The database must already be at the latest revision. Import new model modules in `apps/api/alembic/env.py` so autogenerate sees them. Always review the generated file in `apps/api/alembic/versions/` before committing it: autogenerate does not detect everything (e.g. renames).
 
-### Integration tests
+### Tests
 
-`make test` runs only the unit tests, which need no services. Tests marked `@pytest.mark.integration` (in `apps/api/tests/integration/`) talk to the real stack and are skipped by default:
+The API tests come in three kinds:
+
+| Kind | Marker | Needs | Run with |
+| --- | --- | --- | --- |
+| Unit | none | nothing | `make test-unit` (quick, no coverage gate) |
+| Database | `@pytest.mark.db` (in `apps/api/tests/db/`) | PostgreSQL and Valkey | `make test` |
+| Integration | `@pytest.mark.integration` (in `apps/api/tests/integration/`) | the whole stack | `make test-integration` |
+
+`make test` runs the unit **and** database tests with a coverage gate of 90%, so start the two services first. `make deps-up` starts only PostgreSQL and Valkey from the Compose file (`make up` works too):
+
+```sh
+make deps-up
+make test
+```
+
+The database tests never touch your development data: they use a separate `nightloom_test` database, created on first use, and Valkey database 15. Migrations are applied once per test run; every test starts with empty tables and an empty Valkey database. `make test` builds both URLs from `.env` (or `.env.example`) and your `*_HOST_PORT` overrides; set `NIGHTLOOM_TEST_DATABASE_URL` and `NIGHTLOOM_TEST_VALKEY_URL` to point them elsewhere (as CI does). As a safety net the tests refuse a database whose name does not contain `test` and Valkey database 0. Code that depends on the time (session expiry) reads it from `nightloom_api.auth.clock.utcnow`, which tests replace to move the clock.
+
+Integration tests talk to the real stack and are skipped unless you ask for them:
 
 ```sh
 make up
@@ -220,7 +248,7 @@ Every pull request and every push to `main` runs the [CI workflow](.github/workf
 | --- | --- |
 | `lint` | All pre-commit hooks except mypy and the web hooks (Ruff lint and format, YAML/TOML checks, whitespace) |
 | `typecheck` | `make typecheck` (mypy, strict) |
-| `test` | `make test` (unit tests, at least 90% coverage); the coverage report is uploaded as an artifact |
+| `test` | `make test` (unit and database tests, at least 90% coverage) against PostgreSQL and Valkey service containers; the coverage report is uploaded as an artifact |
 | `web` | `pnpm install --frozen-lockfile`, then `make web-lint`, `web-typecheck`, `web-test` (at least 80% coverage; the report is uploaded as an artifact) and `web-build` |
 | `docker` | `deploy/compose.yaml` is valid; the API image builds and, started on its own, answers `/api/v1/health` with 200 and `/api/v1/ready` with 503; the web image builds and serves `/` as HTML |
 | `integration` | Starts the full stack with `make up`, runs `make test-integration` and checks `/api/v1/health` through the web container's proxy; dumps the container logs on failure |

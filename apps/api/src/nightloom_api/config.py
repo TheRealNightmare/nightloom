@@ -1,14 +1,25 @@
 """Application settings, read from ``NIGHTLOOM_*`` environment variables."""
 
 from functools import lru_cache
-from typing import Literal
+from typing import Literal, Self
 from urllib.parse import unquote, urlsplit
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Environment = Literal["development", "test", "production"]
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+
+# Marks the example secrets in .env.example and the built-in defaults.
+PLACEHOLDER_MARKER = "change-me"
+# Secret settings that must not keep a placeholder in production.
+PLACEHOLDER_CHECKED_FIELDS = (
+    "database_url",
+    "neo4j_password",
+    "valkey_url",
+    "s3_access_key",
+    "s3_secret_key",
+)
 
 
 class Settings(BaseSettings):
@@ -21,11 +32,18 @@ class Settings(BaseSettings):
     logs; call ``.get_secret_value()`` only where the raw value is needed.
     """
 
-    model_config = SettingsConfigDict(env_prefix="NIGHTLOOM_", extra="ignore")
+    # hide_input_in_errors: a validation error must never echo a secret value.
+    model_config = SettingsConfigDict(
+        env_prefix="NIGHTLOOM_", extra="ignore", hide_input_in_errors=True
+    )
 
     env: Environment = "development"
     log_level: LogLevel = "INFO"
     api_prefix: str = "/api/v1"
+
+    # Send the session and CSRF cookies with the ``Secure`` attribute. Always on
+    # in production; set it when a development deployment is served over HTTPS.
+    cookie_secure: bool = False
 
     # --- PostgreSQL (SQLAlchemy URL with the asyncpg driver) ---
     database_url: SecretStr = SecretStr(
@@ -50,10 +68,40 @@ class Settings(BaseSettings):
     # Upper bound for each readiness check (seconds).
     dependency_timeout_seconds: float = Field(default=2.0, gt=0)
 
+    # Password hashes (Argon2id, ~0.1 s of CPU each) allowed to run at the same
+    # time; further sign-ins wait their turn without blocking other requests.
+    password_hash_concurrency: int = Field(default=4, ge=1)
+
     @field_validator("log_level", mode="before")
     @classmethod
     def _upper_log_level(cls, value: object) -> object:
         return value.upper() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def _no_placeholder_secrets_in_production(self) -> Self:
+        """Refuse to start in production while a secret is still a ``change-me`` placeholder.
+
+        The error names the environment variables, never their values.
+        """
+        if self.env != "production":
+            return self
+        offending = [
+            f"NIGHTLOOM_{name.upper()}"
+            for name in PLACEHOLDER_CHECKED_FIELDS
+            if PLACEHOLDER_MARKER in getattr(self, name).get_secret_value()
+        ]
+        if offending:
+            raise ValueError(
+                "Refusing to start with NIGHTLOOM_ENV=production: "
+                f"{', '.join(offending)} still contain{'s' if len(offending) == 1 else ''} "
+                f"the placeholder '{PLACEHOLDER_MARKER}'. Set real secrets (see .env.example)."
+            )
+        return self
+
+    @property
+    def cookies_secure(self) -> bool:
+        """Whether auth cookies get the ``Secure`` attribute."""
+        return self.env == "production" or self.cookie_secure
 
     def secret_values(self) -> list[str]:
         """Every secret string in these settings, for redacting text before it is shown.

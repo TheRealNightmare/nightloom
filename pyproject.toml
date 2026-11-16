@@ -47,7 +47,8 @@ python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
 files = ["apps/api/src", "apps/api/tests", "apps/api/alembic/env.py"]
-mypy_path = ["apps/api/src"]
+# apps/api/tests holds `support`, the test helper module.
+mypy_path = ["apps/api/src", "apps/api/tests"]
 
 # aioboto3 ships no type information. Only its Session factory is used; the S3
 # client it returns is typed via types-aiobotocore-s3 (S3Client).
@@ -66,13 +67,17 @@ warn_required_dynamic_aliases = true
 testpaths = ["apps/api/tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+# `support` (shared test helpers) is imported from here.
+pythonpath = ["apps/api/tests"]
 markers = [
+    "db: needs PostgreSQL and Valkey (`make deps-up`); part of `make test`",
     "integration: needs the running stack (`make up`); run with `make test-integration`",
 ]
 addopts = [
     "--import-mode=importlib",
     "--strict-markers",
     # Integration tests are opt-in: `make test-integration` passes `-m integration`.
+    # Database tests (`db`) run by default and need PostgreSQL and Valkey.
     "-m",
     "not integration",
     "--cov=nightloom_api",
@@ -82,6 +87,9 @@ addopts = [
 
 [tool.coverage.run]
 branch = true
+# SQLAlchemy's asyncio layer runs code in greenlets; without this, lines that
+# run after an awaited database call are not recorded.
+concurrency = ["thread", "greenlet"]
 
 [tool.coverage.report]
 exclude_also = ['if __name__ == "__main__":']

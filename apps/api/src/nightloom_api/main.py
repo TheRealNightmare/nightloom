@@ -3,13 +3,17 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 from nightloom_api import __version__
+from nightloom_api.auth import passwords
 from nightloom_api.config import Settings, get_settings
 from nightloom_api.infra import create_infra
 from nightloom_api.logging import configure_logging
-from nightloom_api.routers import health, readiness
+from nightloom_api.routers import auth, health, readiness, users
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -20,6 +24,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     """
     resolved = settings if settings is not None else get_settings()
     configure_logging(resolved.log_level)
+    passwords.set_hash_concurrency(resolved.password_hash_concurrency)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -43,9 +48,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = resolved
     app.dependency_overrides[get_settings] = lambda: resolved
 
+    app.add_exception_handler(RequestValidationError, _validation_error_handler)
+
     app.include_router(health.router, prefix=resolved.api_prefix)
     app.include_router(readiness.router, prefix=resolved.api_prefix)
+    app.include_router(auth.router, prefix=resolved.api_prefix)
+    app.include_router(users.router, prefix=resolved.api_prefix)
     return app
+
+
+async def _validation_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    """422 like FastAPI's default, minus the echoed ``input`` (it may contain a password)."""
+    assert isinstance(exc, RequestValidationError)  # noqa: S101 - registered for this type only
+    errors = [
+        {key: value for key, value in error.items() if key in {"type", "loc", "msg"}}
+        for error in exc.errors()
+    ]
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        content=jsonable_encoder({"detail": errors}),
+    )
 
 
 app = create_app()

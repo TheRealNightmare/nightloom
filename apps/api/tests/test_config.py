@@ -15,7 +15,23 @@ def test_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.api_prefix == "/api/v1"
 
 
+# Non-placeholder secrets, so production settings validate.
+REAL_SECRET_ENV = {
+    "NIGHTLOOM_DATABASE_URL": "postgresql+asyncpg://u:real-pg-pw@db:5432/x",
+    "NIGHTLOOM_NEO4J_PASSWORD": "real-neo4j-pw",
+    "NIGHTLOOM_VALKEY_URL": "redis://:real-valkey-pw@cache:6379/0",
+    "NIGHTLOOM_S3_ACCESS_KEY": "real-access-key",
+    "NIGHTLOOM_S3_SECRET_KEY": "real-secret-key",
+}
+
+
+def use_real_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name, value in REAL_SECRET_ENV.items():
+        monkeypatch.setenv(name, value)
+
+
 def test_reads_nightloom_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
+    use_real_secrets(monkeypatch)
     monkeypatch.setenv("NIGHTLOOM_ENV", "production")
     monkeypatch.setenv("NIGHTLOOM_LOG_LEVEL", "debug")
     monkeypatch.setenv("NIGHTLOOM_API_PREFIX", "/api/v2")
@@ -133,6 +149,20 @@ def test_rejects_non_positive_timeout() -> None:
         Settings(dependency_timeout_seconds=0)
 
 
+def test_password_hash_concurrency(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("NIGHTLOOM_PASSWORD_HASH_CONCURRENCY", raising=False)
+    assert Settings().password_hash_concurrency == 4
+
+    monkeypatch.setenv("NIGHTLOOM_PASSWORD_HASH_CONCURRENCY", "8")
+    assert Settings().password_hash_concurrency == 8
+
+
+@pytest.mark.parametrize("value", [0, -1])
+def test_rejects_password_hash_concurrency_below_one(value: int) -> None:
+    with pytest.raises(ValidationError):
+        Settings(password_hash_concurrency=value)
+
+
 def test_get_settings_is_cached(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("NIGHTLOOM_ENV", "test")
 
@@ -140,3 +170,74 @@ def test_get_settings_is_cached(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert first is get_settings()
     assert first.env == "test"
+
+
+def test_production_refuses_placeholder_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in CONNECTION_VARS:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("NIGHTLOOM_ENV", "production")
+
+    with pytest.raises(ValidationError) as excinfo:
+        Settings()
+
+    message = str(excinfo.value)
+    assert "Refusing to start with NIGHTLOOM_ENV=production" in message
+    for name in (
+        "NIGHTLOOM_DATABASE_URL",
+        "NIGHTLOOM_NEO4J_PASSWORD",
+        "NIGHTLOOM_VALKEY_URL",
+        "NIGHTLOOM_S3_ACCESS_KEY",
+        "NIGHTLOOM_S3_SECRET_KEY",
+    ):
+        assert name in message
+    # Names only: no value (or part of one) is printed.
+    assert "change-me-" not in message
+    assert "postgres-password" not in message
+    assert "127.0.0.1" not in message
+
+
+def test_production_names_the_single_remaining_placeholder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    use_real_secrets(monkeypatch)
+    monkeypatch.setenv("NIGHTLOOM_ENV", "production")
+    monkeypatch.setenv("NIGHTLOOM_S3_SECRET_KEY", "change-me-s3-secret-key")
+
+    with pytest.raises(ValidationError) as excinfo:
+        Settings()
+
+    message = str(excinfo.value)
+    assert "NIGHTLOOM_S3_SECRET_KEY still contains the placeholder 'change-me'" in message
+    assert "NIGHTLOOM_DATABASE_URL" not in message
+    assert "real-" not in message
+
+
+def test_production_accepts_real_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+    use_real_secrets(monkeypatch)
+    monkeypatch.setenv("NIGHTLOOM_ENV", "production")
+
+    assert Settings().env == "production"
+
+
+@pytest.mark.parametrize("env", ["development", "test"])
+def test_placeholders_are_fine_outside_production(env: str) -> None:
+    assert Settings(env=env).env == env  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("env", "cookie_secure", "expected"),
+    [
+        ("development", False, False),
+        ("test", False, False),
+        ("development", True, True),
+        ("production", False, True),
+    ],
+)
+def test_cookies_secure(
+    monkeypatch: pytest.MonkeyPatch, env: str, cookie_secure: bool, expected: bool
+) -> None:
+    use_real_secrets(monkeypatch)
+    monkeypatch.setenv("NIGHTLOOM_ENV", env)
+    monkeypatch.setenv("NIGHTLOOM_COOKIE_SECURE", str(cookie_secure).lower())
+
+    assert Settings().cookies_secure is expected

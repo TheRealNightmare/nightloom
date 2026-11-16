@@ -41,6 +41,11 @@ server {
         proxy_pass $api_upstream;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
+        # The client address for the API. nginx appends the peer it sees to any
+        # X-Forwarded-For the client sent; uvicorn trusts only this proxy and
+        # takes the right-most address that is not a trusted proxy, so a
+        # spoofed header cannot win. Keep these in this location: a
+        # proxy_set_header in a nested block would replace all of them.
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;

@@ -67,6 +67,35 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # The database tests (marker `db`) need PostgreSQL and Valkey. Same image
+    # tags as deploy/compose.yaml. Service containers cannot take a command,
+    # so Valkey runs without a password here; it is only reachable from this job.
+    services:
+      postgres:
+        image: postgres:18.7-alpine
+        env:
+          POSTGRES_USER: nightloom
+          POSTGRES_PASSWORD: ci-postgres-password
+          POSTGRES_DB: nightloom
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U nightloom -d nightloom"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      valkey:
+        image: valkey/valkey:9.0.7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      NIGHTLOOM_TEST_DATABASE_URL: postgresql+asyncpg://nightloom:ci-postgres-password@127.0.0.1:5432/nightloom_test
+      NIGHTLOOM_TEST_VALKEY_URL: redis://127.0.0.1:6379/15
     steps:
       - uses: actions/checkout@v7
         with:
