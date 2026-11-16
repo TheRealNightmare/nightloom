@@ -18,6 +18,8 @@ dist/
 node_modules/
 .vite/
 coverage/
+playwright-report/
+test-results/
 *.tsbuildinfo
 .pnpm-store/
 npm-debug.log*

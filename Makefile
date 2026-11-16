@@ -34,10 +34,10 @@ WEB := pnpm --dir apps/web
 
 .PHONY: help install lint fmt typecheck test test-unit test-integration check check-all api \
 	up deps-up down logs ps reset compose-config migrate revision create-admin \
-	web-install web-dev web-lint web-fmt web-typecheck web-test web-build check-web
+	web-install web-dev web-lint web-fmt web-typecheck web-test web-build check-web e2e
 
 help: ## Show this help
-	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
 install: ## Install all workspace packages and dev tools
@@ -134,6 +134,37 @@ web-build: ## Build the web frontend into apps/web/dist
 	$(WEB) build
 
 check-web: web-lint web-typecheck web-test ## Run lint, typecheck and tests (web)
+
+# Browser end-to-end tests (Playwright, apps/web/e2e/) against the running
+# stack. The account comes from NIGHTLOOM_E2E_EMAIL / NIGHTLOOM_E2E_PASSWORD in
+# the environment: it is created as an admin on the first run and reused after
+# that ("already exists" is not an error), so keep the same password. Needs
+# Playwright's Chromium: pnpm -C apps/web exec playwright install chromium
+E2E_DISPLAY_NAME ?= E2E Admin
+
+e2e: ## Run the browser end-to-end tests (needs `make up` and NIGHTLOOM_E2E_EMAIL/_PASSWORD)
+	@if [ -z "$$NIGHTLOOM_E2E_EMAIL" ] || [ -z "$$NIGHTLOOM_E2E_PASSWORD" ]; then \
+		echo 'Set NIGHTLOOM_E2E_EMAIL and NIGHTLOOM_E2E_PASSWORD (a throwaway admin for the local stack).'; \
+		exit 1; \
+	fi; \
+	web_url="http://127.0.0.1:$$(. ./$(ENV_FILE) && echo "$${WEB_HOST_PORT:-8080}")"; \
+	if ! curl -fsS -o /dev/null "$$web_url/healthz"; then \
+		echo "Nothing answers at $$web_url. Start the stack with 'make up' first."; \
+		exit 1; \
+	fi; \
+	out=$$(printf '%s\n' "$$NIGHTLOOM_E2E_PASSWORD" | \
+		$(COMPOSE) run --rm --no-deps -T api python -m nightloom_api.cli create-admin \
+		--email "$$NIGHTLOOM_E2E_EMAIL" --display-name "$(E2E_DISPLAY_NAME)" --password-stdin 2>&1); \
+	status=$$?; \
+	if [ $$status -eq 0 ]; then \
+		echo "Created the e2e admin $$NIGHTLOOM_E2E_EMAIL."; \
+	elif printf '%s' "$$out" | grep -q 'already exists'; then \
+		echo "The e2e admin $$NIGHTLOOM_E2E_EMAIL already exists; reusing it."; \
+	else \
+		printf '%s\n' "$$out" >&2; \
+		exit $$status; \
+	fi; \
+	NIGHTLOOM_E2E_BASE_URL="$$web_url" $(WEB) e2e
 
 compose-config: ## Validate deploy/compose.yaml
 	$(COMPOSE) config --quiet

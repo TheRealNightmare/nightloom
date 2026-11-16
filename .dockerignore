@@ -28,6 +28,8 @@
 **/coverage.xml
 **/htmlcov
 **/coverage
+**/playwright-report
+**/test-results
 
 # Node
 **/node_modules

@@ -95,6 +95,7 @@ export async function getJson(
       response = await fetchImpl(`${API_BASE}${path}`, {
         method: "GET",
         headers: { Accept: "application/json" },
+        credentials: "same-origin",
         signal: controller.signal,
         cache: "no-store",
       });
@@ -170,5 +171,382 @@ export async function fetchReadiness(options: RequestOptions = {}): Promise<Read
     if (error instanceof ApiError && error.kind === "aborted") throw error;
     const reason = error instanceof Error ? error.message : "Unknown error";
     return { kind: "offline", reason };
+  }
+}
+
+// --- Authenticated requests -------------------------------------------------
+
+/** Names from apps/api/src/nightloom_api/auth/sessions.py. */
+export const CSRF_COOKIE = "nightloom_csrf";
+export const CSRF_HEADER = "X-CSRF-Token";
+
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/** Mirrors `Role` in apps/api/src/nightloom_api/auth/models.py. */
+export type Role = "admin" | "analyst" | "viewer";
+
+/** Mirrors `UserOut` in apps/api/src/nightloom_api/auth/schemas.py. */
+export interface User {
+  id: string;
+  email: string;
+  display_name: string;
+  role: Role;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  last_login_at: string | null;
+}
+
+/** Mirrors `LoginResponse`. */
+export interface LoginResponse {
+  user: User;
+}
+
+/** One message from a `422` answer; `field` is null when it is not tied to a field. */
+export interface FieldMessage {
+  field: string | null;
+  message: string;
+}
+
+/**
+ * Base class of every error the authenticated client throws. Messages are
+ * written here, never copied from the server, except for validation messages.
+ */
+export abstract class RequestError extends Error {
+  abstract readonly kind:
+    | "invalid_credentials"
+    | "session_expired"
+    | "rate_limited"
+    | "validation"
+    | "network"
+    | "timeout"
+    | "aborted"
+    | "unexpected";
+}
+
+/** `401` from `POST /auth/login`. */
+export class InvalidCredentialsError extends RequestError {
+  readonly kind = "invalid_credentials";
+  constructor() {
+    super("Invalid email or password.");
+    this.name = "InvalidCredentialsError";
+  }
+}
+
+/** `401` from any other request: the session is gone. */
+export class SessionExpiredError extends RequestError {
+  readonly kind = "session_expired";
+  constructor() {
+    super("Your session has ended. Please sign in again.");
+    this.name = "SessionExpiredError";
+  }
+}
+
+/** `429`, with the server's `Retry-After` in seconds when it sent a usable one. */
+export class RateLimitedError extends RequestError {
+  readonly kind = "rate_limited";
+  readonly retryAfterSeconds: number | null;
+  constructor(retryAfterSeconds: number | null) {
+    super("Too many attempts.");
+    this.name = "RateLimitedError";
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+/** `422`: the server rejected the input; `messages` are safe to show. */
+export class ValidationError extends RequestError {
+  readonly kind = "validation";
+  readonly messages: FieldMessage[];
+  constructor(messages: FieldMessage[]) {
+    super(messages.map((m) => m.message).join(" ") || "The request was not valid.");
+    this.name = "ValidationError";
+    this.messages = messages;
+  }
+}
+
+/** The request never got an answer (offline, DNS, proxy down, CORS...). */
+export class NetworkError extends RequestError {
+  readonly kind = "network";
+  constructor() {
+    super("Cannot reach Nightloom. Check your connection and try again.");
+    this.name = "NetworkError";
+  }
+}
+
+export class RequestTimeoutError extends RequestError {
+  readonly kind = "timeout";
+  constructor() {
+    super("Nightloom did not answer in time. Try again.");
+    this.name = "RequestTimeoutError";
+  }
+}
+
+/** Cancelled by the caller's `signal`; not shown to users. */
+export class RequestAbortedError extends RequestError {
+  readonly kind = "aborted";
+  constructor() {
+    super("Request aborted");
+    this.name = "RequestAbortedError";
+  }
+}
+
+/** Anything else: other statuses, non-JSON bodies, bodies of the wrong shape. */
+export class UnexpectedResponseError extends RequestError {
+  readonly kind = "unexpected";
+  readonly status: number | undefined;
+  constructor(status?: number) {
+    super("Something went wrong. Try again in a moment.");
+    this.name = "UnexpectedResponseError";
+    this.status = status;
+  }
+}
+
+/**
+ * Reads one cookie from a `document.cookie` string. Returns null when it is
+ * missing or empty; a value that is not valid percent-encoding is returned as is.
+ */
+export function readCookie(name: string, cookies: string): string | null {
+  for (const part of cookies.split(";")) {
+    const eq = part.indexOf("=");
+    if (eq === -1) continue;
+    if (part.slice(0, eq).trim() !== name) continue;
+    let value = part.slice(eq + 1).trim();
+    if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+      value = value.slice(1, -1);
+    }
+    if (value === "") return null;
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  }
+  return null;
+}
+
+/**
+ * Parses `Retry-After` (delay in seconds or an HTTP date) into whole seconds,
+ * at least 1. Returns null when it is missing or unusable.
+ */
+export function parseRetryAfter(value: string | null, now: number = Date.now()): number | null {
+  if (value === null) return null;
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) return Math.max(1, Number.parseInt(trimmed, 10));
+  // An HTTP date always names the weekday and month; Date.parse alone also
+  // accepts bare numbers such as "-5" or "1.5".
+  if (!/[a-z]{3}/i.test(trimmed)) return null;
+  const date = Date.parse(trimmed);
+  if (Number.isNaN(date)) return null;
+  return Math.max(1, Math.ceil((date - now) / 1000));
+}
+
+function messagesFrom422(body: unknown): FieldMessage[] {
+  if (!isRecord(body)) return [];
+  const { detail } = body;
+  // HTTPException(422, "...") from the password policy.
+  if (typeof detail === "string") return [{ field: null, message: detail }];
+  // FastAPI request validation: [{loc: ["body", "field"], msg: "..."}].
+  if (!Array.isArray(detail)) return [];
+  return detail.flatMap((item: unknown): FieldMessage[] => {
+    if (!isRecord(item) || typeof item["msg"] !== "string") return [];
+    const loc = Array.isArray(item["loc"]) ? (item["loc"] as unknown[]) : [];
+    const last = loc.at(-1);
+    const field = loc.length > 1 && typeof last === "string" ? last : null;
+    return [{ field, message: item["msg"] }];
+  });
+}
+
+type SessionExpiredListener = () => void;
+const sessionExpiredListeners = new Set<SessionExpiredListener>();
+
+/**
+ * Called whenever a request answers `401` because the session is gone (not
+ * for a failed sign-in). Returns an unsubscribe function.
+ */
+export function onSessionExpired(listener: SessionExpiredListener): () => void {
+  sessionExpiredListeners.add(listener);
+  return () => {
+    sessionExpiredListeners.delete(listener);
+  };
+}
+
+export interface ApiRequestOptions extends RequestOptions {
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  /** Serialized as JSON. */
+  body?: unknown;
+  /** The cookie string to read the CSRF token from; defaults to `document.cookie`. */
+  cookies?: string;
+  /** What a `401` means: a failed sign-in, or an ended session (the default). */
+  on401?: "invalid_credentials" | "session_expired";
+  /** Tell `onSessionExpired` listeners about a `401` (default true). */
+  notifySessionExpired?: boolean;
+}
+
+/**
+ * Calls the API with the session cookie and, for unsafe methods, the CSRF
+ * header. Resolves with the parsed JSON body (undefined for `204`); rejects
+ * with a {@link RequestError} subclass for everything else.
+ */
+export async function apiRequest(
+  path: string,
+  {
+    method = "GET",
+    body,
+    cookies,
+    on401 = "session_expired",
+    notifySessionExpired = true,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    signal,
+    fetchImpl = fetch,
+  }: ApiRequestOptions = {},
+): Promise<unknown> {
+  if (signal?.aborted) throw new RequestAbortedError();
+
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  if (!SAFE_METHODS.has(method)) {
+    const token = readCookie(CSRF_COOKIE, cookies ?? document.cookie);
+    if (token !== null) headers[CSRF_HEADER] = token;
+  }
+
+  const controller = new AbortController();
+  const timeout = { fired: false };
+  const timer = setTimeout(() => {
+    timeout.fired = true;
+    controller.abort();
+  }, timeoutMs);
+  const forwardAbort = () => {
+    controller.abort();
+  };
+  signal?.addEventListener("abort", forwardAbort, { once: true });
+
+  const failure = (): RequestError => {
+    if (timeout.fired) return new RequestTimeoutError();
+    if (controller.signal.aborted) return new RequestAbortedError();
+    return new NetworkError();
+  };
+
+  try {
+    let response: Response;
+    try {
+      response = await fetchImpl(`${API_BASE}${path}`, {
+        method,
+        headers,
+        credentials: "same-origin",
+        cache: "no-store",
+        signal: controller.signal,
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+    } catch {
+      throw failure();
+    }
+
+    const { status } = response;
+    if (status === 204) return undefined;
+
+    let parsed: unknown = undefined;
+    const isJson = (response.headers.get("content-type") ?? "").includes("application/json");
+    if (isJson) {
+      try {
+        parsed = await response.json();
+      } catch {
+        if (timeout.fired || controller.signal.aborted) throw failure();
+        throw new UnexpectedResponseError(status);
+      }
+    }
+
+    if (status >= 200 && status < 300 && isJson) return parsed;
+    if (status === 401) {
+      if (on401 === "invalid_credentials") throw new InvalidCredentialsError();
+      if (notifySessionExpired) for (const listener of sessionExpiredListeners) listener();
+      throw new SessionExpiredError();
+    }
+    if (status === 429)
+      throw new RateLimitedError(parseRetryAfter(response.headers.get("retry-after")));
+    if (status === 422) {
+      const messages = messagesFrom422(parsed);
+      if (messages.length > 0) throw new ValidationError(messages);
+    }
+    throw new UnexpectedResponseError(status);
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", forwardAbort);
+  }
+}
+
+function isRole(value: unknown): value is Role {
+  return value === "admin" || value === "analyst" || value === "viewer";
+}
+
+export function isUser(value: unknown): value is User {
+  return (
+    isRecord(value) &&
+    typeof value["id"] === "string" &&
+    typeof value["email"] === "string" &&
+    typeof value["display_name"] === "string" &&
+    isRole(value["role"]) &&
+    typeof value["is_active"] === "boolean"
+  );
+}
+
+function expectUser(value: unknown): User {
+  if (!isUser(value)) throw new UnexpectedResponseError(200);
+  return value;
+}
+
+export type AuthRequestOptions = Pick<
+  ApiRequestOptions,
+  "timeoutMs" | "signal" | "fetchImpl" | "cookies" | "notifySessionExpired"
+>;
+
+/** POST /auth/login. Throws {@link InvalidCredentialsError} for a wrong email or password. */
+export async function login(
+  email: string,
+  password: string,
+  options: AuthRequestOptions = {},
+): Promise<User> {
+  const body = await apiRequest("/auth/login", {
+    ...options,
+    method: "POST",
+    body: { email, password },
+    on401: "invalid_credentials",
+  });
+  if (!isRecord(body)) throw new UnexpectedResponseError(200);
+  return expectUser(body["user"]);
+}
+
+/** POST /auth/logout (needs the CSRF header). */
+export async function logout(options: AuthRequestOptions = {}): Promise<void> {
+  await apiRequest("/auth/logout", { ...options, method: "POST" });
+}
+
+/** GET /auth/me. Throws {@link SessionExpiredError} when nobody is signed in. */
+export async function me(options: AuthRequestOptions = {}): Promise<User> {
+  return expectUser(await apiRequest("/auth/me", options));
+}
+
+/** The server's `400` for a wrong current password, as a field message. */
+export const WRONG_CURRENT_PASSWORD = "Current password is incorrect.";
+
+/**
+ * POST /auth/password. A wrong current password (`400`) is reported as a
+ * {@link ValidationError} on `current_password`.
+ */
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string,
+  options: AuthRequestOptions = {},
+): Promise<void> {
+  try {
+    await apiRequest("/auth/password", {
+      ...options,
+      method: "POST",
+      body: { current_password: currentPassword, new_password: newPassword },
+    });
+  } catch (error) {
+    if (error instanceof UnexpectedResponseError && error.status === 400) {
+      throw new ValidationError([{ field: "current_password", message: WRONG_CURRENT_PASSWORD }]);
+    }
+    throw error;
   }
 }

@@ -221,9 +221,14 @@ networks:
     # A fixed subnet, so `web` can have a static address. Change it with
     # NIGHTLOOM_NETWORK_SUBNET (and NIGHTLOOM_WEB_IP) only if it clashes with a
     # network on your machine.
+    # Every other container gets its address from ip_range, which must lie
+    # inside the subnet and must NOT contain NIGHTLOOM_WEB_IP: then no other
+    # container can be handed the one address the API trusts as its proxy,
+    # e.g. when `web` is recreated after the others.
     ipam:
       config:
         - subnet: ${NIGHTLOOM_NETWORK_SUBNET:-172.30.0.0/24}
+          ip_range: ${NIGHTLOOM_NETWORK_IP_RANGE:-172.30.0.128/25}
 
 volumes:
   postgres_data:
