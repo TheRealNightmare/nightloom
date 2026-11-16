@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ENTITY_TYPES, ENTITY_TYPE_INFO, isEntityType } from "./entities";
-import { formatConfidence, formatTimestamp } from "./format";
+import { formatConfidence, formatRelative, formatTimestamp } from "./format";
 
 describe("formatTimestamp", () => {
   it("formats ISO timestamps in UTC", () => {
@@ -35,5 +35,24 @@ describe("entity types", () => {
   it("recognizes valid type names", () => {
     expect(isEntityType("domain")).toBe(true);
     expect(isEntityType("Domain")).toBe(false);
+  });
+});
+
+describe("formatRelative", () => {
+  const now = Date.parse("2026-11-16T12:00:00Z");
+
+  it.each([
+    ["2026-11-16T11:59:30Z", "just now"],
+    ["2026-11-16T11:55:00Z", "5 minutes ago"],
+    ["2026-11-16T09:00:00Z", "3 hours ago"],
+    ["2026-11-15T12:00:00Z", "yesterday"],
+    ["2026-10-01T12:00:00Z", "last month"],
+    ["2024-11-16T12:00:00Z", "2 years ago"],
+  ])("%s → %s", (iso, text) => {
+    expect(formatRelative(iso, now)).toBe(text);
+  });
+
+  it("returns unparseable input unchanged", () => {
+    expect(formatRelative("sometime", now)).toBe("sometime");
   });
 });

@@ -15,7 +15,7 @@ Milestones are ordered but not dated. Checked items are done; everything else is
 - [ ] User management UI
 - [x] Audit log (append-only, hash-chained; sign-in and user-management events)
 - [x] Cases backend (stated purpose, legal basis, membership, audit)
-- [ ] Cases UI
+- [x] Cases UI
 - [ ] Entity schema with provenance
 - [ ] Shuttle SDK + Celery worker + first DNS Shuttle
 

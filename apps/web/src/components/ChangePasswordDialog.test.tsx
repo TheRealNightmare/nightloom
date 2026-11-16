@@ -1,13 +1,12 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CSRF_HEADER } from "../api/client";
-import { AuthGate } from "../auth/AuthGate";
-import { AuthProvider } from "../auth/AuthProvider";
 import { SESSION_ENDED_NOTICE } from "../auth/context";
 import { validatePasswordChange } from "../auth/passwordPolicy";
 import { clearCookies, FakeApi, json, noContent, READY_BODY, TEST_USER } from "../test/fakeApi";
+import { renderApp } from "../test/renderApp";
 import { FakeSigma } from "../test/sigmaMock";
 import { PASSWORD_CHANGED_MESSAGE } from "./ChangePasswordDialog";
 
@@ -32,11 +31,7 @@ afterEach(() => {
 });
 
 async function openDialog() {
-  render(
-    <AuthProvider>
-      <AuthGate />
-    </AuthProvider>,
-  );
+  renderApp("/demo");
   const trigger = await screen.findByRole("button", { name: /Ada Analyst/ });
   await userEvent.click(trigger);
   await userEvent.click(screen.getByRole("menuitem", { name: "Change password" }));

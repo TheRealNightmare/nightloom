@@ -11,7 +11,7 @@ Nightloom is an open-source, self-hosted OSINT tool that collects **public** inf
 
 ## Preview
 
-The web UI is a skeleton for now: a graph canvas with a built-in **demo investigation** (fictional `example.org` data, clearly labelled "Demo data"), a details and provenance panel, an entity-type legend, search, and a live API status indicator. There is no login and no real data yet. A screenshot will be added here once the UI settles.
+The web UI has sign-in, **investigation cases** (purpose, legal basis, members, activity) and a separate **demo graph** with fictional `example.org` data, clearly labelled "Demo data". Cases have no collected data yet: data collection (Shuttles) is the next milestone. A screenshot will be added here once the UI settles.
 
 ## Quick start (developers)
 
@@ -39,6 +39,14 @@ Then open <http://127.0.0.1:8080> and sign in with the admin you just created.
 There is no public sign-up: the first admin is created from the command line, and admins add everyone else (through the API for now; the user management screens are not built yet).
 
 See [CONTRIBUTING.md](CONTRIBUTING.md#development-setup) for the full development setup and [Running the stack](CONTRIBUTING.md#running-the-stack).
+
+## Using Nightloom
+
+1. **Sign in** at <http://127.0.0.1:8080> with an account an admin created for you.
+2. **Create a case** (admins and analysts): *Cases → New case*. Every case needs a **purpose** (30–2,000 characters: why it exists and what question it answers) and a **legal basis** (owned assets, authorized engagement, threat intelligence, journalism, academic research, self-assessment or other), and you confirm that it follows the [ethics policy](ETHICS.md). An *authorized engagement* or *other* basis also needs a note naming the engagement or explaining the basis. Person entities are off by default; turning them on needs a written reason.
+3. **Work in the case.** Owners add colleagues by email as owner, editor or viewer (*Members*), editors and owners see who did what (*Activity*), and owners change the purpose or legal basis (which asks for a reason) and close, archive or delete the case (*Settings*).
+
+Only members can see a case, admins included. The rules are described in [Cases](docs/ARCHITECTURE.md#cases).
 
 ## Planned features
 

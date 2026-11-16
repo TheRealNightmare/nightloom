@@ -2,16 +2,13 @@ import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { App } from "./App";
-import type { Readiness } from "./api/client";
-import { FakeSigma } from "./test/sigmaMock";
+import { FakeSigma } from "../test/sigmaMock";
+import { DemoPage } from "./DemoPage";
 
-vi.mock("sigma", () => import("./test/sigmaMock"));
-
-const readyFetcher = vi.fn(() => Promise.resolve<Readiness>({ kind: "ready", checks: {} }));
+vi.mock("sigma", () => import("../test/sigmaMock"));
 
 function renderApp() {
-  const view = render(<App readinessOptions={{ fetcher: readyFetcher }} />);
+  const view = render(<DemoPage />);
   return { ...view, sigma: FakeSigma.latest() };
 }
 
@@ -21,18 +18,14 @@ afterEach(() => {
   FakeSigma.reset();
 });
 
-describe("App", () => {
-  it("renders the brand, the demo badge, the API status and the graph", async () => {
+describe("DemoPage", () => {
+  it("renders the graph and the overview", () => {
     renderApp();
-    expect(screen.getByRole("banner")).toHaveTextContent("Nightloom");
-    expect(screen.getByText("Every thread, woven into the full picture.")).toBeVisible();
-    expect(screen.getByText("Demo data")).toBeVisible();
-    expect(await screen.findByRole("button", { name: "API status: Ready" })).toBeVisible();
     expect(screen.getByTestId("graph-canvas")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Demo investigation" })).toBeVisible();
   });
 
-  it("shows a node's details when it is clicked, and clears them on the stage", async () => {
+  it("shows a node's details when it is clicked, and clears them on the stage", () => {
     const { sigma } = renderApp();
     act(() => {
       sigma.emit("clickNode", { node: "asn:64496" });
@@ -44,10 +37,9 @@ describe("App", () => {
       sigma.emit("clickStage");
     });
     expect(screen.getByRole("heading", { name: "Demo investigation" })).toBeVisible();
-    await screen.findByRole("button", { name: "API status: Ready" });
   });
 
-  it("highlights the hovered node's neighbors and dims the rest", async () => {
+  it("highlights the hovered node's neighbors and dims the rest", () => {
     const { sigma } = renderApp();
     const refreshes = sigma.refresh.mock.calls.length;
     act(() => {
@@ -61,7 +53,6 @@ describe("App", () => {
       sigma.emit("leaveNode", { node: "net:203.0.113.0/24" });
     });
     expect(sigma.nodeView("domain:example.org")).toEqual({});
-    await screen.findByRole("button", { name: "API status: Ready" });
   });
 
   it("hides and shows an entity type from the legend", async () => {

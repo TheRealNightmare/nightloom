@@ -24,10 +24,15 @@ test("sign in, keep the session across a reload, sign out", async ({ page, conte
   await signIn(page, `${password}-wrong`);
   await expect(page.getByTestId("login-error")).toHaveText("Invalid email or password.");
 
-  // The right one opens the app.
+  // The right one opens the app, on the case list.
   await signIn(page, password);
   const userMenu = page.getByRole("button", { name: /Admin/ });
   await expect(userMenu).toBeVisible();
+  await expect(page).toHaveURL(/\/cases$/);
+  await expect(page.getByRole("heading", { name: "Cases", level: 1 })).toBeVisible();
+
+  // The demo graph is one click away and clearly labelled.
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Demo" }).click();
   await expect(page.getByTestId("graph-canvas")).toBeVisible();
   await expect(page.getByText("Demo data")).toBeVisible();
 
@@ -40,7 +45,7 @@ test("sign in, keep the session across a reload, sign out", async ({ page, conte
   expect(csrf?.httpOnly).toBe(false);
   expect(await page.evaluate(() => document.cookie)).not.toContain("nightloom_session");
 
-  // A reload keeps the session.
+  // A reload keeps the session (and nginx serves the client-side route).
   await page.reload();
   await expect(userMenu).toBeVisible();
   await expect(page.getByTestId("graph-canvas")).toBeVisible();

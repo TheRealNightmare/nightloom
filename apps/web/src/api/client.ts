@@ -218,6 +218,9 @@ export abstract class RequestError extends Error {
     | "session_expired"
     | "rate_limited"
     | "validation"
+    | "forbidden"
+    | "not_found"
+    | "conflict"
     | "network"
     | "timeout"
     | "aborted"
@@ -261,6 +264,39 @@ export class ValidationError extends RequestError {
     super(messages.map((m) => m.message).join(" ") || "The request was not valid.");
     this.name = "ValidationError";
     this.messages = messages;
+  }
+}
+
+/** `403`: signed in, but not allowed to do this. */
+export class ForbiddenError extends RequestError {
+  readonly kind = "forbidden";
+  constructor() {
+    super("You don't have permission to do this.");
+    this.name = "ForbiddenError";
+  }
+}
+
+/**
+ * `404`. For a case this means "no such case, or you are not a member": the
+ * server answers the same way for both, and so does the UI.
+ */
+export class NotFoundError extends RequestError {
+  readonly kind = "not_found";
+  /** The server's `detail`, when it sent a string (e.g. "No active user with that email."). */
+  readonly detail: string | null;
+  constructor(detail: string | null = null) {
+    super(detail ?? "Not found.");
+    this.name = "NotFoundError";
+    this.detail = detail;
+  }
+}
+
+/** `409`: the change conflicts with the current state; `message` is the server's explanation. */
+export class ConflictError extends RequestError {
+  readonly kind = "conflict";
+  constructor(message: string | null) {
+    super(message ?? "This change conflicts with the current state. Reload and try again.");
+    this.name = "ConflictError";
   }
 }
 
@@ -340,6 +376,16 @@ export function parseRetryAfter(value: string | null, now: number = Date.now()):
   return Math.max(1, Math.ceil((date - now) / 1000));
 }
 
+/** The `detail` of an error body when it is a plain string, else null. */
+function detailText(body: unknown): string | null {
+  return isRecord(body) && typeof body["detail"] === "string" ? body["detail"] : null;
+}
+
+/** Pydantic prefixes messages raised from validators with "Value error, ". */
+function cleanMessage(message: string): string {
+  return message.replace(/^Value error, /, "");
+}
+
 function messagesFrom422(body: unknown): FieldMessage[] {
   if (!isRecord(body)) return [];
   const { detail } = body;
@@ -352,7 +398,7 @@ function messagesFrom422(body: unknown): FieldMessage[] {
     const loc = Array.isArray(item["loc"]) ? (item["loc"] as unknown[]) : [];
     const last = loc.at(-1);
     const field = loc.length > 1 && typeof last === "string" ? last : null;
-    return [{ field, message: item["msg"] }];
+    return [{ field, message: cleanMessage(item["msg"]) }];
   });
 }
 
@@ -467,6 +513,11 @@ export async function apiRequest(
       const messages = messagesFrom422(parsed);
       if (messages.length > 0) throw new ValidationError(messages);
     }
+    // Only these few statuses carry server text, and only for known, fixed
+    // messages (last owner, unknown member email).
+    if (status === 403) throw new ForbiddenError();
+    if (status === 404) throw new NotFoundError(detailText(parsed));
+    if (status === 409) throw new ConflictError(detailText(parsed));
     throw new UnexpectedResponseError(status);
   } finally {
     clearTimeout(timer);

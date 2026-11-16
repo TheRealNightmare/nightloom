@@ -6,8 +6,7 @@ import { apiRequest, CSRF_HEADER } from "../api/client";
 import { ETHICS_URL } from "../components/LoginScreen";
 import { clearCookies, FakeApi, json, noContent, READY_BODY, TEST_USER } from "../test/fakeApi";
 import { FakeSigma } from "../test/sigmaMock";
-import { AuthGate } from "./AuthGate";
-import { AuthProvider } from "./AuthProvider";
+import { renderApp } from "../test/renderApp";
 import { SESSION_ENDED_NOTICE, useAuth } from "./context";
 
 vi.mock("sigma", () => import("../test/sigmaMock"));
@@ -25,12 +24,9 @@ afterEach(() => {
   clearCookies();
 });
 
+/** The demo graph route, so the signed-in app shows the graph. */
 function renderGate() {
-  return render(
-    <AuthProvider>
-      <AuthGate />
-    </AuthProvider>,
-  );
+  return renderApp("/demo");
 }
 
 const emailField = () => screen.getByLabelText("Email");
@@ -67,7 +63,7 @@ describe("start-up", () => {
 
   it("goes straight to the app when a session exists", async () => {
     await renderSignedIn();
-    expect(screen.getByTestId("graph-canvas")).toBeInTheDocument();
+    expect(await screen.findByTestId("graph-canvas")).toBeInTheDocument();
     expect(screen.getByText("Demo data")).toBeVisible();
     expect(await screen.findByRole("button", { name: "API status: Ready" })).toBeVisible();
   });
@@ -137,7 +133,7 @@ describe("sign-in", () => {
     await screen.findByLabelText("Email");
     await signIn("  analyst@example.org ");
     expect(await screen.findByRole("button", { name: /Ada Analyst/ })).toBeVisible();
-    expect(screen.getByTestId("graph-canvas")).toBeInTheDocument();
+    expect(await screen.findByTestId("graph-canvas")).toBeInTheDocument();
     expect(JSON.parse(api.callsTo("POST", "/auth/login")[0]?.init.body as string)).toEqual({
       email: "analyst@example.org",
       password: "correct horse battery",
