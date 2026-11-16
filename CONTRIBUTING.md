@@ -90,6 +90,58 @@ The Python code lives in a [uv](https://docs.astral.sh/uv/) workspace (Python 3.
 
 Run `make` (or `make help`) to list all targets; `make fmt` formats code and applies lint fixes.
 
+## Running the stack
+
+[`deploy/compose.yaml`](deploy/compose.yaml) runs the API together with its infrastructure. It needs [Docker](https://docs.docker.com/get-started/get-docker/) with the Compose plugin and about 1.5 GB of free RAM (Neo4j uses most of it).
+
+| Service | Image | Role |
+| --- | --- | --- |
+| `api` | built from `apps/api/Dockerfile` | Nightloom API |
+| `postgres` | PostgreSQL 18 | Relational store |
+| `neo4j` | Neo4j Community Edition | Graph store |
+| `valkey` | Valkey (Redis-compatible) | Queue broker and cache |
+| `seaweedfs` | SeaweedFS | S3-compatible object storage |
+
+1. Create your local configuration and **change every `change-me-...` value**:
+
+   ```sh
+   cp .env.example .env
+   ```
+
+   `.env` is git-ignored. The connection URLs in it (`NIGHTLOOM_DATABASE_URL`, `NIGHTLOOM_VALKEY_URL`, ...) repeat the passwords, so keep them in sync. If `.env` is missing, `make up` copies `.env.example` for you.
+
+2. Build and start everything, waiting until all services are healthy:
+
+   ```sh
+   make up
+   ```
+
+3. Check the services:
+
+   ```sh
+   make ps                 # status and health
+   make logs SERVICE=api   # follow one service's logs (omit SERVICE for all)
+   ```
+
+Every port is published on `127.0.0.1` only:
+
+| What | URL |
+| --- | --- |
+| API docs | <http://127.0.0.1:8000/api/docs> |
+| Neo4j Browser | <http://127.0.0.1:7474> (user `neo4j`, password `NEO4J_PASSWORD`; Bolt on `127.0.0.1:7687`) |
+| S3 endpoint | <http://127.0.0.1:8333> (keys `NIGHTLOOM_S3_ACCESS_KEY` / `NIGHTLOOM_S3_SECRET_KEY`, bucket `NIGHTLOOM_S3_BUCKET`) |
+| PostgreSQL | `127.0.0.1:5432` |
+| Valkey | `127.0.0.1:6379` |
+
+If one of these ports is already taken on your machine (for example by a local PostgreSQL), set the matching `*_HOST_PORT` variable in `.env`, e.g. `POSTGRES_HOST_PORT=5433`. Containers still reach each other on the default ports.
+
+`make down` stops the stack and keeps your data in Docker volumes. Database passwords are only applied when a volume is first created, so changing them in `.env` afterwards requires a reset.
+
+> [!WARNING]
+> `make reset` **permanently deletes all local data** (PostgreSQL, Neo4j, Valkey and object storage volumes). It asks you to type `yes` first.
+
+Run `make compose-config` to validate the Compose file after editing it.
+
 ## Continuous integration
 
 Every pull request and every push to `main` runs the [CI workflow](.github/workflows/ci.yml) on GitHub Actions:
@@ -99,16 +151,14 @@ Every pull request and every push to `main` runs the [CI workflow](.github/workf
 | `lint` | All pre-commit hooks except mypy (Ruff lint and format, YAML/TOML checks, whitespace) |
 | `typecheck` | `make typecheck` (mypy, strict) |
 | `test` | `make test` (pytest with at least 90% coverage); the coverage report is uploaded as an artifact |
+| `docker` | `deploy/compose.yaml` is valid, the API image builds, and the built container answers `/api/v1/health` |
 | `dco` | Pull requests only: every non-merge commit has a `Signed-off-by:` trailer (see [DCO](#developer-certificate-of-origin-dco)) |
 
 Each job installs dependencies with `uv sync --locked`, so CI fails if `uv.lock` is out of date. Run `uv lock` and commit the result whenever you change dependencies.
 
 A pull request can only be merged when all jobs are green and every commit is signed off. Run `make check` locally before pushing to catch most failures early.
 
-Coming later:
-
-- [pnpm](https://pnpm.io/) for the web frontend
-- [Docker Compose](https://docs.docker.com/compose/) for Neo4j, PostgreSQL, Redis and MinIO
+Coming later: [pnpm](https://pnpm.io/) for the web frontend.
 
 ## Writing a Shuttle
 

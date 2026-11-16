@@ -1,0 +1,172 @@
+# Nightloom local development stack.
+#
+# Run from the repository root:
+#   make up        # or: docker compose -f deploy/compose.yaml --env-file .env up -d --build --wait
+#
+# Every published port is bound to 127.0.0.1 only; change the host side with
+# the *_HOST_PORT variables in .env if one clashes with a local service.
+# Secrets come from .env (copy .env.example and change the passwords);
+# nothing secret is committed.
+# Relative paths below resolve against this directory (deploy/).
+
+name: nightloom
+
+services:
+  postgres:
+    image: postgres:18.7-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+    volumes:
+      # PostgreSQL 18+ images declare VOLUME /var/lib/postgresql and keep
+      # PGDATA in a versioned subdirectory (/var/lib/postgresql/18/docker),
+      # so mount the parent directory, not .../data.
+      - postgres_data:/var/lib/postgresql
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
+    healthcheck:
+      # -h 127.0.0.1 forces TCP: the temporary server used while init scripts
+      # run listens on the Unix socket only, so it never reports healthy.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  neo4j:
+    image: neo4j:2026.10.2-community
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:?set NEO4J_PASSWORD in .env}
+      # Small dev footprint; tune for real workloads.
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 512m
+      NEO4J_dbms_usage__report_enabled: "false"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    ports:
+      - "127.0.0.1:${NEO4J_HTTP_HOST_PORT:-7474}:7474" # HTTP / Neo4j Browser
+      - "127.0.0.1:${NEO4J_BOLT_HOST_PORT:-7687}:7687" # Bolt
+    healthcheck:
+      # The HTTP discovery endpoint answers without auth once the server is up.
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:7474/ || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  valkey:
+    image: valkey/valkey:9.0.7-alpine
+    restart: unless-stopped
+    # The password is interpolated by Compose so the image's entrypoint still
+    # drops root privileges before starting the server.
+    command:
+      - valkey-server
+      - --appendonly
+      - "yes"
+      - --requirepass
+      - ${VALKEY_PASSWORD:?set VALKEY_PASSWORD in .env}
+    environment:
+      # Lets valkey-cli (healthcheck, `docker compose exec`) authenticate.
+      VALKEYCLI_AUTH: ${VALKEY_PASSWORD}
+    volumes:
+      - valkey_data:/data
+    ports:
+      - "127.0.0.1:${VALKEY_HOST_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.53
+    restart: unless-stopped
+    # `weed mini` runs master, volume, filer and the S3 gateway in one process.
+    # WebDAV, the admin UI and the Iceberg/Lance catalogs are not needed.
+    command:
+      - mini
+      - -dir=/data
+      - -webdav=false
+      - -admin.ui=false
+      - -s3.port.iceberg=0
+      - -s3.port.lance=0
+    environment:
+      # The S3 gateway turns these into a static admin identity, so no
+      # identities file with credentials is needed.
+      AWS_ACCESS_KEY_ID: ${NIGHTLOOM_S3_ACCESS_KEY:?set NIGHTLOOM_S3_ACCESS_KEY in .env}
+      AWS_SECRET_ACCESS_KEY: ${NIGHTLOOM_S3_SECRET_KEY:?set NIGHTLOOM_S3_SECRET_KEY in .env}
+      # Created on startup if missing (an existing bucket is left untouched).
+      S3_BUCKET: ${NIGHTLOOM_S3_BUCKET:?set NIGHTLOOM_S3_BUCKET in .env}
+    volumes:
+      # Volume files and the filer metadata (/data/filerldb2) both live here.
+      - seaweedfs_data:/data
+    ports:
+      - "127.0.0.1:${S3_HOST_PORT:-8333}:8333" # S3 API
+    healthcheck:
+      # Healthy only when the S3 gateway is up AND the bucket exists
+      # (checked through the filer, which needs no S3 credentials).
+      test:
+        - CMD-SHELL
+        - >-
+          curl -fsS -o /dev/null http://127.0.0.1:8333/healthz &&
+          curl -fsS -o /dev/null -H 'Accept: application/json'
+          "http://127.0.0.1:8888/buckets/$${S3_BUCKET}/"
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    image: nightloom-api:dev
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_healthy
+    # Only the variables the API reads; infrastructure secrets stay out.
+    environment:
+      NIGHTLOOM_ENV: ${NIGHTLOOM_ENV:-development}
+      NIGHTLOOM_LOG_LEVEL: ${NIGHTLOOM_LOG_LEVEL:-INFO}
+      NIGHTLOOM_DATABASE_URL: ${NIGHTLOOM_DATABASE_URL:?set NIGHTLOOM_DATABASE_URL in .env}
+      NIGHTLOOM_NEO4J_URI: ${NIGHTLOOM_NEO4J_URI:?set NIGHTLOOM_NEO4J_URI in .env}
+      NIGHTLOOM_NEO4J_USER: ${NIGHTLOOM_NEO4J_USER:?set NIGHTLOOM_NEO4J_USER in .env}
+      NIGHTLOOM_NEO4J_PASSWORD: ${NIGHTLOOM_NEO4J_PASSWORD:?set NIGHTLOOM_NEO4J_PASSWORD in .env}
+      NIGHTLOOM_VALKEY_URL: ${NIGHTLOOM_VALKEY_URL:?set NIGHTLOOM_VALKEY_URL in .env}
+      NIGHTLOOM_S3_ENDPOINT: ${NIGHTLOOM_S3_ENDPOINT:?set NIGHTLOOM_S3_ENDPOINT in .env}
+      NIGHTLOOM_S3_ACCESS_KEY: ${NIGHTLOOM_S3_ACCESS_KEY}
+      NIGHTLOOM_S3_SECRET_KEY: ${NIGHTLOOM_S3_SECRET_KEY}
+      NIGHTLOOM_S3_BUCKET: ${NIGHTLOOM_S3_BUCKET}
+      NIGHTLOOM_S3_REGION: ${NIGHTLOOM_S3_REGION:-us-east-1}
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:-8000}:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=4)"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  postgres_data:
+  neo4j_data:
+  neo4j_logs:
+  valkey_data:
+  seaweedfs_data:

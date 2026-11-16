@@ -1,0 +1,48 @@
+# Keep the build context small: the API image only needs the uv workspace
+# files (pyproject.toml, uv.lock) and apps/.
+
+# VCS and CI
+.git
+.github
+
+# Environments and secrets
+**/.venv
+**/venv
+.env
+.env.*
+!.env.example
+
+# Python caches and build output
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/*.egg-info
+**/build
+**/dist
+
+# Coverage
+**/.coverage
+**/.coverage.*
+**/coverage.xml
+**/htmlcov
+**/coverage
+
+# Node
+**/node_modules
+**/.pnpm-store
+**/.vite
+
+# Docs build output
+docs/_build
+site
+
+# Local data, logs and editor files
+data
+.docker-data
+**/*.log
+.vscode
+.idea
+**/*.swp
+**/.DS_Store

@@ -11,7 +11,7 @@ Nightloom is an open-source, self-hosted OSINT tool that collects **public** inf
 
 ## Quick start (developers)
 
-Only an API skeleton exists so far. With [uv](https://docs.astral.sh/uv/) and `make` installed:
+Only an API skeleton and the local infrastructure exist so far. With [uv](https://docs.astral.sh/uv/) and `make` installed:
 
 ```sh
 make install   # install dependencies
@@ -19,7 +19,14 @@ make check     # lint, type-check and test
 make api       # run the API at http://127.0.0.1:8000/api/docs
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md#development-setup) for the full development setup.
+With [Docker](https://docs.docker.com/get-started/get-docker/) and Docker Compose you can run the whole stack (API, PostgreSQL, Neo4j, Valkey and S3-compatible object storage):
+
+```sh
+cp .env.example .env   # then change the passwords
+make up
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md#development-setup) for the full development setup and [Running the stack](CONTRIBUTING.md#running-the-stack).
 
 ## Planned features
 
@@ -38,10 +45,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md#development-setup) for the full developmen
 | Layer | Technology |
 | --- | --- |
 | API | Python 3.12, FastAPI |
-| Background jobs | Celery + Redis |
+| Background jobs | Celery + Valkey (Redis-compatible) |
 | Graph store | Neo4j |
 | Relational store | PostgreSQL (users, cases, jobs, audit log) |
-| Evidence files | MinIO |
+| Evidence files | S3-compatible object storage (SeaweedFS by default) |
 | Web UI | React, Vite, TypeScript, Sigma.js |
 | Self-hosting | Docker Compose |
 
@@ -55,7 +62,7 @@ apps/
 packages/
   sdk/        Shuttle SDK
 shuttles/     Built-in Shuttles (plugins)
-deploy/       Docker Compose files
+deploy/       Docker Compose stack
 docs/         Documentation
 ```
 
