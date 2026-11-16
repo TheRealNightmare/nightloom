@@ -1,5 +1,7 @@
 import importlib.metadata
 import logging
+import subprocess
+import sys
 from collections.abc import Iterator
 from typing import Any
 
@@ -38,6 +40,33 @@ def test_configure_logging_sets_level_and_single_handler(root_logger: logging.Lo
 
     assert root_logger.level == logging.DEBUG
     assert len(root_logger.handlers) == 1
+
+
+BLOCK_STUB_PACKAGES = """
+import importlib.abc, sys
+
+class BlockStubs(importlib.abc.MetaPathFinder):
+    def find_spec(self, name, path=None, target=None):
+        if name.split(".")[0].startswith("types_") or name.endswith("_stubs"):
+            raise ModuleNotFoundError(f"dev-only stub package imported: {name}")
+        return None
+
+sys.meta_path.insert(0, BlockStubs())
+import nightloom_api.main
+"""
+
+
+def test_app_imports_without_dev_only_stub_packages() -> None:
+    # Stub packages (types-aiobotocore, ...) are dev dependencies and absent
+    # from the runtime image; they may only be imported under TYPE_CHECKING.
+    result = subprocess.run(  # noqa: S603 - fixed interpreter and code
+        [sys.executable, "-c", BLOCK_STUB_PACKAGES],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 @pytest.mark.parametrize(

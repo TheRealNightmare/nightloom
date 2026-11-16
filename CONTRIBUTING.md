@@ -97,6 +97,7 @@ Run `make` (or `make help`) to list all targets; `make fmt` formats code and app
 | Service | Image | Role |
 | --- | --- | --- |
 | `api` | built from `apps/api/Dockerfile` | Nightloom API |
+| `migrate` | same image as `api` | One-shot: applies database migrations, then exits |
 | `postgres` | PostgreSQL 18 | Relational store |
 | `neo4j` | Neo4j Community Edition | Graph store |
 | `valkey` | Valkey (Redis-compatible) | Queue broker and cache |
@@ -142,6 +143,34 @@ If one of these ports is already taken on your machine (for example by a local P
 
 Run `make compose-config` to validate the Compose file after editing it.
 
+`make ps` lists `migrate` as `Exited (0)` once the migrations have been applied; that is expected. Check that the API can reach every dependency with:
+
+```sh
+curl http://127.0.0.1:8000/api/v1/ready
+```
+
+### Database migrations
+
+The schema is managed by Alembic ([`apps/api/alembic/`](apps/api/alembic/)). `make up` applies all migrations before the API starts.
+
+```sh
+make migrate                       # apply pending migrations to the running stack
+make revision m="add cases table"  # autogenerate a new revision from the ORM models
+```
+
+`make revision` runs Alembic on your machine against the stack's PostgreSQL on `127.0.0.1`, so run `make up` first. The database must already be at the latest revision. Import new model modules in `apps/api/alembic/env.py` so autogenerate sees them. Always review the generated file in `apps/api/alembic/versions/` before committing it: autogenerate does not detect everything (e.g. renames).
+
+### Integration tests
+
+`make test` runs only the unit tests, which need no services. Tests marked `@pytest.mark.integration` (in `apps/api/tests/integration/`) talk to the real stack and are skipped by default:
+
+```sh
+make up
+make test-integration
+```
+
+`make test-integration` reads the credentials from `.env` and connects through the ports published on `127.0.0.1` (including any `*_HOST_PORT` overrides). The passwords are inserted into connection URLs as they are, so keep them free of URL-special characters such as `@`, `:`, `/` or `%`.
+
 ## Continuous integration
 
 Every pull request and every push to `main` runs the [CI workflow](.github/workflows/ci.yml) on GitHub Actions:
@@ -150,8 +179,9 @@ Every pull request and every push to `main` runs the [CI workflow](.github/workf
 | --- | --- |
 | `lint` | All pre-commit hooks except mypy (Ruff lint and format, YAML/TOML checks, whitespace) |
 | `typecheck` | `make typecheck` (mypy, strict) |
-| `test` | `make test` (pytest with at least 90% coverage); the coverage report is uploaded as an artifact |
-| `docker` | `deploy/compose.yaml` is valid, the API image builds, and the built container answers `/api/v1/health` |
+| `test` | `make test` (unit tests, at least 90% coverage); the coverage report is uploaded as an artifact |
+| `docker` | `deploy/compose.yaml` is valid, the API image builds, and the container started on its own answers `/api/v1/health` with 200 and `/api/v1/ready` with 503 |
+| `integration` | Starts the full stack with `make up` and runs `make test-integration`; dumps the container logs on failure |
 | `dco` | Pull requests only: every non-merge commit has a `Signed-off-by:` trailer (see [DCO](#developer-certificate-of-origin-dco)) |
 
 Each job installs dependencies with `uv sync --locked`, so CI fails if `uv.lock` is out of date. Run `uv lock` and commit the result whenever you change dependencies.

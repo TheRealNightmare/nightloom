@@ -24,3 +24,29 @@ updates:
     groups:
       python:
         update-types: [minor, patch]
+
+  # Base images in apps/api/Dockerfile.
+  - package-ecosystem: docker
+    directory: /apps/api
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: build
+      include: scope # -> "build(deps): ..."
+    groups:
+      docker:
+        update-types: [minor, patch]
+
+  # Service images in deploy/compose.yaml.
+  - package-ecosystem: docker-compose
+    directory: /deploy
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: build
+      include: scope # -> "build(deps): ..."
+    groups:
+      docker-compose:
+        update-types: [minor, patch]

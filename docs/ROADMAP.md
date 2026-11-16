@@ -8,7 +8,7 @@ Milestones are ordered but not dated. Checked items are done; everything else is
 - [x] API skeleton (FastAPI)
 - [x] CI (lint, tests, DCO check)
 - [x] Docker Compose infrastructure (PostgreSQL, Neo4j, Valkey, S3-compatible object storage)
-- [ ] Database wiring
+- [x] Database wiring
 - [ ] Web skeleton (React + Vite + TypeScript)
 - [ ] Authentication
 - [ ] Cases with stated purpose + audit log

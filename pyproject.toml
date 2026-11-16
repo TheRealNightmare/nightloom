@@ -17,6 +17,7 @@ dev = [
     "pytest-asyncio>=1.2",
     "pytest-cov>=7.0",
     "ruff>=0.17.5",
+    "types-aiobotocore[s3]>=2.25.1,<2.26",
 ]
 
 # --- ruff -------------------------------------------------------------------
@@ -30,8 +31,8 @@ src = ["apps/api/src", "apps/api/tests"]
 select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF", "N", "ASYNC", "S"]
 
 [tool.ruff.lint.per-file-ignores]
-# `assert` is how pytest tests are written.
-"**/tests/**/*.py" = ["S101"]
+# `assert` is how pytest tests are written; tests use obviously fake credentials.
+"**/tests/**/*.py" = ["S101", "S105", "S106"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["nightloom_api"]
@@ -45,8 +46,14 @@ quote-style = "double"
 python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
-files = ["apps/api/src", "apps/api/tests"]
+files = ["apps/api/src", "apps/api/tests", "apps/api/alembic/env.py"]
 mypy_path = ["apps/api/src"]
+
+# aioboto3 ships no type information. Only its Session factory is used; the S3
+# client it returns is typed via types-aiobotocore-s3 (S3Client).
+[[tool.mypy.overrides]]
+module = ["aioboto3", "aioboto3.*"]
+ignore_missing_imports = true
 
 [tool.pydantic-mypy]
 init_forbid_extra = true
@@ -59,9 +66,15 @@ warn_required_dynamic_aliases = true
 testpaths = ["apps/api/tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "integration: needs the running stack (`make up`); run with `make test-integration`",
+]
 addopts = [
     "--import-mode=importlib",
     "--strict-markers",
+    # Integration tests are opt-in: `make test-integration` passes `-m integration`.
+    "-m",
+    "not integration",
     "--cov=nightloom_api",
     "--cov-report=term-missing",
     "--cov-fail-under=90",
