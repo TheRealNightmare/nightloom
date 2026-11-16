@@ -27,7 +27,8 @@ flowchart LR
 | `apps/web` | React UI: graph view, case management, provenance panel |
 | `apps/api` | FastAPI: auth, cases, graph queries, job submission, AI endpoints |
 | `apps/worker` | Celery workers that run Shuttles and auto-pivot scans |
-| `packages/sdk` | Shuttle SDK: base classes, entity types, test helpers |
+| `packages/core` | Shared entity model (`nightloom-core`): entity types, canonical keys, relationship allow-list, provenance |
+| `packages/sdk` | Shuttle SDK: base classes, test helpers (planned) |
 | `shuttles/` | Built-in Shuttles |
 | PostgreSQL | Users, cases, jobs, audit log, encrypted API keys |
 | Neo4j | Entities and relationships |
@@ -147,15 +148,18 @@ The audit log (code in [`nightloom_api/audit/`](../apps/api/src/nightloom_api/au
 | `auth.password_change` | a password is changed, or the current password given was wrong (a new password that fails the policy is a validation error and is not recorded) |
 | `auth.rate_limited` | a sign-in or password change is refused with `429` |
 | `user.create`, `user.update`, `user.sessions_revoke` | an admin creates or changes a user or signs them out everywhere, or tries to and fails (`409`, `404`, `422` on create); `user.update` lists each changed field's old and new value. `create-admin` on the command line is recorded with the actor `system:cli`. |
-| `authz.denied` | a signed-in user is refused by a role check (`403`), with the method, route and roles; or a case request is refused (`404` for non-members, `403` for a missing case capability), with `case_id` set and a `reason` (`not_a_member` or `missing_capability`) |
+| `authz.denied` | a signed-in user is refused by a role check (`403`), with the method, route and roles; or a case request is refused (`404` for non-members, `403` for a missing case capability or a person-related entity in a case that does not allow them), with `case_id` set and a `reason` (`not_a_member`, `missing_capability` or `person_entities_disabled`, the last with the `entity_type`) |
 | `audit.verify` | an admin runs the chain verification, with its result |
 | `case.create` | a case is created: legal basis, `allow_person_entities`, retention, ethics version and, when person entities are allowed, the `person_entities_reason` |
 | `case.update` | case fields change: the changed field **names** only, plus `change_reason` when one was required; never the text of a title, description or purpose |
 | `case.status_change` | a case's status changes (`from`, `to`) |
 | `case.delete` | a case is deleted (its member count; not its title), or the title confirmation did not match (`failure`) |
 | `case.member_add`, `case.member_update`, `case.member_remove` | membership changes (role, or `from`/`to`; `self` on removal), or fails (`409` last owner, `404` unknown user or member); the target is the member's user ID |
+| `case.graph_delete` | after a case is deleted, its Neo4j graph is removed: `success` with `deleted_nodes`, or `failure` with the error type |
+| `entity.create`, `entity.delete` | an entity is added (or a new observation merged into it) or deleted: its `type` and `key`; a graph commit that fails after the event is followed by a `failure` event (`graph_commit_failed`) |
+| `relationship.create` | a relationship is added or observed again: its `type`, `source_key` and `target_key` |
 
-**What is never recorded.** Passwords, password hashes, session and CSRF tokens, cookies, request bodies and secrets from the configuration. `details` is built from a few named fields, never a whole request body, and passes a sanitizer that drops any key containing `password`, `token`, `secret`, `cookie`, `csrf` or `hash` (case-insensitive, at any depth), cuts strings at 512 characters and replaces a value over 8 KB with a size marker. A failed sign-in stores no email at all: `actor_label` stays empty and `details` holds only the SHA-256 of the normalized address (`email_sha256`), so repeated attempts can be correlated without keeping typed addresses (or passwords pasted into the email field). That digest is pseudonymous, not anonymous: anyone who already has a candidate address can compute it. Reading the log is not itself recorded.
+**What is never recorded.** Passwords, password hashes, session and CSRF tokens, cookies, request bodies and secrets from the configuration. `details` is built from a few named fields, never a whole request body, and passes a sanitizer that drops any key containing `password`, `token`, `secret`, `cookie`, `csrf` or `hash` (case-insensitive, at any depth), cuts strings at 512 characters and replaces a value over 8 KB with a size marker. Entity keys of [person-related types](#entity-types) (an email address, a name, a phone number) are recorded only as their SHA-256 (`key_sha256`, `source_key_sha256`, `target_key_sha256`, and a `target_id` of `sha256:<hex>`): audit events outlive the case, and personal data must not survive the case's deletion in a log that can never be edited. A failed sign-in stores no email at all: `actor_label` stays empty and `details` holds only the SHA-256 of the normalized address (`email_sha256`), so repeated attempts can be correlated without keeping typed addresses (or passwords pasted into the email field). That digest is pseudonymous, not anonymous: anyone who already has a candidate address can compute it. Reading the log is not itself recorded.
 
 **Same transaction.** A successful change records its event in the same database transaction, right before the commit, so the change and its event commit or roll back together: a rolled-back change leaves no event. Failures and refusals (failed sign-ins, `429`, `403`, failed admin actions) describe something that did not happen, so they are written in their own short transaction; if that write fails, the error is logged and the client still gets its `401`/`403`/`429`.
 
@@ -212,7 +216,7 @@ Legal bases: `owned_assets`, `authorized_engagement`, `threat_intelligence`, `jo
 - **404, not 403, for outsiders.** A user who is not a member gets `404 Case not found.` for every case route, exactly as for a case that does not exist, so case IDs reveal nothing. A member without the needed capability gets `403`. Both are recorded as `authz.denied` with the case's ID.
 - **At least one owner.** Demoting or removing the last owner (including an owner removing themselves) is refused with `409`. Only active owners whose global role is not `viewer` count, because only they can manage the case. Membership changes lock the case row (`FOR NO KEY UPDATE`) and re-read the caller's role after the lock is granted, so concurrent changes are serialized and cannot both remove "the other" owner.
 - **Reasons for sensitive changes.** Changing `purpose`, `legal_basis`, `legal_basis_note` or `allow_person_entities` requires a `change_reason` (10–500 characters), stored in the `case.update` event. Setting a field to the value it already has is not a change.
-- **Deletion.** The owner repeats the exact title (`confirm_title`, case-sensitive). The case and its memberships are deleted in one transaction; the audit events stay. Data that will belong to a case later (graph entities, evidence objects) is removed by a hook in the same transaction once those features exist.
+- **Deletion.** The owner repeats the exact title (`confirm_title`, case-sensitive). The case and its memberships are deleted in one transaction; the audit events stay. **After** that commits, the case's [graph](#per-case-graphs) is deleted from Neo4j in batches of 1,000 nodes, so a Neo4j failure can never bring a case back or leave it half-deleted. That step never fails the request (the case is already gone): it is recorded as `case.graph_delete` (`success` or `failure`), and a failure is also logged; nodes left behind are unreachable through the API, and an operator removes them with Cypher (`MATCH (n:Entity {case_id: $id}) DETACH DELETE n`). Evidence objects will be removed the same way once they exist.
 
 | Endpoint (under `/api/v1`) | Who | Notes |
 | --- | --- | --- |
@@ -226,36 +230,130 @@ Legal bases: `owned_assets`, `authorized_engagement`, `threat_intelligence`, `jo
 | `DELETE /cases/{id}/members/{user_id}` | owner, or the member themselves | `204`; `409` for the last owner |
 | `GET /cases/{id}/audit` | editor, owner | the case's audit events, paged and filtered like `GET /audit` (without `actor_user_id`, `case_id` and hashes) |
 
+The case's graph has its own endpoints, listed under [Per-case graphs](#per-case-graphs).
+
 ### Migrations
 
-The PostgreSQL schema is managed by [Alembic](https://alembic.sqlalchemy.org/) in [`apps/api/alembic/`](../apps/api/alembic/). ORM models derive from `nightloom_api.infra.db.Base`, whose metadata has an explicit naming convention, so constraint and index names are stable across autogenerated revisions. The history starts at an empty `0001_baseline` revision; `0002_users_sessions` adds the `users` and `sessions` tables and the `user_role` enum; `0003_audit_events` adds the [audit log](#audit-log) and its append-only trigger; `0004_cases` adds [`cases` and `case_members`](#cases) with their enums (and intentionally no foreign key from `audit_events.case_id`). In the Compose stack, a one-shot `migrate` service runs `alembic upgrade head` before the API starts.
+The PostgreSQL schema is managed by [Alembic](https://alembic.sqlalchemy.org/) in [`apps/api/alembic/`](../apps/api/alembic/). ORM models derive from `nightloom_api.infra.db.Base`, whose metadata has an explicit naming convention, so constraint and index names are stable across autogenerated revisions. The history starts at an empty `0001_baseline` revision; `0002_users_sessions` adds the `users` and `sessions` tables and the `user_role` enum; `0003_audit_events` adds the [audit log](#audit-log) and its append-only trigger; `0004_cases` adds [`cases` and `case_members`](#cases) with their enums (and intentionally no foreign key from `audit_events.case_id`). In the Compose stack, a one-shot `migrate` service runs `alembic upgrade head` and then applies the [Neo4j schema](#per-case-graphs) (`python -m nightloom_api.graph.schema apply`) before the API starts; `make migrate` runs it again.
 
 ## Data model
 
-Entity types are inspired by STIX 2.1:
+The entity model lives in the shared package [`packages/core`](../packages/core/) (`nightloom-core`, import `nightloom_core`), so the API and, later, the worker and Shuttles validate data the same way. It has no service dependencies and never touches the network.
 
-| Group | Types |
+### Entity types
+
+Each type is a Pydantic model (`nightloom_core.entities`) with a canonical `value` and optional typed `properties`. Every type declares a **sensitivity**. Person-related types can only be added to cases with `allow_person_entities` (see [ETHICS.md](../ETHICS.md)); the API refuses them otherwise with `403 This case does not allow person-related entities.`, recorded as `authz.denied`.
+
+| Type (`type`) | Neo4j label | Sensitivity | Properties |
+| --- | --- | --- | --- |
+| `domain` | `Domain` | infrastructure | |
+| `ip_address` | `IPAddress` | infrastructure | |
+| `netblock` | `Netblock` | infrastructure | `name`, `country`, `registry` |
+| `asn` | `ASN` | infrastructure | `name`, `country`, `registry` |
+| `certificate` | `Certificate` | infrastructure | `subject`, `issuer`, `serial_number`, `not_before`, `not_after`, `self_signed` |
+| `url` | `URL` | infrastructure | `status_code`, `title`, `content_type` |
+| `service` | `Service` | infrastructure | `product`, `version`, `banner` |
+| `technology` | `Technology` | infrastructure | `version`, `category` |
+| `organization` | `Organization` | organization | `country`, `industry` |
+| `crypto_wallet` | `CryptoWallet` | organization | |
+| `document` | `Document` | organization | `title`, `mime_type`, `sha256` |
+| `breach` | `Breach` | organization | `breach_date`, `record_count`, `data_classes` (metadata only, never leaked records) |
+| `person` | `Person` | **person** | |
+| `email` | `Email` | **person** | |
+| `username` | `Username` | **person** | `platform` |
+| `phone` | `Phone` | **person** | |
+| `social_profile` | `SocialProfile` | **person** | `platform`, `profile_url` |
+| `location` | `Location` | **person** (a place next to a person is sensitive) | `latitude`, `longitude`, `country` |
+| `image` | `Image` | **person** (images can show people) | `mime_type`, `sha256`, `width`, `height` |
+
+Properties are flat (strings, numbers, booleans, dates as ISO 8601, lists of strings), validated per type (unknown fields are refused) and stored on the node with a `prop_` prefix. A later observation overwrites the properties it carries and keeps the others.
+
+### Canonical keys
+
+Every entity has exactly one key, `<type>:<normalized>`, so the same thing found in different spellings becomes one node (`nightloom_core.normalize`). Normalizers are idempotent, and their errors (`NormalizationError`) have short, user-safe messages that never repeat the input; the API returns them as `422`.
+
+| Type | Normalized form |
 | --- | --- |
-| Infrastructure | Domain, Subdomain, IP, ASN, Netblock, Certificate, URL, Port/Service, Technology |
-| Organizations and people | Organization, Person, Email, Username, SocialProfile, Phone |
-| Other | Breach, Location, Image, Document, CryptoWallet |
+| Domain | trimmed, one trailing dot removed, UTS #46 mapping (lower-case, full-width forms), non-ASCII labels in IDNA 2008 A-label form (`Bücher.example` → `xn--bcher-kva.example`); at least two labels, each 1–63 characters, at most 253 in all, last label not numeric; `_` allowed (`_dmarc`), and a leading `*` label (certificate wildcards). The registrable domain (`www.example.co.uk` → `example.co.uk`) comes from tldextract's **bundled** Public Suffix List snapshot only: no cache directory, no download, ever |
+| IP address | IPv4 in dotted decimal. An **IPv4-mapped** IPv6 address (`::ffff:0:0/96`) is the IPv4 host itself and becomes the plain IPv4 address (`::ffff:192.0.2.1`, `::FFFF:c000:201` → `192.0.2.1`), so one host is one node. Every other IPv6 address stays IPv6 in pure-hex RFC 5952 form (lower-case, no leading zeros, the longest run of two or more zero groups as `::`), including the forms that embed IPv4 but are different addresses on the wire: IPv4-compatible `::192.0.2.1` → `::c000:201`, 6to4 `2002:c000:201::1`, NAT64 `64:ff9b::192.0.2.1` → `64:ff9b::c000:201`. The text is built from the address's integer value, never from `ipaddress`'s `str()`, whose output for embedded IPv4 changed between Python 3.12 patch releases; CI checks the keys on 3.12.0, the latest 3.12 and 3.13. Zone IDs refused |
+| Netblock | CIDR with host bits cleared (`192.0.2.7/24` → `192.0.2.0/24`); a bare address becomes `/32` or `/128`. An IPv6 network inside `::ffff:0:0/96` with a prefix of 96 or more becomes the equivalent IPv4 network (`::ffff:192.0.2.0/120` → `192.0.2.0/24`); other IPv6 networks use the same pure-hex form |
+| ASN | key `asn:64496`, value `AS64496`, from `AS64496`, `as64496` or `64496`; 1–4294967295 |
+| Certificate | SHA-256 fingerprint, 64 lower-case hex digits (colon-separated input accepted) |
+| URL | `http`, `https` or `ftp` only; scheme lower-case, host by the Domain or IP rules (IPv6 in brackets; an IPv4-mapped host becomes plain IPv4: `http://[::ffff:192.0.2.1]:80/` → `http://192.0.2.1/`), default port removed, fragment dropped, empty path → `/`; path and query kept as they are; embedded credentials refused |
+| Service | `ip:port/protocol` (`[ipv6]:port/protocol`, the address by the IP rules), port 1–65535, `tcp` or `udp` |
+| Email | dot-atom local part, lower-cased; domain by the Domain rules |
+| Phone | E.164 via `phonenumbers` (`+442079460958`), valid numbers only. A number in national format needs an explicit default region (`phone_region` in the API); there is no implicit default |
+| CryptoWallet | `btc:<address>` (mainnet base58check P2PKH/P2SH or bech32/bech32m SegWit, checksums verified, bech32 lower-cased) or `eth:0x<40 hex>` (lower-cased) |
+| Organization, Person, Technology, Location, Username, SocialProfile, Document, Image, Breach | NFKC, trimmed, inner whitespace collapsed (the display value keeps its case); the key is case-folded (`organization:acme corp`) |
+
+`parse_key()` accepts a key only if normalizing its own value gives the key back, so `GET /entities/domain:Example.org` is `422`, not a silent miss.
+
+### Relationships
+
+Relationship types (`nightloom_core.relationships`) have an explicit allow-list of (source type, target type) pairs. Anything else is refused with `422`.
+
+| Type | Source → target |
+| --- | --- |
+| `HAS_SUBDOMAIN`, `HAS_MX`, `HAS_NS` | Domain → Domain |
+| `RESOLVES_TO` | Domain → IPAddress |
+| `WITHIN` | IPAddress → Netblock |
+| `ANNOUNCED_BY` | Netblock → ASN |
+| `COVERS` | Certificate → Domain |
+| `PRESENTS` | Service → Certificate |
+| `RUNS_ON` | Service → IPAddress |
+| `USES` | Domain, URL or Service → Technology |
+| `OWNS` | Organization → Domain, Netblock or ASN |
+| `HOSTS` | Domain → URL |
+| `REGISTERED_BY` | Domain → Organization |
+| `HAS_EMAIL` | Domain → Email |
+| `ACCOUNT_OF` | Username, SocialProfile or Email → Person |
+| `MENTIONS` | Document → any type |
+| `RELATED_TO` | any → any; discouraged, and needs a `note` explaining the link |
+
+Both ends must exist in the same case and be different entities. There is at most one relationship of a type in one direction between two entities; repeating it adds an observation. If a case stops allowing person entities, relationships touching its existing person-related entities are refused (`403`) as well.
 
 ### Provenance
 
-Every node **and** edge carries:
+Every sighting is an `Observation` (`nightloom_core.provenance`): `source` (`manual` or `shuttle:<name>@<version>`), `observed_at` (timezone-aware), `confidence` (0–1), an Admiralty rating — source reliability `A` (completely reliable) to `E` (unreliable) and `F` (cannot be judged), information credibility `1` (confirmed) to `5` (improbable) and `6` (cannot be judged) — an optional `evidence_ref` and an optional `note` (at most 500 characters).
 
-| Field | Meaning |
+Observations are merged into the node or relationship they describe, which carries the summary:
+
+| Property | Meaning |
 | --- | --- |
-| `source` | The Shuttle that produced it |
-| `first_seen` / `last_seen` | When it was first and most recently observed |
-| `confidence` | 0–1 |
-| `admiralty` | Admiralty rating, `A1`–`F6` (source reliability × information credibility) |
-| `evidence` | Pointer to the evidence object in S3 object storage |
-| `case_id` | The case it belongs to |
+| `first_seen` / `last_seen` | earliest and latest `observed_at` (an older observation arriving late moves `first_seen` back) |
+| `observation_count` | how many observations were merged |
+| `sources` | distinct sources (at most 100) |
+| `max_confidence` | the highest confidence seen |
+| `last_admiralty`, `note` | of the most recent observation (the note only when it has one) |
+| `evidence_refs` | distinct evidence references (at most 100) |
 
-### Deduplication
+**Manual defaults.** Entities and relationships added through the API are `source: manual` with reliability **B** (the analyst is a usually reliable source for their own case), credibility **2** ("probably true": deliberately entered, but not independently confirmed, so not `1`) and confidence **0.8**. A Shuttle that later observes the same entity adds its own rating; `max_confidence` keeps the best.
 
-Each entity type defines a **canonical key** (e.g. lower-cased FQDN for a Domain, normalized address for an IP). Writes are upserts on `(case_id, type, canonical_key)`, so the same entity found by several Shuttles becomes one node with multiple provenance records.
+### Per-case graphs
+
+Every entity node has the label `:Entity` plus its type's label and the properties `case_id`, `key`, `type`, `value` (the first value seen), `sensitivity` and the provenance summary. Relationships carry `case_id` and the provenance summary.
+
+**Isolation.** The same key in two cases is two nodes. Every query (code in [`nightloom_api/graph/`](../apps/api/src/nightloom_api/graph/)) matches on `case_id`, and relationships are only created between two nodes of the same case, so one case can never read or change another's graph. Case access itself is checked first, exactly like every other [case route](#cases).
+
+**Schema and constraint choice.** `python -m nightloom_api.graph.schema apply` (idempotent, `IF NOT EXISTS`; `show` lists it) creates:
+
+- `entity_case_key_unique`: a **composite node property uniqueness constraint** on `(:Entity {case_id, key})`. Neo4j Community Edition supports it (only node *key* and property *existence* constraints are Enterprise-only), so no combined `scoped_key` property is needed: the two natural properties stay separate and queryable, and the constraint's backing range index serves every `MERGE`/`MATCH` by `(case_id, key)`. Because existence constraints are not available, the writing code always sets both properties.
+- `entity_case_id` on `(:Entity {case_id})`, for whole-case reads and deletion, and `entity_case_type` on `(:Entity {case_id, type})`, for type filters.
+
+**Queries are parameterized.** Values, keys and case IDs are always query parameters. Labels and relationship types are parameters too (Cypher's dynamic `$(...)` syntax), and only after they have been checked against `EntityType` and `RelationType`. No user-supplied text is ever formatted into a query.
+
+**Writes and the audit log.** A graph change and its audit event live in two databases. A write takes the case row lock for the whole request (so the case cannot be closed or deleted half-way), runs the Neo4j transaction, records and commits the audit event in PostgreSQL, and then commits Neo4j. An event is therefore never missing for a change that happened; if the final Neo4j commit fails, a `failure` event (`graph_commit_failed`) follows and the client gets `503`. Writes are not retried, so an unreachable Neo4j gives a quick `503 The graph database is unavailable.` Only the exception type and Neo4j's status code are logged, never keys or values.
+
+| Endpoint (under `/api/v1/cases/{id}`) | Who | Notes |
+| --- | --- | --- |
+| `POST /entities` | editor, owner; case `open` | `{type, value, properties?, note?, phone_region?}`; `201` new, `200` merged into an existing entity; `422` normalization or property errors; `403` person-related type in a case that does not allow them; `409` case not open |
+| `GET /entities/{key}` | member | the entity and its number of `neighbours`; percent-encode the key (`/` included); `422` non-canonical key, `404` unknown |
+| `DELETE /entities/{key}` | editor, owner; case `open` | `204`; deletes its relationships too |
+| `POST /relationships` | editor, owner; case `open` | `{type, source_key, target_key, note?}`; `201` / `200` like entities; `422` unknown endpoint, pair not allowed, missing `RELATED_TO` note |
+| `GET /graph` | member | `?types=domain&types=ip_address&limit=2000` (1–10,000): nodes ordered by key, the edges between them (at most five per node), and `truncated` when either limit cut something off |
+
+A closed or archived case's graph is read-only (`409` for every write).
+
 
 ## Shuttle contract
 
@@ -269,9 +367,9 @@ A Shuttle is a plugin that takes one entity and returns entities and edges. Each
 | `mode` | `passive` (third-party sources only) or `active` (touches the target) |
 | `requires_api_key` | Whether a user-supplied key is needed |
 | `rate_limit` | Per-source request limit |
-| `risk_level` | `infrastructure` or `person` |
+| `risk_level` | `infrastructure` or `person` (see [sensitivity](#entity-types)) |
 
-Active Shuttles run only against assets with verified ownership. Person-related Shuttles are gated per case and never run during auto-pivot.
+Active Shuttles run only against assets with verified ownership. Person-related Shuttles are gated per case and never run during auto-pivot. Shuttles will write through the same normalizers and allow-list as the API (`nightloom-core`), with their own `source` (`shuttle:<name>@<version>`) and Admiralty rating.
 
 ## Auto-pivot
 

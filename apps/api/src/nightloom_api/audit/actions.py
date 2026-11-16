@@ -26,6 +26,11 @@ class AuditAction(StrEnum):
     CASE_MEMBER_ADD = "case.member_add"
     CASE_MEMBER_UPDATE = "case.member_update"
     CASE_MEMBER_REMOVE = "case.member_remove"
+    # Removing a deleted case's graph from Neo4j, after the case row is gone.
+    CASE_GRAPH_DELETE = "case.graph_delete"
+    ENTITY_CREATE = "entity.create"
+    ENTITY_DELETE = "entity.delete"
+    RELATIONSHIP_CREATE = "relationship.create"
 
 
 class AuditOutcome(StrEnum):
@@ -41,3 +46,5 @@ class TargetType(StrEnum):
 
     USER = "user"
     CASE = "case"
+    ENTITY = "entity"
+    RELATIONSHIP = "relationship"

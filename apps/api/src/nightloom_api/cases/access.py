@@ -14,7 +14,7 @@ of their own.
 """
 
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Annotated, NoReturn
@@ -97,9 +97,14 @@ async def record_denial(
     reason: str,
     case_role: CaseRole | None = None,
     required: Capability | None = None,
+    extra: Mapping[str, object] | None = None,
 ) -> None:
-    """Record a refused case request as ``authz.denied`` in its own transaction."""
+    """Record a refused case request as ``authz.denied`` in its own transaction.
+
+    ``extra`` adds a few named fields (never request bodies) to the details.
+    """
     details: dict[str, object] = {
+        **(extra or {}),
         "method": request.method,
         "path": route_path(request),
         "role": global_role.value,

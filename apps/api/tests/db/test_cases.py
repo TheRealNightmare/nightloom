@@ -650,7 +650,7 @@ async def test_delete_keeps_the_audit_trail(world: World, infra: Infra) -> None:
     response = await delete_case(owner, world.case_id, VALID_CASE["title"])
 
     assert response.status_code == 204
-    event = await only_event_since(infra, mark)
+    event, graph_event = await events_since(infra, mark)
     assert (event.action, event.outcome, event.actor_user_id) == (
         "case.delete",
         "success",
@@ -658,6 +658,10 @@ async def test_delete_keeps_the_audit_trail(world: World, infra: Infra) -> None:
     )
     assert event.details == {"member_count": 3}
     assert (event.target_type, event.target_id) == ("case", world.case_id)
+    # The (empty) graph is removed after the case row, as its own event.
+    assert (graph_event.action, graph_event.outcome) == ("case.graph_delete", "success")
+    assert graph_event.details == {"deleted_nodes": 0}
+    assert graph_event.case_id == uuid.UUID(world.case_id)
     async with infra.sessionmaker() as db:
         assert await db.get(Case, uuid.UUID(world.case_id)) is None
         assert (await db.execute(select(CaseMember))).first() is None
@@ -665,7 +669,8 @@ async def test_delete_keeps_the_audit_trail(world: World, infra: Infra) -> None:
     assert (await owner.get(f"{PREFIX}/cases/{world.case_id}")).status_code == 404
     history = await admin.get(f"{PREFIX}/audit", params={"case_id": world.case_id, "limit": 200})
     actions = [item["action"] for item in history.json()["items"]]
-    assert actions[:2] == ["authz.denied", "case.delete"]  # the owner's GET came last
+    # The owner's GET came last.
+    assert actions[:3] == ["authz.denied", "case.graph_delete", "case.delete"]
     assert {"case.create", "case.member_add"} <= set(actions)
 
 

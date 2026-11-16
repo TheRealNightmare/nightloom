@@ -20,19 +20,34 @@ STACK_ENV = set -a && . ./$(ENV_FILE) && set +a && \
 
 # Shell prefix for `make test`: points the database-backed tests at a separate
 # `nightloom_test` database and Valkey database 15 on the published ports, so
-# they never touch development data. Only these two variables are exported (the
+# they never touch development data, and at Neo4j on its published Bolt port
+# (Community Edition has a single database; the tests only create and delete
+# graphs of their own random case IDs). Only these variables are exported (the
 # env file is read in a subshell); values already set in the environment win,
 # which is how CI passes its own service URLs.
 TEST_ENV = export $$(. ./$(ENV_FILE) && \
 	echo "NIGHTLOOM_TEST_DATABASE_URL=$${NIGHTLOOM_TEST_DATABASE_URL:-postgresql+asyncpg://$${POSTGRES_USER}:$${POSTGRES_PASSWORD}@127.0.0.1:$${POSTGRES_HOST_PORT:-5432}/nightloom_test}" \
-	     "NIGHTLOOM_TEST_VALKEY_URL=$${NIGHTLOOM_TEST_VALKEY_URL:-redis://:$${VALKEY_PASSWORD}@127.0.0.1:$${VALKEY_HOST_PORT:-6379}/15}") &&
+	     "NIGHTLOOM_TEST_VALKEY_URL=$${NIGHTLOOM_TEST_VALKEY_URL:-redis://:$${VALKEY_PASSWORD}@127.0.0.1:$${VALKEY_HOST_PORT:-6379}/15}" \
+	     "NIGHTLOOM_TEST_NEO4J_URI=$${NIGHTLOOM_TEST_NEO4J_URI:-bolt://127.0.0.1:$${NEO4J_BOLT_HOST_PORT:-7687}}" \
+	     "NIGHTLOOM_TEST_NEO4J_PASSWORD=$${NIGHTLOOM_TEST_NEO4J_PASSWORD:-$${NEO4J_PASSWORD}}") &&
 
 ALEMBIC := uv run alembic -c apps/api/alembic.ini
 
 # Web frontend (pnpm workspace at the repository root; app in apps/web).
 WEB := pnpm --dir apps/web
 
-.PHONY: help install lint fmt typecheck test test-unit test-integration check check-all api \
+# Python versions the shared entity model (packages/core) is tested on by
+# `make test-core-compat` and the CI `core-compat` job: the oldest and newest
+# supported 3.12 patch releases and 3.13. Canonical keys must be identical on
+# all of them (ipaddress, for one, changed its output between 3.12 patches).
+CORE_COMPAT_PYTHONS ?= 3.12.0 3.12 3.13
+# Only nightloom-core and its test tools, without the workspace's lock or dev group.
+CORE_COMPAT_RUN = uv run --python $(1) --no-project --with ./packages/core \
+	--with "pytest>=8.4" --with "hypothesis>=6.170.15" \
+	pytest packages/core/tests -q -p no:cacheprovider -o addopts="" \
+	-W ignore::pytest.PytestConfigWarning
+
+.PHONY: help install lint fmt typecheck test test-unit test-core-compat test-integration check check-all api \
 	up deps-up down logs ps reset compose-config migrate revision create-admin \
 	web-install web-dev web-lint web-fmt web-typecheck web-test web-build check-web e2e
 
@@ -54,11 +69,17 @@ fmt: ## Format code and apply lint fixes
 typecheck: ## Run mypy (strict)
 	uv run mypy
 
-test: ## Run unit and database tests with coverage (needs `make deps-up` or `make up`)
+test: ## Run unit, database and graph tests with coverage (needs `make deps-up` or `make up`)
 	@$(TEST_ENV) uv run pytest
 
 test-unit: ## Run only the tests that need no services (no coverage gate)
-	uv run pytest -m "not db and not integration" --no-cov
+	uv run pytest -m "not db and not graph and not integration" --no-cov
+
+test-core-compat: ## Run the packages/core tests on every Python in CORE_COMPAT_PYTHONS
+	@set -e; for python in $(CORE_COMPAT_PYTHONS); do \
+		echo "== packages/core on Python $$python"; \
+		$(call CORE_COMPAT_RUN,$$python); \
+	done
 
 test-integration: ## Run integration tests against the running stack (needs `make up`)
 	@$(STACK_ENV) uv run pytest -m integration --no-cov
@@ -77,8 +98,8 @@ up: ## Start the local stack (creates .env from .env.example if missing)
 	fi
 	docker compose -f deploy/compose.yaml --env-file .env up -d --build --wait
 
-deps-up: ## Start only PostgreSQL and Valkey (enough for `make test`)
-	$(COMPOSE) up -d --wait postgres valkey
+deps-up: ## Start only PostgreSQL, Valkey and Neo4j (enough for `make test`)
+	$(COMPOSE) up -d --wait postgres valkey neo4j
 
 down: ## Stop the local stack (keeps data volumes)
 	$(COMPOSE) down
@@ -95,7 +116,7 @@ reset: ## Stop the stack and DELETE all its data volumes (asks first)
 	if [ "$$answer" != "yes" ]; then echo "Aborted."; exit 1; fi
 	$(COMPOSE) down -v --remove-orphans
 
-migrate: ## Apply database migrations (runs the one-shot migrate service)
+migrate: ## Apply the database migrations and the Neo4j schema (one-shot migrate service)
 	$(COMPOSE) build api
 	$(COMPOSE) run --rm migrate
 

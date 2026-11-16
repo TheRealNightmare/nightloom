@@ -12,13 +12,14 @@ never the text of a title, description or purpose.
 
 import base64
 import binascii
+import logging
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import ColumnElement, delete, func, select, tuple_
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from nightloom_api.audit import service as audit
 from nightloom_api.audit.actions import AuditAction, AuditOutcome, TargetType
@@ -42,6 +43,9 @@ from nightloom_api.cases.schemas import (
     CaseUpdate,
     note_missing,
 )
+from nightloom_api.graph.repository import GraphRepository
+
+logger = logging.getLogger(__name__)
 
 LIKE_ESCAPE = "\\"
 
@@ -295,22 +299,51 @@ async def update_case(
     return case
 
 
-async def delete_case_dependents(db: AsyncSession, case: Case) -> None:
-    """Remove everything stored for ``case`` outside the ``cases`` and ``case_members`` rows.
+async def delete_case_dependents(
+    graph: GraphRepository,
+    make_session: async_sessionmaker[AsyncSession],
+    case_id: uuid.UUID,
+    *,
+    actor: Actor,
+) -> None:
+    """Remove a deleted case's data outside PostgreSQL: today, its Neo4j graph.
 
-    Called inside the deleting transaction, just before the case row goes.
-    Members are removed by the database (``ON DELETE CASCADE``). Nothing else
-    references a case yet, so this does nothing today; the investigation graph
-    (Neo4j) and evidence objects (S3) will be removed here when those features
-    are built, and a failure here will abort the deletion.
+    Runs **after** the case row's deletion has committed, so a graph failure
+    can never resurrect the case or leave a half-deleted one behind. It never
+    raises: the case is already gone, so the request must not end in a 500.
+    The outcome is recorded as ``case.graph_delete`` (``success`` with the
+    number of nodes removed, or ``failure`` with the error type); a failure
+    is also logged, and leaves nodes that only an operator can remove (they
+    are unreachable through the API, which checks case membership first).
     """
+    details: dict[str, object]
+    try:
+        deleted = await graph.delete_case_graph(case_id)
+    except Exception as exc:
+        logger.error(
+            "Deleting the graph of deleted case %s failed: %s", case_id, type(exc).__name__
+        )
+        outcome, details = AuditOutcome.FAILURE, {"reason": type(exc).__name__}
+    else:
+        outcome, details = AuditOutcome.SUCCESS, {"deleted_nodes": deleted}
+    await audit.record_standalone(
+        make_session,
+        action=AuditAction.CASE_GRAPH_DELETE,
+        outcome=outcome,
+        actor=actor,
+        target_type=TargetType.CASE,
+        target_id=case_id,
+        case_id=case_id,
+        details=details,
+    )
 
 
 async def delete_case(db: AsyncSession, case: Case, confirm_title: str, *, actor: Actor) -> int:
     """Delete a case and its members after an exact title confirmation.
 
     The audit event keeps the case ID and member count, never the title.
-    Returns the number of members removed.
+    Returns the number of members removed. The caller then removes the case's
+    graph with :func:`delete_case_dependents`, once this has committed.
     """
     if confirm_title != case.title:
         raise ConfirmationError
@@ -321,7 +354,6 @@ async def delete_case(db: AsyncSession, case: Case, confirm_title: str, *, actor
         )
         or 0
     )
-    await delete_case_dependents(db, case)
     await db.execute(delete(Case).where(Case.id == case_id))
     await audit.record(
         db,
