@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Superseded pull request runs are cancelled; runs on main always finish.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Python comes from .python-version, which uv reads automatically.
+# `uv sync --locked` fails if uv.lock is out of date with pyproject.toml.
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - run: uv sync --locked
+
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      # mypy runs in its own job below.
+      - run: uv run pre-commit run --all-files --show-diff-on-failure
+        env:
+          SKIP: mypy
+
+  typecheck:
+    name: Type check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - run: uv sync --locked
+
+      - run: make typecheck
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - run: uv sync --locked
+
+      - run: make test
+        env:
+          PYTEST_ADDOPTS: --cov-report=xml
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: coverage
+          path: coverage.xml
+          retention-days: 14
+          if-no-files-found: error
+
+  dco:
+    name: DCO sign-off
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Check every commit is signed off
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # Plain assignment (not process substitution) so a git error fails the step.
+          commits=$(git rev-list --no-merges "$BASE_SHA..$HEAD_SHA")
+          unsigned=()
+          for sha in $commits; do
+            signoff=$(git show -s --format='%(trailers:key=Signed-off-by,valueonly)' "$sha")
+            if [[ -z "${signoff//[[:space:]]/}" ]]; then
+              unsigned+=("$sha")
+            fi
+          done
+
+          if (( ${#unsigned[@]} == 0 )); then
+            echo "All commits in $BASE_SHA..$HEAD_SHA are signed off."
+            exit 0
+          fi
+
+          # Commit subjects are untrusted; stop workflow-command parsing while printing them.
+          token=$(openssl rand -hex 16)
+          echo "::stop-commands::$token"
+          echo "These commits are missing a 'Signed-off-by:' trailer:"
+          for sha in "${unsigned[@]}"; do
+            echo "  $(git show -s --format='%h %s' "$sha")"
+          done
+          echo "::$token::"
+          echo "::error title=DCO::${#unsigned[@]} commit(s) are not signed off. Sign off with 'git commit --amend -s --no-edit' (last commit) or 'git rebase --signoff main' (all commits), then force-push. See CONTRIBUTING.md#developer-certificate-of-origin-dco."
+          exit 1

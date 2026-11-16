@@ -8,6 +8,7 @@ venv/
 .mypy_cache/
 .coverage
 .coverage.*
+coverage.xml
 htmlcov/
 *.egg-info/
 build/
