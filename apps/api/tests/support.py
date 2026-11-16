@@ -31,6 +31,8 @@ API_DIR = Path(__file__).resolve().parents[1]
 PASSWORD = "correct horse battery staple"
 ADMIN_EMAIL = "admin@example.org"
 PREFIX = "/api/v1"
+# Created by migration 0003_audit_events.
+APPEND_ONLY_TRIGGER = "audit_events_append_only"
 
 
 def run_in_thread[T](func: Callable[[], Coroutine[Any, Any, T]]) -> T:

@@ -9,15 +9,19 @@ import time
 import uuid
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
-from fastapi import HTTPException, Response
+from fastapi import HTTPException, Request, Response
 from httpx import ASGITransport, AsyncClient
 from pwdlib import PasswordHash
 from pwdlib.hashers.argon2 import Argon2Hasher
 from pydantic import SecretStr, ValidationError
 
 from nightloom_api import cli
+from nightloom_api.audit import service as audit_service
+from nightloom_api.audit.actions import AuditAction, AuditOutcome
 from nightloom_api.auth import clock, deps, passwords, sessions
 from nightloom_api.auth.models import Role, Session, User
 from nightloom_api.auth.passwords import PasswordPolicyError
@@ -378,14 +382,45 @@ def test_check_role_forbids_other_roles(role: Role) -> None:
     assert excinfo.value.status_code == 403
 
 
-async def test_require_role_dependency() -> None:
+async def test_require_role_dependency(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorded: list[dict[str, Any]] = []
+
+    async def fake_record_standalone(_sessionmaker: object, **event: Any) -> None:
+        recorded.append(event)
+
+    monkeypatch.setattr(audit_service, "record_standalone", fake_record_standalone)
+    request = Request(
+        {
+            "type": "http",
+            "method": "DELETE",
+            "scheme": "http",
+            "server": ("testserver", 80),
+            "path": "/api/v1/users/x/sessions",
+            "query_string": b"",
+            "headers": [],
+            "client": ("192.0.2.5", 1234),
+        }
+    )
     admin_only = deps.require_role(Role.ADMIN)
     admin = user_with(Role.ADMIN)
 
-    assert await admin_only(admin) is admin
+    assert await admin_only(request, admin, None) is admin
+    assert recorded == []
+
+    viewer = user_with(Role.VIEWER)
     with pytest.raises(HTTPException) as excinfo:
-        await admin_only(user_with(Role.VIEWER))
+        await admin_only(request, viewer, None)
     assert excinfo.value.status_code == 403
+    [event] = recorded
+    assert event["action"] == AuditAction.AUTHZ_DENIED
+    assert event["outcome"] == AuditOutcome.DENIED
+    assert event["actor"].ip == "192.0.2.5"
+    assert event["details"] == {
+        "method": "DELETE",
+        "path": "/api/v1/users/x/sessions",
+        "role": "viewer",
+        "required_roles": ["admin"],
+    }
 
 
 def test_require_role_needs_a_role() -> None:
@@ -566,3 +601,44 @@ def test_cli_requires_a_command() -> None:
     with pytest.raises(SystemExit) as excinfo:
         cli.main([])
     assert excinfo.value.code == 2
+
+
+def http_request(
+    path: str, route: object = None, path_params: dict[str, str] | None = None
+) -> Request:
+    scope: dict[str, Any] = {
+        "type": "http",
+        "method": "GET",
+        "scheme": "http",
+        "server": ("testserver", 80),
+        "path": path,
+        "query_string": b"",
+        "headers": [],
+        "path_params": path_params or {},
+    }
+    if route is not None:
+        scope["route"] = route
+    return Request(scope)
+
+
+@pytest.mark.parametrize(
+    ("path", "route_format", "params", "expected"),
+    [
+        (
+            "/api/v1/users/abc/sessions",
+            "/users/{user_id}/sessions",
+            {"user_id": "abc"},
+            "/api/v1/users/{user_id}/sessions",
+        ),
+        ("/api/v1/users", "/users", {}, "/api/v1/users"),
+        ("/api/v1/x/abc", None, {}, "/api/v1/x/abc"),  # no route matched
+        ("/api/v1/users/abc", "/users/{user_id}", {}, "/api/v1/users/abc"),  # missing param
+        ("/api/v1/users/ABC", "/users/{user_id}", {"user_id": "abc"}, "/api/v1/users/ABC"),
+    ],
+)
+def test_route_path(
+    path: str, route_format: str | None, params: dict[str, str], expected: str
+) -> None:
+    route = SimpleNamespace(path_format=route_format) if route_format else None
+
+    assert deps.route_path(http_request(path, route, params)) == expected

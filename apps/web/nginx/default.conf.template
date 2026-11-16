@@ -9,6 +9,19 @@
 # even when the API is not running yet and follows it across restarts.
 resolver ${NGINX_LOCAL_RESOLVERS} valid=10s ipv6=off;
 
+# Request ID for the API and this access log: the client's X-Request-ID if it
+# has the format the API accepts (8-64 of A-Z a-z 0-9 . _ -), else nginx's own
+# random $request_id. Both sides then log the same ID, and the API returns it
+# in its X-Request-ID response header.
+map $http_x_request_id $nightloom_request_id {
+    "~^[A-Za-z0-9._-]{8,64}$" $http_x_request_id;
+    default $request_id;
+}
+
+log_format nightloom '$remote_addr - $remote_user [$time_local] "$request" '
+                     '$status $body_bytes_sent "$http_referer" "$http_user_agent" '
+                     'request_id=$nightloom_request_id';
+
 server {
     listen 8080;
     listen [::]:8080;
@@ -18,6 +31,7 @@ server {
     index index.html;
 
     server_tokens off;
+    access_log /var/log/nginx/access.log nightloom;
     charset utf-8;
 
     gzip on;
@@ -49,6 +63,7 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-ID $nightloom_request_id;
         proxy_connect_timeout 5s;
         proxy_read_timeout 60s;
     }

@@ -37,6 +37,9 @@ The connection defaults match the local stack's published ports and the placehol
 - `GET /api/v1/ready`: readiness; 200 when PostgreSQL, Neo4j, Valkey and object storage all answer, otherwise 503 with the failing checks.
 - `POST /api/v1/auth/login`, `POST /api/v1/auth/logout`, `GET /api/v1/auth/me`, `POST /api/v1/auth/password`: sign-in with server-side sessions in cookies.
 - `GET|POST /api/v1/users`, `PATCH /api/v1/users/{id}`, `DELETE /api/v1/users/{id}/sessions`: user management (admins).
+- `GET /api/v1/audit`, `POST /api/v1/audit/verify`: the audit log and its hash-chain check (admins). See [Audit log](../../docs/ARCHITECTURE.md#audit-log).
+
+Every response carries an `X-Request-ID` header (the caller's, if it is 8–64 characters of `A-Z a-z 0-9 . _ -`, otherwise a new UUID4); log lines and audit events carry the same ID.
 
 `/health` and `/ready` are public; everything else needs a session. See [Authentication](../../docs/ARCHITECTURE.md#authentication) for sessions, CSRF, roles and rate limits.
 
