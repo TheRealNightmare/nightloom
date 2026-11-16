@@ -114,7 +114,7 @@ The UI lives in [`apps/web`](apps/web/) (React, Vite, TypeScript, [Sigma.js](htt
    make web-dev
    ```
 
-   Open <http://127.0.0.1:5173>. The dev server proxies `/api` to `http://127.0.0.1:8000`; if you changed `API_HOST_PORT`, set `NIGHTLOOM_API_PROXY_TARGET` (e.g. `NIGHTLOOM_API_PROXY_TARGET=http://127.0.0.1:8001 make web-dev`). The UI works without the API too: the status indicator then shows **API offline**.
+   Open <http://127.0.0.1:5173> and sign in (create a user with `make create-admin` first; see [First admin](#first-admin)). The dev server proxies `/api` to `http://127.0.0.1:8000`; if you changed `API_HOST_PORT`, set `NIGHTLOOM_API_PROXY_TARGET` (e.g. `NIGHTLOOM_API_PROXY_TARGET=http://127.0.0.1:8001 make web-dev`). Without a reachable API the UI stays on the sign-in screen and reports that it cannot reach Nightloom.
 
 4. Check your changes (the same checks CI runs):
 
@@ -127,6 +127,20 @@ The UI lives in [`apps/web`](apps/web/) (React, Vite, TypeScript, [Sigma.js](htt
    `make web-fmt` formats the code and applies ESLint fixes. The pre-commit hook runs Prettier and ESLint whenever files under `apps/web/` are staged.
 
 The graph shows a built-in demo fixture ([`src/demo/sampleGraph.ts`](apps/web/src/demo/sampleGraph.ts)). Keep it fictional: only `example.org` names, documentation IP ranges (RFC 5737) and AS numbers (RFC 5398), and no person entities. Its tests enforce this. Keep graph logic in pure functions ([`src/graph/view.ts`](apps/web/src/graph/view.ts)) so it can be tested without WebGL; component tests replace sigma with a stand-in.
+
+#### End-to-end tests
+
+[Playwright](https://playwright.dev/) tests in [`apps/web/e2e/`](apps/web/e2e/) drive a real Chromium against the running stack: signing in with a wrong and a right password, reloading, signing out, and checking that the session cookie is `HttpOnly`. Install the browser once, start the stack, then run them with a throwaway account of your choice:
+
+```sh
+pnpm -C apps/web exec playwright install chromium   # once (add --with-deps on a fresh Linux machine)
+make up
+export NIGHTLOOM_E2E_EMAIL=e2e-admin@example.org
+export NIGHTLOOM_E2E_PASSWORD='a-long-local-only-password'   # 12-128 characters
+make e2e
+```
+
+`make e2e` creates that account as an **admin in your local stack** on the first run (with the CLI's `--password-stdin`) and reuses it afterwards, so keep the same password; if you change it, delete the user or run `make reset`. The tests use the web container on `127.0.0.1:${WEB_HOST_PORT:-8080}`. Never use real credentials here. A failed run leaves a report in `apps/web/playwright-report/` (`pnpm -C apps/web exec playwright show-report`).
 
 Add dependencies with `pnpm --dir apps/web add <package>` (or `add -D` for tooling) and commit the updated `pnpm-lock.yaml`.
 
@@ -186,7 +200,7 @@ There is no public sign-up. With the stack running, create the first admin; the 
 make create-admin email=you@example.org name="Your Name"
 ```
 
-It runs `python -m nightloom_api.cli create-admin` in a one-off `api` container. Sign in with `POST /api/v1/auth/login`; admins then create everyone else through `/api/v1/users`. To pipe the password in instead (for scripts), call the CLI with `--password-stdin`. See [Authentication](docs/ARCHITECTURE.md#authentication) for the design.
+It runs `python -m nightloom_api.cli create-admin` in a one-off `api` container. Then sign in at <http://127.0.0.1:8080> (or through the API with `POST /api/v1/auth/login`); admins then create everyone else through `/api/v1/users`. To pipe the password in instead (for scripts), call the CLI with `--password-stdin`. See [Authentication](docs/ARCHITECTURE.md#authentication) for the design.
 
 `make down` stops the stack and keeps your data in Docker volumes. Database passwords are only applied when a volume is first created, so changing them in `.env` afterwards requires a reset.
 
@@ -251,7 +265,7 @@ Every pull request and every push to `main` runs the [CI workflow](.github/workf
 | `test` | `make test` (unit and database tests, at least 90% coverage) against PostgreSQL and Valkey service containers; the coverage report is uploaded as an artifact |
 | `web` | `pnpm install --frozen-lockfile`, then `make web-lint`, `web-typecheck`, `web-test` (at least 80% coverage; the report is uploaded as an artifact) and `web-build` |
 | `docker` | `deploy/compose.yaml` is valid; the API image builds and, started on its own, answers `/api/v1/health` with 200 and `/api/v1/ready` with 503; the web image builds and serves `/` as HTML |
-| `integration` | Starts the full stack with `make up`, runs `make test-integration` and checks `/api/v1/health` through the web container's proxy; dumps the container logs on failure |
+| `integration` | Starts the full stack with `make up`, runs `make test-integration`, checks `/api/v1/health` through the web container's proxy, then installs Playwright's Chromium and runs `make e2e` with throwaway CI-only credentials; dumps the container logs and uploads the Playwright report on failure |
 | `dco` | Pull requests only: every non-merge commit has a `Signed-off-by:` trailer (see [DCO](#developer-certificate-of-origin-dco)) |
 
 The Python jobs install dependencies with `uv sync --locked` and the web job with `pnpm install --frozen-lockfile`, so CI fails if `uv.lock` or `pnpm-lock.yaml` is out of date. Commit the updated lockfile whenever you change dependencies.

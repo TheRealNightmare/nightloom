@@ -39,6 +39,8 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
+    // Playwright's end-to-end specs live in e2e/ and run with `pnpm e2e`.
+    include: ["src/**/*.test.{ts,tsx}"],
     setupFiles: ["./src/test/setup.ts"],
     restoreMocks: true,
     unstubGlobals: true,

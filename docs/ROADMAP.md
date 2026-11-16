@@ -11,7 +11,8 @@ Milestones are ordered but not dated. Checked items are done; everything else is
 - [x] Database wiring
 - [x] Web skeleton (React + Vite + TypeScript)
 - [x] Auth backend (sessions, CSRF, roles, user management, sign-in rate limits)
-- [ ] Sign-in and user management UI
+- [x] Web sign-in (login screen, session handling, password change)
+- [ ] User management UI
 - [ ] Cases with stated purpose + audit log
 - [ ] Entity schema with provenance
 - [ ] Shuttle SDK + Celery worker + first DNS Shuttle

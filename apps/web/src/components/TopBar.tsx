@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import type { ReadinessView } from "../api/useReadiness";
 import { LogoMark } from "./LogoMark";
 import { StatusIndicator } from "./StatusIndicator";
@@ -5,9 +7,10 @@ import { StatusIndicator } from "./StatusIndicator";
 export interface TopBarProps {
   readiness: ReadinessView;
   onRecheck: () => void;
+  account?: ReactNode;
 }
 
-export function TopBar({ readiness, onRecheck }: TopBarProps) {
+export function TopBar({ readiness, onRecheck, account }: TopBarProps) {
   return (
     <header className="topbar">
       <div className="brand">
@@ -23,6 +26,7 @@ export function TopBar({ readiness, onRecheck }: TopBarProps) {
           Demo data
         </span>
         <StatusIndicator readiness={readiness} onRecheck={onRecheck} />
+        {account}
       </div>
     </header>
   );

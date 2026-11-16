@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef, type ReactNode } from "react";
 
 import { useReadiness, type UseReadinessOptions } from "./api/useReadiness";
 import { Legend } from "./components/Legend";
@@ -15,9 +15,11 @@ import { useGraphExplorer } from "./hooks/useGraphExplorer";
 export interface AppProps {
   data?: InvestigationGraph;
   readinessOptions?: UseReadinessOptions;
+  /** Shown at the end of the top bar (the signed-in user's menu). */
+  account?: ReactNode;
 }
 
-export function App({ data = sampleGraph, readinessOptions }: AppProps) {
+export function App({ data = sampleGraph, readinessOptions, account }: AppProps) {
   const graph = useMemo(() => buildGraph(data), [data]);
   const types = useMemo(() => countByType(data.nodes), [data]);
   const explorer = useGraphExplorer(graph);
@@ -49,7 +51,7 @@ export function App({ data = sampleGraph, readinessOptions }: AppProps) {
 
   return (
     <div className="app">
-      <TopBar readiness={readiness} onRecheck={recheck} />
+      <TopBar readiness={readiness} onRecheck={recheck} account={account} />
       <main className="workspace">
         <section className="stage" aria-label="Graph">
           <GraphCanvas

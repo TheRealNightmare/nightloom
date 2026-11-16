@@ -248,7 +248,13 @@ jobs:
   integration:
     name: Integration
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
+    env:
+      # CI-ONLY throwaway credentials for the end-to-end admin. They exist only
+      # in the disposable stack this job starts and stops; they are not secrets
+      # and must never be used anywhere else.
+      NIGHTLOOM_E2E_EMAIL: e2e-admin@example.org
+      NIGHTLOOM_E2E_PASSWORD: ci-only-throwaway-e2e-password
     steps:
       - uses: actions/checkout@v7
         with:
@@ -260,6 +266,31 @@ jobs:
           cache-dependency-glob: uv.lock
 
       - run: uv sync --locked
+
+      # Node and pnpm for the Playwright end-to-end tests (same setup as `web`).
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+
+      - name: Enable Corepack (pnpm)
+        run: |
+          npm install --global corepack@0.36.0
+          corepack enable
+          pnpm --version
+        env:
+          COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
+
+      - run: pnpm install --frozen-lockfile
 
       # The example values are fine for a throwaway CI stack.
       - run: cp .env.example .env
@@ -275,6 +306,22 @@ jobs:
           curl -fsS http://127.0.0.1:8080/api/v1/health
           echo
           curl -fsS -o /dev/null -w '/ returned %{http_code} %{content_type}\n' http://127.0.0.1:8080/
+
+      - name: Install Playwright Chromium
+        run: pnpm -C apps/web exec playwright install --with-deps chromium
+
+      - name: End-to-end tests (Playwright)
+        run: make e2e
+
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            apps/web/playwright-report/
+            apps/web/test-results/
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: Dump stack logs
         if: failure()

@@ -30,11 +30,13 @@ With [Docker](https://docs.docker.com/get-started/get-docker/) and Docker Compos
 
 ```sh
 cp .env.example .env   # then change the passwords
-make up                # then open http://127.0.0.1:8080
+make up                # start everything (waits until healthy)
 make create-admin email=you@example.org name="Your Name"   # first admin; prompts for a password
 ```
 
-There is no public sign-up: the first admin is created from the command line, and admins add everyone else. Sign-in is API-only for now (`POST /api/v1/auth/login`); the web UI does not have a login screen yet.
+Then open <http://127.0.0.1:8080> and sign in with the admin you just created.
+
+There is no public sign-up: the first admin is created from the command line, and admins add everyone else (through the API for now; the user management screens are not built yet).
 
 See [CONTRIBUTING.md](CONTRIBUTING.md#development-setup) for the full development setup and [Running the stack](CONTRIBUTING.md#running-the-stack).
 
