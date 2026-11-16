@@ -90,6 +90,21 @@ The Python code lives in a [uv](https://docs.astral.sh/uv/) workspace (Python 3.
 
 Run `make` (or `make help`) to list all targets; `make fmt` formats code and applies lint fixes.
 
+## Continuous integration
+
+Every pull request and every push to `main` runs the [CI workflow](.github/workflows/ci.yml) on GitHub Actions:
+
+| Job | What it checks |
+| --- | --- |
+| `lint` | All pre-commit hooks except mypy (Ruff lint and format, YAML/TOML checks, whitespace) |
+| `typecheck` | `make typecheck` (mypy, strict) |
+| `test` | `make test` (pytest with at least 90% coverage); the coverage report is uploaded as an artifact |
+| `dco` | Pull requests only: every non-merge commit has a `Signed-off-by:` trailer (see [DCO](#developer-certificate-of-origin-dco)) |
+
+Each job installs dependencies with `uv sync --locked`, so CI fails if `uv.lock` is out of date. Run `uv lock` and commit the result whenever you change dependencies.
+
+A pull request can only be merged when all jobs are green and every commit is signed off. Run `make check` locally before pushing to catch most failures early.
+
 Coming later:
 
 - [pnpm](https://pnpm.io/) for the web frontend

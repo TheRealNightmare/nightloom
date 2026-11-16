@@ -6,7 +6,7 @@ Milestones are ordered but not dated. Checked items are done; everything else is
 
 - [x] Repository foundation (docs, license, templates, repo hygiene)
 - [x] API skeleton (FastAPI)
-- [ ] CI (lint, tests, DCO check)
+- [x] CI (lint, tests, DCO check)
 - [ ] Docker Compose infrastructure (PostgreSQL, Neo4j, Redis, MinIO)
 - [ ] Database wiring
 - [ ] Web skeleton (React + Vite + TypeScript)
