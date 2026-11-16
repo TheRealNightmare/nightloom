@@ -149,6 +149,20 @@ def test_rejects_non_positive_timeout() -> None:
         Settings(dependency_timeout_seconds=0)
 
 
+def test_password_hash_concurrency(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("NIGHTLOOM_PASSWORD_HASH_CONCURRENCY", raising=False)
+    assert Settings().password_hash_concurrency == 4
+
+    monkeypatch.setenv("NIGHTLOOM_PASSWORD_HASH_CONCURRENCY", "8")
+    assert Settings().password_hash_concurrency == 8
+
+
+@pytest.mark.parametrize("value", [0, -1])
+def test_rejects_password_hash_concurrency_below_one(value: int) -> None:
+    with pytest.raises(ValidationError):
+        Settings(password_hash_concurrency=value)
+
+
 def test_get_settings_is_cached(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("NIGHTLOOM_ENV", "test")
 

@@ -4,8 +4,10 @@ import asyncio
 import hashlib
 import hmac
 import io
+import threading
+import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -103,6 +105,94 @@ def test_dummy_verify_runs_a_real_hash_check(monkeypatch: pytest.MonkeyPatch) ->
 
     assert len(calls) == 1
     assert calls[0].startswith("$argon2id$")
+
+
+# --- hashing off the event loop -------------------------------------------------
+
+
+@pytest.fixture
+def restore_hash_concurrency() -> Iterator[None]:
+    before = passwords.hash_concurrency()
+    yield
+    passwords.set_hash_concurrency(before)
+
+
+async def test_async_wrappers_hash_and_verify() -> None:
+    hashed = await passwords.hash_password_async("correct horse battery")
+
+    assert hashed.startswith("$argon2id$")
+    assert await passwords.verify_password_async("correct horse battery", hashed) == (True, None)
+    assert await passwords.verify_password_async("wrong horse battery", hashed) == (False, None)
+    await passwords.dummy_verify_async("whatever password")
+
+
+async def test_async_wrappers_run_in_worker_threads(monkeypatch: pytest.MonkeyPatch) -> None:
+    loop_thread = threading.get_ident()
+    seen: list[int] = []
+
+    def fake_hash(password: str) -> str:
+        seen.append(threading.get_ident())
+        return "hashed"
+
+    def fake_verify(password: str, password_hash: str) -> tuple[bool, None]:
+        seen.append(threading.get_ident())
+        return True, None
+
+    monkeypatch.setattr(passwords, "hash_password", fake_hash)
+    monkeypatch.setattr(passwords, "verify_password", fake_verify)
+    monkeypatch.setattr(passwords, "dummy_verify", lambda password: fake_hash(password))
+
+    assert await passwords.hash_password_async("pw") == "hashed"
+    assert await passwords.verify_password_async("pw", "hashed") == (True, None)
+    await passwords.dummy_verify_async("pw")
+
+    assert len(seen) == 3
+    assert loop_thread not in seen
+
+
+@pytest.mark.usefixtures("restore_hash_concurrency")
+async def test_hash_limiter_bounds_concurrent_hashes(monkeypatch: pytest.MonkeyPatch) -> None:
+    passwords.set_hash_concurrency(2)
+    lock = threading.Lock()
+    running = peak = 0
+
+    def slow_hash(password: str) -> str:
+        nonlocal running, peak
+        with lock:
+            running += 1
+            peak = max(peak, running)
+        time.sleep(0.02)
+        with lock:
+            running -= 1
+        return "hashed"
+
+    monkeypatch.setattr(passwords, "hash_password", slow_hash)
+
+    await asyncio.gather(*(passwords.hash_password_async("pw") for _ in range(6)))
+
+    assert peak == 2
+
+
+@pytest.mark.usefixtures("restore_hash_concurrency")
+def test_set_hash_concurrency() -> None:
+    passwords.set_hash_concurrency(7)
+    assert passwords.hash_concurrency() == 7
+
+    with pytest.raises(ValueError, match="at least 1"):
+        passwords.set_hash_concurrency(0)
+    assert passwords.hash_concurrency() == 7
+
+
+def test_default_hash_concurrency_is_four() -> None:
+    assert passwords.DEFAULT_HASH_CONCURRENCY == 4
+    assert Settings().password_hash_concurrency == 4
+
+
+@pytest.mark.usefixtures("restore_hash_concurrency")
+def test_create_app_applies_the_hash_concurrency_setting() -> None:
+    create_app(Settings(env="test", password_hash_concurrency=3))
+
+    assert passwords.hash_concurrency() == 3
 
 
 # --- tokens and CSRF -------------------------------------------------------------

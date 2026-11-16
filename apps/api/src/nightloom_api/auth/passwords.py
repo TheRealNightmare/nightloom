@@ -1,7 +1,17 @@
-"""Password hashing (Argon2id) and the password policy."""
+"""Password hashing (Argon2id) and the password policy.
+
+Argon2 is deliberately slow (about a tenth of a second of CPU per hash), so
+request handlers must use the ``*_async`` variants: they run the hash in a
+worker thread instead of on the event loop, at most
+:data:`DEFAULT_HASH_CONCURRENCY` (``NIGHTLOOM_PASSWORD_HASH_CONCURRENCY``) at a
+time, so a flood of sign-ins can neither freeze other requests nor take every
+worker thread and CPU core. The synchronous functions remain for the CLI.
+"""
 
 from functools import lru_cache
 
+import anyio
+import anyio.to_thread
 from pwdlib import PasswordHash
 from pwdlib.hashers.argon2 import Argon2Hasher
 
@@ -13,6 +23,22 @@ MIN_LOCAL_PART_TO_CHECK = 3
 
 # Argon2id with argon2-cffi's recommended parameters (RFC 9106 low-memory profile).
 _hasher = PasswordHash((Argon2Hasher(),))
+
+DEFAULT_HASH_CONCURRENCY = 4
+# Shared by every request; sized from the settings by :func:`set_hash_concurrency`.
+_hash_limiter = anyio.CapacityLimiter(DEFAULT_HASH_CONCURRENCY)
+
+
+def set_hash_concurrency(limit: int) -> None:
+    """Allow at most ``limit`` password hashes to run at the same time."""
+    if limit < 1:
+        raise ValueError("password hash concurrency must be at least 1")
+    _hash_limiter.total_tokens = limit
+
+
+def hash_concurrency() -> int:
+    """How many password hashes may run at the same time."""
+    return int(_hash_limiter.total_tokens)
 
 
 class PasswordPolicyError(ValueError):
@@ -68,3 +94,20 @@ def dummy_verify(password: str) -> None:
     password" and reveal which emails have accounts.
     """
     _hasher.verify(password, _dummy_hash())
+
+
+async def hash_password_async(password: str) -> str:
+    """:func:`hash_password` in a worker thread, bounded by the hash limiter."""
+    return await anyio.to_thread.run_sync(hash_password, password, limiter=_hash_limiter)
+
+
+async def verify_password_async(password: str, password_hash: str) -> tuple[bool, str | None]:
+    """:func:`verify_password` in a worker thread, bounded by the hash limiter."""
+    return await anyio.to_thread.run_sync(
+        verify_password, password, password_hash, limiter=_hash_limiter
+    )
+
+
+async def dummy_verify_async(password: str) -> None:
+    """:func:`dummy_verify` in a worker thread, bounded by the hash limiter."""
+    await anyio.to_thread.run_sync(dummy_verify, password, limiter=_hash_limiter)

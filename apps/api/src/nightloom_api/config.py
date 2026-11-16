@@ -68,6 +68,10 @@ class Settings(BaseSettings):
     # Upper bound for each readiness check (seconds).
     dependency_timeout_seconds: float = Field(default=2.0, gt=0)
 
+    # Password hashes (Argon2id, ~0.1 s of CPU each) allowed to run at the same
+    # time; further sign-ins wait their turn without blocking other requests.
+    password_hash_concurrency: int = Field(default=4, ge=1)
+
     @field_validator("log_level", mode="before")
     @classmethod
     def _upper_log_level(cls, value: object) -> object:

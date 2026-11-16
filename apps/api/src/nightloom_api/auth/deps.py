@@ -20,7 +20,11 @@ FORBIDDEN = "You do not have permission to do this."
 
 
 def client_ip(request: Request) -> str | None:
-    """The peer address of the request (the proxy's address when behind one)."""
+    """The client's address.
+
+    Behind a trusted reverse proxy (uvicorn's ``FORWARDED_ALLOW_IPS``) this is
+    taken from ``X-Forwarded-For``; otherwise it is the TCP peer.
+    """
     return request.client.host if request.client else None
 
 

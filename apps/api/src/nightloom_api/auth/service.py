@@ -136,11 +136,11 @@ async def login(
 
     user = await _get_user_by_email(db, email)
     if user is None:
-        passwords.dummy_verify(password)
+        await passwords.dummy_verify_async(password)
         await _record_failure(limiter, email, ip)
         raise InvalidCredentialsError
 
-    valid, new_hash = passwords.verify_password(password, user.password_hash)
+    valid, new_hash = await passwords.verify_password_async(password, user.password_hash)
     if not valid or not user.is_active:
         await _record_failure(limiter, email, ip)
         raise InvalidCredentialsError
@@ -176,7 +176,7 @@ async def change_password(
     await _check_limit(limiter, user.email, ip)
     valid = (
         len(current_password) <= MAX_LOGIN_PASSWORD_LENGTH
-        and (passwords.verify_password(current_password, user.password_hash)[0])
+        and (await passwords.verify_password_async(current_password, user.password_hash))[0]
     )
     if not valid:
         await _record_failure(limiter, user.email, ip)
@@ -186,7 +186,7 @@ async def change_password(
     if new_password == current_password:
         raise PasswordPolicyError("New password must differ from the current one.")
 
-    user.password_hash = passwords.hash_password(new_password)
+    user.password_hash = await passwords.hash_password_async(new_password)
     revoked = await sessions.delete_user_sessions(db, user.id, keep=ctx.session.id)
     await db.commit()
     return revoked
@@ -205,7 +205,7 @@ async def create_user(
         email=email,
         display_name=display_name.strip(),
         role=role,
-        password_hash=passwords.hash_password(password),
+        password_hash=await passwords.hash_password_async(password),
         is_active=True,
     )
     db.add(user)

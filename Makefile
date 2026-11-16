@@ -15,7 +15,8 @@ STACK_ENV = set -a && . ./$(ENV_FILE) && set +a && \
 	NIGHTLOOM_NEO4J_URI="bolt://127.0.0.1:$${NEO4J_BOLT_HOST_PORT:-7687}" \
 	NIGHTLOOM_VALKEY_URL="redis://:$${VALKEY_PASSWORD}@127.0.0.1:$${VALKEY_HOST_PORT:-6379}/0" \
 	NIGHTLOOM_S3_ENDPOINT="http://127.0.0.1:$${S3_HOST_PORT:-8333}" \
-	NIGHTLOOM_TEST_API_URL="http://127.0.0.1:$${API_HOST_PORT:-8000}"
+	NIGHTLOOM_TEST_API_URL="http://127.0.0.1:$${API_HOST_PORT:-8000}" \
+	NIGHTLOOM_TEST_WEB_URL="http://127.0.0.1:$${WEB_HOST_PORT:-8080}"
 
 # Shell prefix for `make test`: points the database-backed tests at a separate
 # `nightloom_test` database and Valkey database 15 on the published ports, so

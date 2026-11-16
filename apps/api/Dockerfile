@@ -58,4 +58,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=4)"]
 
 # 0.0.0.0 is the container's own interface; Compose publishes it on 127.0.0.1.
-CMD ["uvicorn", "nightloom_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# --proxy-headers (uvicorn's default, spelled out) honours X-Forwarded-For and
+# X-Forwarded-Proto only from the addresses in FORWARDED_ALLOW_IPS (default
+# 127.0.0.1); Compose sets it to the `web` proxy's fixed address.
+CMD ["uvicorn", "nightloom_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]

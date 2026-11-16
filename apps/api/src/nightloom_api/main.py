@@ -9,6 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from nightloom_api import __version__
+from nightloom_api.auth import passwords
 from nightloom_api.config import Settings, get_settings
 from nightloom_api.infra import create_infra
 from nightloom_api.logging import configure_logging
@@ -23,6 +24,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     """
     resolved = settings if settings is not None else get_settings()
     configure_logging(resolved.log_level)
+    passwords.set_hash_concurrency(resolved.password_hash_concurrency)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:

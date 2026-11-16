@@ -1,6 +1,9 @@
 """Sign-in, sessions, CSRF, rate limiting and password changes against real services."""
 
+import asyncio
 import hashlib
+import itertools
+import time
 from collections.abc import Callable, Coroutine
 from typing import Any
 
@@ -471,3 +474,47 @@ async def test_sessions_are_deleted_with_their_user(
 
     async with infra.sessionmaker() as db:
         assert await db.scalar(select(func.count()).select_from(Session)) == 0
+
+
+# --- the event loop stays responsive during sign-ins ------------------------------
+
+HEARTBEAT_INTERVAL = 0.005
+MAX_HEARTBEAT_GAP = 0.060
+
+
+async def test_failed_logins_do_not_block_the_event_loop(
+    new_client: ClientFactory, make_user: UserFactory
+) -> None:
+    """Argon2 runs off the event loop: other work keeps its 5 ms rhythm during 8 sign-ins."""
+    await make_user()
+    beats: list[float] = []
+    stop = asyncio.Event()
+
+    async def heartbeat() -> None:
+        # Beat once more after `stop` is set: if the loop was blocked until the
+        # end, that last beat is what measures the stall.
+        while True:
+            beats.append(time.perf_counter())
+            if stop.is_set():
+                return
+            await asyncio.sleep(HEARTBEAT_INTERVAL)
+
+    # 4 wrong passwords for a real account (verify) and 4 unknown emails (dummy
+    # verify): both hashing paths, and below the per-email limit of 5.
+    attempts = [(ADMIN_EMAIL, f"wrong password {n}") for n in range(4)]
+    attempts += [(f"nobody{n}@example.org", "some password") for n in range(4)]
+
+    beat_task = asyncio.create_task(heartbeat())
+    await asyncio.sleep(HEARTBEAT_INTERVAL * 2)
+    try:
+        responses = await asyncio.gather(
+            *(login(new_client(), email=email, password=pw) for email, pw in attempts)
+        )
+    finally:
+        stop.set()
+        await beat_task
+
+    assert [response.status_code for response in responses] == [401] * len(attempts)
+    max_gap = max(later - earlier for earlier, later in itertools.pairwise(beats))
+    print(f"heartbeats={len(beats)} max_gap_ms={max_gap * 1000:.1f}")
+    assert max_gap < MAX_HEARTBEAT_GAP, f"event loop blocked for {max_gap * 1000:.0f} ms"
