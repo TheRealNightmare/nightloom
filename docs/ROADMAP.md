@@ -13,7 +13,8 @@ Milestones are ordered but not dated. Checked items are done; everything else is
 - [x] Auth backend (sessions, CSRF, roles, user management, sign-in rate limits)
 - [x] Web sign-in (login screen, session handling, password change)
 - [ ] User management UI
-- [ ] Cases with stated purpose + audit log
+- [x] Audit log (append-only, hash-chained; sign-in and user-management events)
+- [ ] Cases with stated purpose
 - [ ] Entity schema with provenance
 - [ ] Shuttle SDK + Celery worker + first DNS Shuttle
 

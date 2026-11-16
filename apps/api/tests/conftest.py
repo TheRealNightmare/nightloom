@@ -14,6 +14,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
+from nightloom_api.audit.service import Actor
 from nightloom_api.auth import clock, service
 from nightloom_api.auth.models import Role, User
 from nightloom_api.config import Settings, get_settings
@@ -22,6 +23,7 @@ from nightloom_api.infra.errors import describe_error
 from nightloom_api.main import create_app
 from support import (
     ADMIN_EMAIL,
+    APPEND_ONLY_TRIGGER,
     PASSWORD,
     TEST_DATABASE_URL,
     TEST_VALKEY_URL,
@@ -187,7 +189,11 @@ def db_settings(migrated_database: str) -> Settings:
 
 async def _reset_state(infra: Infra) -> None:
     async with infra.engine.begin() as conn:
-        await conn.execute(text("TRUNCATE users, sessions CASCADE"))
+        # audit_events is append-only; as its owner the test role may switch
+        # the trigger off for the duration of this transaction.
+        await conn.execute(text(f"ALTER TABLE audit_events DISABLE TRIGGER {APPEND_ONLY_TRIGGER}"))
+        await conn.execute(text("TRUNCATE audit_events, users, sessions RESTART IDENTITY CASCADE"))
+        await conn.execute(text(f"ALTER TABLE audit_events ENABLE TRIGGER {APPEND_ONLY_TRIGGER}"))
     await infra.cache.flushdb()
 
 
@@ -254,7 +260,12 @@ def make_user(infra: Infra) -> UserFactory:
     ) -> User:
         async with infra.sessionmaker() as db:
             user = await service.create_user(
-                db, email=email, display_name=display_name, role=role, password=password
+                db,
+                email=email,
+                display_name=display_name,
+                role=role,
+                password=password,
+                actor=Actor.system("test"),
             )
             if not is_active:
                 user.is_active = False

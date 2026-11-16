@@ -17,6 +17,7 @@ import sys
 from collections.abc import Callable, Sequence
 from typing import TextIO
 
+from nightloom_api.audit.service import Actor
 from nightloom_api.auth import service
 from nightloom_api.auth.models import Role
 from nightloom_api.auth.schemas import UserCreate
@@ -85,6 +86,7 @@ async def create_admin(settings: Settings, *, email: str, display_name: str, pas
                 display_name=body.display_name,
                 role=Role.ADMIN,
                 password=password,
+                actor=Actor.system("cli"),
             )
     except (service.EmailTakenError, service.PasswordPolicyError) as exc:
         raise CommandError(str(exc)) from exc

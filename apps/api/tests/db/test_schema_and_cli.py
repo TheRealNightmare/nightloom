@@ -29,13 +29,23 @@ async def test_migration_downgrades_and_upgrades(infra: Infra) -> None:
 
     call_in_thread(lambda: command.downgrade(config, "0001_baseline"))
     async with infra.engine.connect() as conn:
-        assert not {"users", "sessions"} & await conn.run_sync(table_names)
+        assert not {"users", "sessions", "audit_events"} & await conn.run_sync(table_names)
         # The enum type is dropped too, or the next upgrade would fail.
         assert await conn.scalar(text("SELECT 1 FROM pg_type WHERE typname = 'user_role'")) is None
+        # So is the append-only trigger function.
+        assert (
+            await conn.scalar(
+                text("SELECT 1 FROM pg_proc WHERE proname = 'audit_events_append_only'")
+            )
+            is None
+        )
 
     call_in_thread(lambda: command.upgrade(config, "head"))
     async with infra.engine.connect() as conn:
-        assert {"users", "sessions"} <= await conn.run_sync(table_names)
+        assert {"users", "sessions", "audit_events"} <= await conn.run_sync(table_names)
+        assert await conn.scalar(
+            text("SELECT 1 FROM pg_trigger WHERE tgname = 'audit_events_append_only'")
+        )
 
 
 def test_models_match_the_migrations(migrated_database: str) -> None:

@@ -13,7 +13,8 @@ from nightloom_api.auth import passwords
 from nightloom_api.config import Settings, get_settings
 from nightloom_api.infra import create_infra
 from nightloom_api.logging import configure_logging
-from nightloom_api.routers import auth, health, readiness, users
+from nightloom_api.request_id import RequestIdMiddleware
+from nightloom_api.routers import audit, auth, health, readiness, users
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -49,11 +50,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.dependency_overrides[get_settings] = lambda: resolved
 
     app.add_exception_handler(RequestValidationError, _validation_error_handler)
+    # Outermost of the app's own middleware: the ID is set before any handler,
+    # dependency or log record needs it, and every response carries it.
+    app.add_middleware(RequestIdMiddleware)
 
     app.include_router(health.router, prefix=resolved.api_prefix)
     app.include_router(readiness.router, prefix=resolved.api_prefix)
     app.include_router(auth.router, prefix=resolved.api_prefix)
     app.include_router(users.router, prefix=resolved.api_prefix)
+    app.include_router(audit.router, prefix=resolved.api_prefix)
     return app
 
 

@@ -465,9 +465,14 @@ async def test_wrong_current_passwords_are_rate_limited(
 async def test_sessions_are_deleted_with_their_user(
     db_client: AsyncClient, make_user: UserFactory, infra: Infra
 ) -> None:
+    # A session created directly: signing in would also write an audit event,
+    # and users with audit history cannot be deleted (see test_audit.py).
     user = await make_user()
-    await login(db_client)
     async with infra.sessionmaker() as db:
+        await sessions.create_session(db, user, ip=None, user_agent=None)
+        await db.commit()
+    async with infra.sessionmaker() as db:
+        assert await db.scalar(select(func.count()).select_from(Session)) == 1
         stored = await db.get(User, user.id)
         await db.delete(stored)
         await db.commit()

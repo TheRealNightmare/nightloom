@@ -30,7 +30,7 @@ Do not use Nightloom for:
 | Guardrail | What it means |
 | --- | --- |
 | Stated purpose | Every case requires a written purpose before any collection starts. |
-| Audit log | Every action — searches, Shuttle runs, exports, deletions — is recorded. |
+| Audit log | Every action — searches, Shuttle runs, exports, deletions — is recorded in a [full audit log](docs/ARCHITECTURE.md#audit-log) that is append-only and tamper-evident. Sign-ins, user management and refused requests are recorded today; case actions will be recorded as cases are built. |
 | Gated person-related Shuttles | Shuttles that touch people are opt-in per case and **never** run during auto-pivot. |
 | Polite collection | Respects `robots.txt` and per-source rate limits. |
 | Verified ownership for active scans | Active (non-passive) Shuttles run only against assets whose ownership has been verified. |

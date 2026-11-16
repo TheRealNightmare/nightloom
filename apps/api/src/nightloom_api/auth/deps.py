@@ -5,14 +5,16 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
 from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from nightloom_api.audit import service as audit
+from nightloom_api.audit.actions import AuditAction, AuditOutcome
 from nightloom_api.auth import sessions
 from nightloom_api.auth.models import Role, User
 from nightloom_api.auth.ratelimit import LoginRateLimiter
 from nightloom_api.auth.sessions import AuthContext
 from nightloom_api.infra.cache import get_cache
-from nightloom_api.infra.db import get_session
+from nightloom_api.infra.db import get_session, get_sessionmaker
 
 NOT_AUTHENTICATED = "Not authenticated."
 CSRF_FAILED = "CSRF token missing or invalid."
@@ -69,13 +71,52 @@ def check_role(user: User, roles: frozenset[Role]) -> User:
     return user
 
 
-def require_role(*roles: Role) -> Callable[[User], Awaitable[User]]:
-    """Dependency factory: the signed-in user, if they have one of ``roles`` (else 403)."""
+def route_path(request: Request) -> str:
+    """The matched route's path template (``/api/v1/users/{user_id}``), else the URL path.
+
+    FastAPI keeps included routers nested, so the matched route knows only its
+    own part of the path (``/users/{user_id}``); the prefixes are whatever
+    precedes that part, filled in, in the actual path.
+    """
+    path = request.url.path
+    template = getattr(request.scope.get("route"), "path_format", None)
+    if not isinstance(template, str):
+        return path
+    try:
+        filled = template.format(**{key: str(value) for key, value in request.path_params.items()})
+    except (KeyError, IndexError, ValueError):
+        return path
+    return path[: -len(filled)] + template if path.endswith(filled) else path
+
+
+def require_role(*roles: Role) -> Callable[..., Awaitable[User]]:
+    """Dependency factory: the signed-in user, if they have one of ``roles``.
+
+    Otherwise 403, and the refusal is recorded as ``authz.denied`` in a
+    transaction of its own.
+    """
     if not roles:
         raise ValueError("require_role() needs at least one role")
     allowed = frozenset(roles)
 
-    async def dependency(user: Annotated[User, Depends(current_user)]) -> User:
+    async def dependency(
+        request: Request,
+        user: Annotated[User, Depends(current_user)],
+        make_session: Annotated[async_sessionmaker[AsyncSession], Depends(get_sessionmaker)],
+    ) -> User:
+        if user.role not in allowed:
+            await audit.record_standalone(
+                make_session,
+                action=AuditAction.AUTHZ_DENIED,
+                outcome=AuditOutcome.DENIED,
+                actor=audit.Actor.for_user(user, client_ip(request)),
+                details={
+                    "method": request.method,
+                    "path": route_path(request),
+                    "role": user.role.value,
+                    "required_roles": sorted(role.value for role in allowed),
+                },
+            )
         return check_role(user, allowed)
 
     return dependency

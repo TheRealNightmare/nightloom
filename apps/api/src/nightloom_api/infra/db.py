@@ -1,6 +1,7 @@
 """PostgreSQL access through async SQLAlchemy (asyncpg driver)."""
 
 from collections.abc import AsyncIterator
+from typing import cast
 
 from fastapi import Request
 from sqlalchemy import MetaData, text
@@ -52,6 +53,11 @@ async def ping(engine: AsyncEngine) -> None:
     """Run ``SELECT 1``; raises if PostgreSQL is unreachable."""
     async with engine.connect() as conn:
         await conn.execute(text("SELECT 1"))
+
+
+def get_sessionmaker(request: Request) -> async_sessionmaker[AsyncSession]:
+    """FastAPI dependency: the session factory, for work in a transaction of its own."""
+    return cast(async_sessionmaker[AsyncSession], request.app.state.infra.sessionmaker)
 
 
 async def get_session(request: Request) -> AsyncIterator[AsyncSession]:

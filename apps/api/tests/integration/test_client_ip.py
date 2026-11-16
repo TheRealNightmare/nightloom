@@ -9,13 +9,13 @@ from PostgreSQL.
 import hashlib
 import ipaddress
 import os
-import uuid
 from collections.abc import AsyncIterator
 
 import httpx
 import pytest
 from sqlalchemy import delete, select
 
+from nightloom_api.audit.service import Actor
 from nightloom_api.auth import service, sessions
 from nightloom_api.auth.models import Role, Session, User
 from nightloom_api.config import Settings
@@ -28,6 +28,7 @@ WEB_URL = os.environ.get("NIGHTLOOM_TEST_WEB_URL", "http://127.0.0.1:8080")
 WEB_IP = os.environ.get("NIGHTLOOM_WEB_IP", "172.30.0.10")
 SPOOFED_IP = "203.0.113.99"
 PASSWORD = "integration test password"
+USER_EMAIL = "client-ip-test@example.org"
 
 
 @pytest.fixture
@@ -41,17 +42,32 @@ async def infra() -> AsyncIterator[Infra]:
 
 @pytest.fixture
 async def user_email(infra: Infra) -> AsyncIterator[str]:
-    """A throwaway user in the stack's database, deleted (with its sessions) afterwards."""
-    email = f"client-ip-{uuid.uuid4().hex[:12]}@example.org"
+    """A viewer in the stack's database, created on the first run and reused after that.
+
+    Users with audit history cannot be deleted (the audit log is append-only),
+    so the user stays; its sessions are deleted afterwards.
+    """
     async with infra.sessionmaker() as db:
-        await service.create_user(
-            db, email=email, display_name="Client IP test", role=Role.VIEWER, password=PASSWORD
-        )
+        user = (await db.execute(select(User).where(User.email == USER_EMAIL))).scalar_one_or_none()
+        if user is None:
+            await service.create_user(
+                db,
+                email=USER_EMAIL,
+                display_name="Client IP test",
+                role=Role.VIEWER,
+                password=PASSWORD,
+                actor=Actor.system("integration-test"),
+            )
     try:
-        yield email
+        yield USER_EMAIL
     finally:
         async with infra.sessionmaker() as db:
-            await db.execute(delete(User).where(User.email == email))
+            await db.execute(
+                delete(Session).where(
+                    Session.user_id
+                    == select(User.id).where(User.email == USER_EMAIL).scalar_subquery()
+                )
+            )
             await db.commit()
 
 

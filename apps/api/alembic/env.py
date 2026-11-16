@@ -8,7 +8,9 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
-import nightloom_api.auth.models  # noqa: F401 - registers users and sessions
+# Registers audit_events, users and sessions on Base.metadata.
+import nightloom_api.audit.models
+import nightloom_api.auth.models  # noqa: F401
 from nightloom_api.config import get_settings
 from nightloom_api.infra.db import Base
 
