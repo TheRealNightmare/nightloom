@@ -5,7 +5,7 @@ Milestones are ordered but not dated. Checked items are done; everything else is
 ## M0 — Foundation
 
 - [x] Repository foundation (docs, license, templates, repo hygiene)
-- [ ] API skeleton (FastAPI)
+- [x] API skeleton (FastAPI)
 - [ ] CI (lint, tests, DCO check)
 - [ ] Docker Compose infrastructure (PostgreSQL, Neo4j, Redis, MinIO)
 - [ ] Database wiring

@@ -1,0 +1,17 @@
+[project]
+name = "nightloom-api"
+version = "0.1.0.dev0"
+description = "Nightloom HTTP API (FastAPI)."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+dependencies = [
+    "fastapi>=0.120",
+    "pydantic>=2",
+    "pydantic-settings>=2.11",
+    "uvicorn[standard]>=0.38",
+]
+
+[build-system]
+requires = ["uv_build>=0.8.14,<0.9.0"]
+build-backend = "uv_build"

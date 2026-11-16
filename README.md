@@ -8,6 +8,18 @@ Nightloom is an open-source, self-hosted OSINT tool that collects **public** inf
 
 > 🚧 **Status: early development.** Nothing below is implemented yet. This README describes what is **planned**. See the [roadmap](docs/ROADMAP.md) for progress.
 
+## Quick start (developers)
+
+Only an API skeleton exists so far. With [uv](https://docs.astral.sh/uv/) and `make` installed:
+
+```sh
+make install   # install dependencies
+make check     # lint, type-check and test
+make api       # run the API at http://127.0.0.1:8000/api/docs
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md#development-setup) for the full development setup.
+
 ## Planned features
 
 - **Graph investigations** — entities and relationships stored in Neo4j and explored in a React + Sigma.js graph UI.

@@ -1,0 +1,74 @@
+# Nightloom uv workspace root.
+#
+# This is a *virtual* workspace root: it has no [project] table and is never
+# built or installed. It only holds the member list, shared dev tooling and
+# tool configuration. Add new members (packages/sdk, apps/worker, shuttles/*)
+# to `members` below.
+
+[tool.uv.workspace]
+members = ["apps/api"]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28",
+    "mypy>=1.18",
+    "pre-commit>=4.3",
+    "pytest>=8.4",
+    "pytest-asyncio>=1.2",
+    "pytest-cov>=7.0",
+    "ruff>=0.17.5",
+]
+
+# --- ruff -------------------------------------------------------------------
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["apps/api/src", "apps/api/tests"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF", "N", "ASYNC", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+# `assert` is how pytest tests are written.
+"**/tests/**/*.py" = ["S101"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["nightloom_api"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+# --- mypy -------------------------------------------------------------------
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+files = ["apps/api/src", "apps/api/tests"]
+mypy_path = ["apps/api/src"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+# --- pytest / coverage ------------------------------------------------------
+
+[tool.pytest.ini_options]
+testpaths = ["apps/api/tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = [
+    "--import-mode=importlib",
+    "--strict-markers",
+    "--cov=nightloom_api",
+    "--cov-report=term-missing",
+    "--cov-fail-under=90",
+]
+
+[tool.coverage.run]
+branch = true
+
+[tool.coverage.report]
+exclude_also = ['if __name__ == "__main__":']

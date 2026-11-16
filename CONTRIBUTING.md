@@ -59,9 +59,39 @@ Forgot to sign off? Amend the last commit with `git commit --amend -s --no-edit`
 
 ## Development setup
 
-Coming in the next releases. The planned toolchain is:
+The Python code lives in a [uv](https://docs.astral.sh/uv/) workspace (Python 3.12). You need `uv` and `make`; uv downloads the right Python version for you.
 
-- [uv](https://docs.astral.sh/uv/) for Python (3.12+) dependencies
+1. Install uv by following the [uv installation guide](https://docs.astral.sh/uv/getting-started/installation/).
+2. Install the workspace packages and dev tools:
+
+   ```sh
+   make install
+   ```
+
+3. Run the linters, type checker and tests (the same checks a pull request must pass):
+
+   ```sh
+   make check
+   ```
+
+4. Start the API dev server (auto-reloads on changes):
+
+   ```sh
+   make api
+   ```
+
+   Then open the interactive API docs at <http://127.0.0.1:8000/api/docs>.
+
+5. Install the Git pre-commit hook so formatting, linting and type checks run before each commit:
+
+   ```sh
+   uv run pre-commit install
+   ```
+
+Run `make` (or `make help`) to list all targets; `make fmt` formats code and applies lint fixes.
+
+Coming later:
+
 - [pnpm](https://pnpm.io/) for the web frontend
 - [Docker Compose](https://docs.docker.com/compose/) for Neo4j, PostgreSQL, Redis and MinIO
 
