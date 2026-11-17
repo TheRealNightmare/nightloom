@@ -5,10 +5,16 @@ import { describe, expect, it, vi } from "vitest";
 import { sampleGraph } from "../demo/sampleGraph";
 import { buildGraph } from "../graph/buildGraph";
 import { connectionsOf, countByType } from "../graph/view";
-import { SidePanel } from "./SidePanel";
+import { SidePanel, TypeSummary } from "./SidePanel";
 
 const graph = buildGraph(sampleGraph, { layoutIterations: 0 });
-const summary = { nodes: graph.order, edges: graph.size, types: countByType(sampleGraph.nodes) };
+const types = countByType(sampleGraph.nodes);
+const overview = (
+  <>
+    <h2>Overview</h2>
+    <TypeSummary types={types} />
+  </>
+);
 
 function renderPanel(selectedId: string | null) {
   const onSelect = vi.fn();
@@ -18,7 +24,7 @@ function renderPanel(selectedId: string | null) {
     <SidePanel
       selected={selected}
       connections={selectedId === null ? [] : connectionsOf(graph, selectedId)}
-      summary={summary}
+      overview={overview}
       onSelect={onSelect}
       onClear={onClear}
     />,
@@ -27,12 +33,44 @@ function renderPanel(selectedId: string | null) {
 }
 
 describe("SidePanel", () => {
-  it("shows an overview of the demo when nothing is selected", () => {
+  it("shows the overview it is given when nothing is selected", () => {
     renderPanel(null);
     const panel = screen.getByRole("complementary", { name: "Details" });
-    expect(within(panel).getByRole("heading", { name: "Demo investigation" })).toBeVisible();
-    expect(panel).toHaveTextContent(`${graph.order} entities · ${graph.size} relationships`);
-    expect(panel).toHaveTextContent("Subdomain");
+    expect(within(panel).getByRole("heading", { name: "Overview" })).toBeVisible();
+    expect(panel).toHaveTextContent("IP address");
+  });
+
+  it("renders custom entity details instead of the default ones", () => {
+    const selected = graph.getNodeAttribute("asn:64500", "entity");
+    render(
+      <SidePanel
+        selected={selected}
+        connections={[]}
+        overview={null}
+        renderEntity={(entity) => <p>Custom {entity.label}</p>}
+        onSelect={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Custom AS64500")).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Provenance" })).toBeNull();
+  });
+
+  it("joins list properties", () => {
+    const selected = {
+      ...graph.getNodeAttribute("asn:64500", "entity"),
+      properties: { data_classes: ["email", "password"] },
+    };
+    render(
+      <SidePanel
+        selected={selected}
+        connections={[]}
+        overview={null}
+        onSelect={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("email, password")).toBeVisible();
   });
 
   it("shows the selected entity with its properties and provenance", () => {

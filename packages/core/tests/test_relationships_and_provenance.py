@@ -7,9 +7,11 @@ from pydantic import ValidationError
 
 from nightloom_core.entities import EntityType
 from nightloom_core.provenance import (
+    CREDIBILITY_SCALE,
     MANUAL_CONFIDENCE,
     MANUAL_CREDIBILITY,
     MANUAL_RELIABILITY,
+    RELIABILITY_SCALE,
     Observation,
     manual_observation,
 )
@@ -170,3 +172,12 @@ VALID = {
 def test_invalid_observation(field: str, value: object) -> None:
     with pytest.raises(ValidationError):
         Observation.model_validate({**VALID, field: value})
+
+
+def test_admiralty_scales_cover_every_grade() -> None:
+    assert list(RELIABILITY_SCALE) == ["A", "B", "C", "D", "E", "F"]
+    assert list(CREDIBILITY_SCALE) == [1, 2, 3, 4, 5, 6]
+    assert MANUAL_RELIABILITY in RELIABILITY_SCALE
+    assert MANUAL_CREDIBILITY in CREDIBILITY_SCALE
+    for scale in (RELIABILITY_SCALE, CREDIBILITY_SCALE):
+        assert all(text and text[0].isupper() for text in scale.values())

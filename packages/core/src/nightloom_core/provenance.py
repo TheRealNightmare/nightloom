@@ -28,6 +28,24 @@ MANUAL_RELIABILITY: Reliability = "B"
 MANUAL_CREDIBILITY = 2
 MANUAL_CONFIDENCE = 0.8
 
+# What each grade of the two Admiralty scales means.
+RELIABILITY_SCALE: dict[Reliability, str] = {
+    "A": "Completely reliable",
+    "B": "Usually reliable",
+    "C": "Fairly reliable",
+    "D": "Not usually reliable",
+    "E": "Unreliable",
+    "F": "Reliability cannot be judged",
+}
+CREDIBILITY_SCALE: dict[int, str] = {
+    1: "Confirmed by other sources",
+    2: "Probably true",
+    3: "Possibly true",
+    4: "Doubtful",
+    5: "Improbable",
+    6: "Truth cannot be judged",
+}
+
 
 class Observation(BaseModel):
     """One sighting of an entity or relationship."""
@@ -76,10 +94,13 @@ def manual_observation(observed_at: datetime, note: str | None = None) -> Observ
 
 
 __all__ = [
+    "CREDIBILITY_SCALE",
     "MANUAL_CONFIDENCE",
     "MANUAL_CREDIBILITY",
     "MANUAL_RELIABILITY",
     "MANUAL_SOURCE",
+    "NOTE_MAX_LENGTH",
+    "RELIABILITY_SCALE",
     "Observation",
     "Reliability",
     "manual_observation",

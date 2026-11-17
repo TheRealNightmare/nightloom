@@ -1,81 +1,40 @@
-import { useCallback, useMemo, useRef } from "react";
-
-import { Legend } from "../components/Legend";
-import { SearchBox } from "../components/SearchBox";
-import { SidePanel } from "../components/SidePanel";
+import type { GraphSummary } from "../components/SidePanel";
+import { TypeSummary } from "../components/SidePanel";
 import type { InvestigationGraph } from "../domain/entities";
-import { buildGraph } from "../graph/buildGraph";
-import { GraphCanvas, type GraphCanvasHandle } from "../graph/GraphCanvas";
-import { connectionsOf, countByType } from "../graph/view";
-import { useGraphExplorer } from "../hooks/useGraphExplorer";
+import { GraphView } from "../graph/GraphView";
 import { sampleGraph } from "./sampleGraph";
 
 export interface DemoPageProps {
   data?: InvestigationGraph;
 }
 
+function DemoOverview({ summary }: { summary: GraphSummary }) {
+  return (
+    <>
+      <h2 className="panel__title">Demo investigation</h2>
+      <p className="panel__text">
+        A fictional attack-surface map of <code>example.org</code>. Every name, address and AS
+        number is reserved for documentation, so nothing here points at a real target.
+      </p>
+      <p className="panel__text">
+        {summary.nodes} entities · {summary.edges} relationships
+      </p>
+      <TypeSummary types={summary.types} />
+      <p className="panel__hint">
+        Hover a node to trace its threads, click it to see its details and provenance, or use the
+        search box.
+      </p>
+    </>
+  );
+}
+
+const overview = (summary: GraphSummary) => <DemoOverview summary={summary} />;
+
 /** The built-in demo investigation (fictional data), at `/demo`. Never shown inside a case. */
 export function DemoPage({ data = sampleGraph }: DemoPageProps) {
-  const graph = useMemo(() => buildGraph(data), [data]);
-  const types = useMemo(() => countByType(data.nodes), [data]);
-  const explorer = useGraphExplorer(graph);
-  const canvasRef = useRef<GraphCanvasHandle>(null);
-
-  const { view, selectNode, resetView } = explorer;
-  const selected =
-    view.selectedNode !== null && graph.hasNode(view.selectedNode)
-      ? graph.getNodeAttribute(view.selectedNode, "entity")
-      : null;
-  const connections = useMemo(
-    () => (view.selectedNode === null ? [] : connectionsOf(graph, view.selectedNode)),
-    [graph, view.selectedNode],
-  );
-
-  const focusNode = useCallback(
-    (node: string) => {
-      selectNode(node);
-      canvasRef.current?.focusNode(node);
-    },
-    [selectNode],
-  );
-
-  const onResetView = useCallback(() => {
-    resetView();
-    canvasRef.current?.resetCamera();
-  }, [resetView]);
-
   return (
-    <main className="workspace">
-      <section className="stage" aria-label="Graph">
-        <GraphCanvas
-          ref={canvasRef}
-          graph={graph}
-          view={view}
-          onHoverNode={explorer.hoverNode}
-          onSelectNode={selectNode}
-        />
-        <div className="toolbar">
-          <SearchBox nodes={data.nodes} hiddenTypes={view.hiddenTypes} onPick={focusNode} />
-          <button type="button" className="button" onClick={onResetView}>
-            Reset view
-          </button>
-        </div>
-        <Legend
-          types={types}
-          hiddenTypes={view.hiddenTypes}
-          onToggle={explorer.toggleEntityType}
-          onShowAll={explorer.showAllTypes}
-        />
-      </section>
-      <SidePanel
-        selected={selected}
-        connections={connections}
-        summary={{ nodes: graph.order, edges: graph.size, types }}
-        onSelect={focusNode}
-        onClear={() => {
-          selectNode(null);
-        }}
-      />
+    <main className="demo-page">
+      <GraphView data={data} overview={overview} />
     </main>
   );
 }

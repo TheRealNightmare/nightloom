@@ -7,8 +7,7 @@ import { sampleGraph } from "./sampleGraph";
 const ALLOWED_TYPES: ReadonlySet<EntityType> = new Set([
   "organization",
   "domain",
-  "subdomain",
-  "ip",
+  "ip_address",
   "asn",
   "netblock",
   "certificate",
@@ -71,7 +70,7 @@ describe("sampleGraph fixture", () => {
   });
 
   it("uses only example.org domains", () => {
-    for (const node of nodes.filter((n) => ["domain", "subdomain"].includes(n.type))) {
+    for (const node of nodes.filter((n) => n.type === "domain")) {
       expect(node.label === "example.org" || node.label.endsWith(".example.org")).toBe(true);
     }
     for (const node of nodes.filter((n) => n.type === "url")) {

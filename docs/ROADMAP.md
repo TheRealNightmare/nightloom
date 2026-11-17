@@ -17,6 +17,7 @@ Milestones are ordered but not dated. Checked items are done; everything else is
 - [x] Cases backend (stated purpose, legal basis, membership, audit)
 - [x] Cases UI
 - [x] Entity schema with provenance
+- [x] Case graph view (manual entities)
 - [ ] Shuttle SDK + Celery worker + first DNS Shuttle
 
 ## M1 — Infrastructure MVP

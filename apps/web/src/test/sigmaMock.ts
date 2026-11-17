@@ -23,6 +23,7 @@ export class FakeSigma {
   };
   readonly refresh = vi.fn(() => this);
   readonly kill = vi.fn();
+  readonly setSetting = vi.fn(() => this);
   readonly graph: { nodes: () => string[]; edges: () => string[] };
   readonly options: Options;
 

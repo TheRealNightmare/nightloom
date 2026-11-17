@@ -1,23 +1,90 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
-import { ENTITY_TYPE_INFO, type EntityNode, type Provenance } from "../domain/entities";
+import {
+  ENTITY_TYPE_INFO,
+  relationLabel,
+  type EntityNode,
+  type PropertyValue,
+  type Provenance,
+} from "../domain/entities";
 import { formatConfidence, formatTimestamp } from "../domain/format";
 import type { Connection, TypeCount } from "../graph/view";
+
+/** What the panel shows about the whole graph when nothing is selected. */
+export interface GraphSummary {
+  nodes: number;
+  edges: number;
+  types: readonly TypeCount[];
+}
 
 export interface SidePanelProps {
   selected: EntityNode | null;
   connections: readonly Connection[];
-  summary: { nodes: number; edges: number; types: readonly TypeCount[] };
+  /** Shown when nothing is selected. */
+  overview: ReactNode;
+  /** The selected entity's details; defaults to its id, properties and provenance. */
+  renderEntity?: (entity: EntityNode) => ReactNode;
   onSelect: (node: string) => void;
   onClear: () => void;
 }
 
-function TypeChip({ type }: { type: EntityNode["type"] }) {
+export function TypeChip({ type }: { type: EntityNode["type"] }) {
   const info = ENTITY_TYPE_INFO[type];
   return (
     <span className="type-chip" style={{ "--swatch": info.color } as CSSProperties}>
       <span className="swatch" aria-hidden="true" />
       {info.label}
+    </span>
+  );
+}
+
+export function TypeSummary({ types }: { types: GraphSummary["types"] }) {
+  return (
+    <ul className="type-summary">
+      {types.map(({ type, count }) => (
+        <li key={type}>
+          <TypeChip type={type} />
+          <span>{count}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function formatProperty(value: PropertyValue): string {
+  return Array.isArray(value) ? value.join(", ") : String(value);
+}
+
+export function PropertiesSection({
+  properties,
+}: {
+  properties: EntityNode["properties"] | undefined;
+}) {
+  if (!properties || Object.keys(properties).length === 0) return null;
+  return (
+    <section>
+      <h3 className="panel__section">Properties</h3>
+      <dl className="facts">
+        {Object.entries(properties).map(([key, value]) => (
+          <div key={key} className="facts__row">
+            <dt>{key.replaceAll("_", " ")}</dt>
+            <dd>{formatProperty(value)}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+export function Timestamp({ iso }: { iso: string }) {
+  return <time dateTime={iso}>{formatTimestamp(iso)}</time>;
+}
+
+export function Confidence({ value }: { value: number }) {
+  return (
+    <span className="confidence">
+      <meter min={0} max={1} value={value} aria-hidden="true" />
+      {formatConfidence(value)}
     </span>
   );
 }
@@ -34,60 +101,55 @@ function ProvenanceList({ provenance }: { provenance: Provenance }) {
       <div className="facts__row">
         <dt>First seen</dt>
         <dd>
-          <time dateTime={provenance.first_seen}>{formatTimestamp(provenance.first_seen)}</time>
+          <Timestamp iso={provenance.first_seen} />
         </dd>
       </div>
       <div className="facts__row">
         <dt>Last seen</dt>
         <dd>
-          <time dateTime={provenance.last_seen}>{formatTimestamp(provenance.last_seen)}</time>
+          <Timestamp iso={provenance.last_seen} />
         </dd>
       </div>
       <div className="facts__row">
         <dt>Confidence</dt>
         <dd>
-          <span className="confidence">
-            <meter min={0} max={1} value={provenance.confidence} aria-hidden="true" />
-            {formatConfidence(provenance.confidence)}
-          </span>
+          <Confidence value={provenance.confidence} />
         </dd>
       </div>
     </dl>
   );
 }
 
-function Overview({ summary }: { summary: SidePanelProps["summary"] }) {
+/** The default details: id, properties and provenance. */
+export function EntityBody({ entity }: { entity: EntityNode }) {
   return (
     <>
-      <h2 className="panel__title">Demo investigation</h2>
-      <p className="panel__text">
-        A fictional attack-surface map of <code>example.org</code>. Every name, address and AS
-        number is reserved for documentation, so nothing here points at a real target.
+      <p className="panel__id">
+        <code>{entity.id}</code>
       </p>
-      <p className="panel__text">
-        {summary.nodes} entities · {summary.edges} relationships
-      </p>
-      <ul className="type-summary">
-        {summary.types.map(({ type, count }) => (
-          <li key={type}>
-            <TypeChip type={type} />
-            <span>{count}</span>
-          </li>
-        ))}
-      </ul>
-      <p className="panel__hint">
-        Hover a node to trace its threads, click it to see its details and provenance, or use the
-        search box.
-      </p>
+      <PropertiesSection properties={entity.properties} />
+      <section>
+        <h3 className="panel__section">Provenance</h3>
+        <ProvenanceList provenance={entity} />
+      </section>
     </>
   );
 }
 
-export function SidePanel({ selected, connections, summary, onSelect, onClear }: SidePanelProps) {
+const defaultRenderEntity = (entity: EntityNode) => <EntityBody entity={entity} />;
+
+export function SidePanel({
+  selected,
+  connections,
+  overview,
+  renderEntity = defaultRenderEntity,
+  onSelect,
+  onClear,
+}: SidePanelProps) {
   return (
     <aside className="panel" aria-label="Details">
       {selected === null ? (
-        <Overview summary={summary} />
+        overview
       ) : (
         <article aria-labelledby="entity-title">
           <div className="panel__header">
@@ -99,28 +161,8 @@ export function SidePanel({ selected, connections, summary, onSelect, onClear }:
           <h2 id="entity-title" className="panel__title panel__title--entity">
             {selected.label}
           </h2>
-          <p className="panel__id">
-            <code>{selected.id}</code>
-          </p>
 
-          {selected.properties && Object.keys(selected.properties).length > 0 && (
-            <section>
-              <h3 className="panel__section">Properties</h3>
-              <dl className="facts">
-                {Object.entries(selected.properties).map(([key, value]) => (
-                  <div key={key} className="facts__row">
-                    <dt>{key.replaceAll("_", " ")}</dt>
-                    <dd>{String(value)}</dd>
-                  </div>
-                ))}
-              </dl>
-            </section>
-          )}
-
-          <section>
-            <h3 className="panel__section">Provenance</h3>
-            <ProvenanceList provenance={selected} />
-          </section>
+          {renderEntity(selected)}
 
           <section>
             <h3 className="panel__section">Connections ({connections.length})</h3>
@@ -128,7 +170,7 @@ export function SidePanel({ selected, connections, summary, onSelect, onClear }:
               {connections.map(({ edge, direction, other }) => (
                 <li key={edge.id}>
                   <span className="connections__relation">
-                    {direction === "out" ? "→" : "←"} {edge.relation.replaceAll("_", " ")}
+                    {direction === "out" ? "→" : "←"} {relationLabel(edge.relation)}
                   </span>
                   <button
                     type="button"

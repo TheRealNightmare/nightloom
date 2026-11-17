@@ -28,8 +28,8 @@ const prov = {
 const tiny: InvestigationGraph = {
   nodes: [
     { id: "d", label: "example.org", type: "domain", ...prov },
-    { id: "s", label: "www.example.org", type: "subdomain", ...prov },
-    { id: "i", label: "192.0.2.1", type: "ip", ...prov },
+    { id: "s", label: "www.example.org", type: "netblock", ...prov },
+    { id: "i", label: "192.0.2.1", type: "ip_address", ...prov },
     { id: "a", label: "AS64496", type: "asn", ...prov },
   ],
   edges: [
@@ -81,7 +81,7 @@ describe("computeHighlight", () => {
   it("ignores unknown or hidden nodes", () => {
     expect(computeHighlight(graph, state({ hoveredNode: "nope" })).focus).toBeNull();
     expect(
-      computeHighlight(graph, state({ hoveredNode: "i", hiddenTypes: hidden("ip") })).focus,
+      computeHighlight(graph, state({ hoveredNode: "i", hiddenTypes: hidden("ip_address") })).focus,
     ).toBeNull();
   });
 });
@@ -134,7 +134,7 @@ describe("edgeView", () => {
   });
 
   it("hides edges touching a hidden type", () => {
-    const view = state({ hiddenTypes: hidden("ip") });
+    const view = state({ hiddenTypes: hidden("ip_address") });
     const highlight = computeHighlight(graph, view);
     expect(edgeView(graph, "e2", view, highlight)).toEqual({ visibility: "hidden" });
     expect(edgeView(graph, "e3", view, highlight)).toEqual({ visibility: "hidden" });
@@ -158,10 +158,10 @@ describe("edgeView", () => {
 
 describe("toggleType", () => {
   it("adds and removes a type without mutating the input", () => {
-    const original = hidden("ip");
-    expect([...toggleType(original, "asn")].sort()).toEqual(["asn", "ip"]);
-    expect([...toggleType(original, "ip")]).toEqual([]);
-    expect([...original]).toEqual(["ip"]);
+    const original = hidden("ip_address");
+    expect([...toggleType(original, "asn")].sort()).toEqual(["asn", "ip_address"]);
+    expect([...toggleType(original, "ip_address")]).toEqual([]);
+    expect([...original]).toEqual(["ip_address"]);
   });
 });
 
@@ -169,8 +169,8 @@ describe("countByType", () => {
   it("counts types in canonical order", () => {
     expect(countByType(tiny.nodes)).toEqual([
       { type: "domain", count: 1 },
-      { type: "subdomain", count: 1 },
-      { type: "ip", count: 1 },
+      { type: "ip_address", count: 1 },
+      { type: "netblock", count: 1 },
       { type: "asn", count: 1 },
     ]);
   });
@@ -211,7 +211,7 @@ describe("searchNodes", () => {
 
   it("skips hidden types and respects the limit", () => {
     expect(
-      searchNodes(nodes, "example", hidden("subdomain"), 50).some((n) => n.type === "subdomain"),
+      searchNodes(nodes, "example", hidden("netblock"), 50).some((n) => n.type === "netblock"),
     ).toBe(false);
     expect(searchNodes(nodes, "example", new Set(), 3)).toHaveLength(3);
   });

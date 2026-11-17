@@ -108,6 +108,17 @@ describe("DemoPage", () => {
     );
   });
 
+  it("labels every node of a small graph", () => {
+    const { sigma } = renderApp();
+    expect(sigma.setSetting).toHaveBeenCalledWith("labelRenderedSizeThreshold", 0);
+  });
+
+  it("tolerates a detached container instead of throwing", () => {
+    // A frame can run after navigating away, before sigma is killed.
+    const { sigma } = renderApp();
+    expect(sigma.options.settings).toMatchObject({ allowInvalidContainer: true });
+  });
+
   it("kills sigma on unmount", () => {
     const { sigma, unmount } = renderApp();
     unmount();

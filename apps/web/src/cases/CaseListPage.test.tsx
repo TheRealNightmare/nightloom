@@ -46,7 +46,10 @@ describe("case list", () => {
     expect(first.getByText("Open")).toBeVisible();
     expect(first.getByText("Owned assets")).toBeVisible();
     expect(first.getByText("Owner")).toBeVisible();
-    expect(first.getByText(/ago|just now/)).toHaveAttribute("title", "Nov 10, 2026, 10:00 AM UTC");
+    expect(first.getByText(/ago|just now|yesterday|last (week|month|year)/)).toHaveAttribute(
+      "title",
+      "Nov 10, 2026, 10:00 AM UTC",
+    );
     const other = within(rows[1]!);
     expect(other.getByText("Closed")).toBeVisible();
     expect(other.getByText("Threat intelligence")).toBeVisible();

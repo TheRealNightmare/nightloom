@@ -23,17 +23,33 @@ export interface GraphCanvasProps {
   view: ViewState;
   onHoverNode: (node: string | null) => void;
   onSelectNode: (node: string | null) => void;
+  /** Label every node, not only the larger ones (for small graphs). */
+  showAllLabels?: boolean;
+  /** Changes whenever the graph's nodes or edges do, so highlights are recomputed. */
+  revision?: unknown;
   ref?: Ref<GraphCanvasHandle>;
 }
 
 const LABEL_FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
 const CAMERA_DURATION_MS = 450;
+const FOCUS_RETRY_FRAMES = 10;
+const FOCUS_RATIO = 0.7;
+/** sigma's default: only nodes drawn at least this many pixels wide get a label. */
+const LABEL_SIZE_THRESHOLD = 7;
 
 /**
  * Renders the graph with sigma (WebGL). All visual decisions live in the pure
  * functions of ./view; this component only wires sigma's events and reducers.
  */
-export function GraphCanvas({ graph, view, onHoverNode, onSelectNode, ref }: GraphCanvasProps) {
+export function GraphCanvas({
+  graph,
+  view,
+  onHoverNode,
+  onSelectNode,
+  showAllLabels = false,
+  revision,
+  ref,
+}: GraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sigmaRef = useRef<Sigma<NodeAttributes, EdgeAttributes> | null>(null);
   // Read by the reducers on every refresh; updated before each refresh.
@@ -55,9 +71,13 @@ export function GraphCanvas({ graph, view, onHoverNode, onSelectNode, ref }: Gra
       settings: {
         // Node sizes are pixels (sigma 4 defaults to layout units).
         itemSizesReference: "screen",
+        // A frame scheduled before the page navigates away can run after the
+        // container left the DOM (zero width) but before sigma is killed;
+        // skip drawing then instead of throwing.
+        allowInvalidContainer: true,
         renderEdgeLabels: true,
         labelDensity: 0.6,
-        labelRenderedSizeThreshold: 7,
+        labelRenderedSizeThreshold: LABEL_SIZE_THRESHOLD,
         stagePadding: 64,
         minCameraRatio: 0.08,
         maxCameraRatio: 4,
@@ -110,20 +130,41 @@ export function GraphCanvas({ graph, view, onHoverNode, onSelectNode, ref }: Gra
   }, [graph]);
 
   useEffect(() => {
+    sigmaRef.current?.setSetting(
+      "labelRenderedSizeThreshold",
+      showAllLabels ? 0 : LABEL_SIZE_THRESHOLD,
+    );
+  }, [graph, showAllLabels]);
+
+  useEffect(() => {
     viewRef.current = { state: view, highlight: computeHighlight(graph, view) };
     sigmaRef.current?.refresh({ skipIndexation: true });
-  }, [graph, view]);
+  }, [graph, view, revision]);
 
   useImperativeHandle(
     ref,
     () => ({
       focusNode(node) {
-        const sigma = sigmaRef.current;
-        const position = sigma?.getNodeDisplayData(node);
-        if (!sigma || !position) return;
-        void sigma
-          .getCamera()
-          .animate({ x: position.x, y: position.y, ratio: 0.7 }, { duration: CAMERA_DURATION_MS });
+        // A node added a moment ago has no display data until sigma's next
+        // render, so try again for a few frames.
+        let attempts = 0;
+        const tryFocus = () => {
+          const sigma = sigmaRef.current;
+          if (!sigma) return;
+          const position = sigma.getNodeDisplayData(node);
+          if (!position) {
+            attempts += 1;
+            if (attempts <= FOCUS_RETRY_FRAMES) requestAnimationFrame(tryFocus);
+            return;
+          }
+          void sigma
+            .getCamera()
+            .animate(
+              { x: position.x, y: position.y, ratio: FOCUS_RATIO },
+              { duration: CAMERA_DURATION_MS },
+            );
+        };
+        tryFocus();
       },
       resetCamera() {
         void sigmaRef.current?.getCamera().reset({ duration: CAMERA_DURATION_MS });

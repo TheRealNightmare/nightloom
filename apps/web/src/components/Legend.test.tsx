@@ -7,7 +7,7 @@ import { Legend } from "./Legend";
 
 const types = [
   { type: "domain", count: 1 },
-  { type: "ip", count: 7 },
+  { type: "ip_address", count: 7 },
 ] as const;
 
 function renderLegend(hidden: EntityType[] = []) {
@@ -40,7 +40,7 @@ describe("Legend", () => {
   });
 
   it("marks hidden types and offers to show all", async () => {
-    const { onShowAll } = renderLegend(["ip"]);
+    const { onShowAll } = renderLegend(["ip_address"]);
     expect(screen.getByRole("button", { name: /IP address/ })).toHaveAttribute(
       "aria-pressed",
       "false",
