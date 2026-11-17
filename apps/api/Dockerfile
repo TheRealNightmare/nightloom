@@ -1,9 +1,13 @@
 # syntax=docker/dockerfile:1
 #
-# Nightloom API image. Build from the repository root (the uv workspace and
-# uv.lock live there):
+# Nightloom backend image: the API and the worker (same image, different
+# command), with the Shuttle SDK and the built-in Shuttles. Build from the
+# repository root (the uv workspace and uv.lock live there):
 #
 #   docker build -f apps/api/Dockerfile -t nightloom-api .
+#
+# A new built-in Shuttle under shuttles/ needs a bind mount for its
+# pyproject.toml below and a dependency in apps/worker/pyproject.toml.
 
 ARG PYTHON_IMAGE=python:3.12.16-slim
 
@@ -23,16 +27,23 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     --mount=type=bind,source=apps/api/pyproject.toml,target=apps/api/pyproject.toml \
+    --mount=type=bind,source=apps/worker/pyproject.toml,target=apps/worker/pyproject.toml \
     --mount=type=bind,source=packages/core/pyproject.toml,target=packages/core/pyproject.toml \
-    uv sync --locked --no-dev --no-install-workspace --package nightloom-api
+    --mount=type=bind,source=packages/sdk/pyproject.toml,target=packages/sdk/pyproject.toml \
+    --mount=type=bind,source=shuttles/registrable-domain/pyproject.toml,target=shuttles/registrable-domain/pyproject.toml \
+    uv sync --locked --no-dev --no-install-workspace --package nightloom-worker
 
-# Then the API and the shared entity model (nightloom-core), installed
-# non-editable so the venv is self-contained.
+# Then the workspace packages, installed non-editable so the venv is
+# self-contained: nightloom-worker pulls in the API, the shared entity model
+# (nightloom-core), the Shuttle SDK and the built-in Shuttles.
 COPY pyproject.toml uv.lock ./
 COPY packages/core ./packages/core
+COPY packages/sdk ./packages/sdk
+COPY shuttles ./shuttles
 COPY apps/api ./apps/api
+COPY apps/worker ./apps/worker
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-editable --package nightloom-api
+    uv sync --locked --no-dev --no-editable --package nightloom-worker
 
 # --- runtime: just Python and the venv ---------------------------------------
 FROM ${PYTHON_IMAGE}
@@ -60,6 +71,10 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=4)"]
 
+# The worker runs the same image with
+#   celery -A nightloom_worker.celery_app worker --queues shuttles
+# (see deploy/compose.yaml); its health check is `celery inspect ping`.
+#
 # 0.0.0.0 is the container's own interface; Compose publishes it on 127.0.0.1.
 # --proxy-headers (uvicorn's default, spelled out) honours X-Forwarded-For and
 # X-Forwarded-Proto only from the addresses in FORWARDED_ALLOW_IPS (default

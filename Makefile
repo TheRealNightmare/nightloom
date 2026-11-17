@@ -48,6 +48,7 @@ CORE_COMPAT_RUN = uv run --python $(1) --no-project --with ./packages/core \
 	-W ignore::pytest.PytestConfigWarning
 
 .PHONY: help install lint fmt typecheck test test-unit test-core-compat test-integration check check-all api \
+	worker shuttles \
 	up deps-up down logs ps reset compose-config migrate revision create-admin \
 	web-install web-dev web-lint web-fmt web-typecheck web-test web-build check-web e2e
 
@@ -90,6 +91,16 @@ check-all: check check-web ## Run every check: Python and web
 
 api: ## Run the API dev server on http://127.0.0.1:8000
 	uv run python -m nightloom_api
+
+# The local worker talks to the stack's PostgreSQL, Neo4j and Valkey through
+# their published ports (STACK_ENV). Stop the stack's own worker first
+# (docker compose ... stop worker) if you want this one to take every job.
+worker: ## Run a Shuttle worker locally against the stack's services (needs `make deps-up`)
+	@$(STACK_ENV) uv run celery --app=nightloom_worker.celery_app worker \
+		--queues=shuttles --concurrency=2 --loglevel=INFO --without-gossip --without-mingle
+
+shuttles: ## List the installed Shuttles (the registry CLI)
+	uv run python -m nightloom_sdk.registry list
 
 up: ## Start the local stack (creates .env from .env.example if missing)
 	@if [ ! -f .env ]; then \

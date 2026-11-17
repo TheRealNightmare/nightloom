@@ -12,7 +12,6 @@ audit event commits in PostgreSQL, then Neo4j commits. If that last commit
 fails, a ``failure`` event follows the ``success`` one and the client gets 503.
 """
 
-import hashlib
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -29,6 +28,7 @@ from nightloom_api.audit.actions import AuditAction, AuditOutcome, TargetType
 from nightloom_api.auth import clock
 from nightloom_api.cases.access import Capability, CaseAccess, case_access, record_denial
 from nightloom_api.cases.models import CaseStatus
+from nightloom_api.graph.privacy import audit_target, key_details
 from nightloom_api.graph.repository import (
     DEFAULT_GRAPH_LIMIT,
     EndpointNotFoundError,
@@ -80,27 +80,6 @@ _WRITE_ERRORS: dict[int | str, dict[str, object]] = {
 
 
 # --- helpers ------------------------------------------------------------------------
-
-
-def _digest(text: str) -> str:
-    return hashlib.sha256(text.encode()).hexdigest()
-
-
-def key_details(key: str, sensitivity: Sensitivity, name: str = "key") -> dict[str, str]:
-    """How an entity key appears in an audit event.
-
-    Audit events outlive the case, so person-related keys (an email address,
-    a name, a phone number) are recorded only as their SHA-256: enough to
-    correlate events, without keeping the personal data after the case's
-    graph is deleted.
-    """
-    if sensitivity == Sensitivity.PERSON:
-        return {f"{name}_sha256": _digest(key)}
-    return {name: key}
-
-
-def audit_target(text: str, *, personal: bool) -> str:
-    return f"sha256:{_digest(text)}" if personal else text
 
 
 def canonical_key(key: str, field: str = "key") -> EntityType:

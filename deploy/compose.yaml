@@ -199,6 +199,64 @@ services:
       retries: 5
       start_period: 10s
 
+  # Runs Shuttle jobs from the Valkey queue (Celery). Same image as `api`,
+  # different command. 4 worker processes, each running one job at a time,
+  # fit comfortably on a 16 GB machine next to the rest of the stack; change
+  # NIGHTLOOM_WORKER_CONCURRENCY in .env. A process is replaced after 100
+  # jobs or 512 MB, so a leaky Shuttle cannot grow it forever.
+  worker:
+    image: nightloom-api:dev
+    # Built by the `api` service (same image).
+    pull_policy: never
+    restart: unless-stopped
+    command:
+      - celery
+      - --app=nightloom_worker.celery_app
+      - worker
+      - --queues=shuttles
+      - --hostname=worker@%h
+      - --concurrency=${NIGHTLOOM_WORKER_CONCURRENCY:-4}
+      - --max-tasks-per-child=100
+      - --max-memory-per-child=524288
+      - --loglevel=${NIGHTLOOM_LOG_LEVEL:-INFO}
+      - --without-gossip
+      - --without-mingle
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    # The same NIGHTLOOM_* variables as the API (the settings are shared).
+    environment:
+      NIGHTLOOM_ENV: ${NIGHTLOOM_ENV:-development}
+      NIGHTLOOM_LOG_LEVEL: ${NIGHTLOOM_LOG_LEVEL:-INFO}
+      NIGHTLOOM_DATABASE_URL: ${NIGHTLOOM_DATABASE_URL:?set NIGHTLOOM_DATABASE_URL in .env}
+      NIGHTLOOM_NEO4J_URI: ${NIGHTLOOM_NEO4J_URI:?set NIGHTLOOM_NEO4J_URI in .env}
+      NIGHTLOOM_NEO4J_USER: ${NIGHTLOOM_NEO4J_USER:?set NIGHTLOOM_NEO4J_USER in .env}
+      NIGHTLOOM_NEO4J_PASSWORD: ${NIGHTLOOM_NEO4J_PASSWORD:?set NIGHTLOOM_NEO4J_PASSWORD in .env}
+      NIGHTLOOM_VALKEY_URL: ${NIGHTLOOM_VALKEY_URL:?set NIGHTLOOM_VALKEY_URL in .env}
+      NIGHTLOOM_S3_ENDPOINT: ${NIGHTLOOM_S3_ENDPOINT:?set NIGHTLOOM_S3_ENDPOINT in .env}
+      NIGHTLOOM_S3_ACCESS_KEY: ${NIGHTLOOM_S3_ACCESS_KEY}
+      NIGHTLOOM_S3_SECRET_KEY: ${NIGHTLOOM_S3_SECRET_KEY}
+      NIGHTLOOM_S3_BUCKET: ${NIGHTLOOM_S3_BUCKET}
+      NIGHTLOOM_S3_REGION: ${NIGHTLOOM_S3_REGION:-us-east-1}
+    # A running job may take up to 10 minutes; on shutdown, jobs that do not
+    # finish in time are re-delivered and then recorded as failed.
+    stop_grace_period: 60s
+    healthcheck:
+      # Asks this worker (by its node name) to answer over the broker.
+      test:
+        - CMD-SHELL
+        - celery --app=nightloom_worker.celery_app inspect ping --destination "worker@$$HOSTNAME" --timeout 5 > /dev/null
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
+
   # Web UI: the built single-page app behind nginx, which also proxies /api/
   # to the `api` service, so the browser only ever talks to this origin.
   web:
