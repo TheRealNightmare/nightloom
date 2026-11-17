@@ -1,6 +1,64 @@
 import type { AuditEvent, Case, CaseRole, Member } from "../api/cases";
 import type { User } from "../api/client";
+import type { ApiEntity, ApiGraph, ApiProvenance, ApiRelationship, Schema } from "../api/graph";
+import type { EntityType, Sensitivity } from "../domain/entities";
 import { json, READY_BODY, TEST_USER, type FakeApi } from "./fakeApi";
+import schemaJson from "./schema.json";
+
+/** What `GET /schema` returns (kept in sync with the API by apps/api/tests/test_schema_unit.py). */
+export const SCHEMA = schemaJson as Schema;
+
+export const EMPTY_GRAPH: ApiGraph = { nodes: [], edges: [], truncated: false };
+
+export function makeProvenance(overrides: Partial<ApiProvenance> = {}): ApiProvenance {
+  return {
+    first_seen: "2026-11-10T10:00:00Z",
+    last_seen: "2026-11-12T08:30:00Z",
+    observation_count: 1,
+    sources: ["manual"],
+    max_confidence: 0.8,
+    admiralty: "B2",
+    evidence_refs: [],
+    note: null,
+    ...overrides,
+  };
+}
+
+const SENSITIVITY: Partial<Record<EntityType, Sensitivity>> = Object.fromEntries(
+  SCHEMA.entity_types.map((item) => [item.type, item.sensitivity]),
+);
+
+export function makeEntity(
+  type: EntityType,
+  value: string,
+  overrides: Partial<ApiEntity> = {},
+): ApiEntity {
+  return {
+    key: `${type}:${value.toLowerCase()}`,
+    type,
+    value,
+    sensitivity: SENSITIVITY[type] ?? "infrastructure",
+    properties: {},
+    provenance: makeProvenance(),
+    ...overrides,
+  };
+}
+
+export function makeRelationship(
+  type: string,
+  source: ApiEntity,
+  target: ApiEntity,
+  overrides: Partial<ApiRelationship> = {},
+): ApiRelationship {
+  return {
+    id: `${source.key}|${type}|${target.key}`,
+    type,
+    source_key: source.key,
+    target_key: target.key,
+    provenance: makeProvenance(),
+    ...overrides,
+  };
+}
 
 export const CASE_ID = "5f0c8a52-6a0e-4c1e-9d6c-0b8f6e9c2a11";
 
@@ -77,12 +135,14 @@ export function serveCase(
     overrides = {},
     members,
     events = [],
+    graph = EMPTY_GRAPH,
   }: {
     user?: User;
     role?: CaseRole;
     overrides?: Partial<Case>;
     members?: Member[];
     events?: AuditEvent[];
+    graph?: ApiGraph;
   } = {},
 ): void {
   const path = `/cases/${CASE_ID}`;
@@ -92,5 +152,7 @@ export function serveCase(
     .on("GET", path, () => json(makeCase({ my_role: role, ...overrides })))
     .on("GET", `${path}/members`, () => json(members ?? [makeMember(user, role)]))
     .on("GET", `${path}/audit?limit=50`, () => json({ items: events, next_before_id: null }))
+    .on("GET", `${path}/graph?limit=2000`, () => json(graph))
+    .on("GET", "/schema", () => json(SCHEMA))
     .on("GET", "/cases?limit=25", () => json(EMPTY_PAGE));
 }

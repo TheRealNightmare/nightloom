@@ -44,7 +44,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md#development-setup) for the full developmen
 
 1. **Sign in** at <http://127.0.0.1:8080> with an account an admin created for you.
 2. **Create a case** (admins and analysts): *Cases → New case*. Every case needs a **purpose** (30–2,000 characters: why it exists and what question it answers) and a **legal basis** (owned assets, authorized engagement, threat intelligence, journalism, academic research, self-assessment or other), and you confirm that it follows the [ethics policy](ETHICS.md). An *authorized engagement* or *other* basis also needs a note naming the engagement or explaining the basis. Person entities are off by default; turning them on needs a written reason.
-3. **Work in the case.** Owners add colleagues by email as owner, editor or viewer (*Members*), editors and owners see who did what (*Activity*), and owners change the purpose or legal basis (which asks for a reason) and close, archive or delete the case (*Settings*).
+3. **Add what you already know.** On the case's *Graph* tab, editors and owners of an open case choose *Add entity*, pick a type (for example *Domain*) and type a value. Nightloom stores it in its canonical form, so `Example.ORG.` and `example.org` are the same entity. *Add relationship* connects two entities with one of the relationship types allowed for that pair. Click an entity to see its key, provenance and connections, or delete it. Person-related types (email, person, phone, …) are only available in cases that allow person entities. Automated collection (Shuttles) comes next.
+4. **Work in the case.** Owners add colleagues by email as owner, editor or viewer (*Members*), editors and owners see who did what (*Activity*), and owners change the purpose or legal basis (which asks for a reason) and close, archive or delete the case (*Settings*).
 
 Only members can see a case, admins included. The rules are described in [Cases](docs/ARCHITECTURE.md#cases).
 

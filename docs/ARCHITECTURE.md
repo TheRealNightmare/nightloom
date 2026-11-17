@@ -59,7 +59,7 @@ The local stack is defined in [`deploy/compose.yaml`](../deploy/compose.yaml) (s
   | `/cases` | your cases: title search (debounced), status filter, *Load more* (keyset cursor); *New case* for admins and analysts |
   | `/cases/new` | create a case: purpose, legal basis (+ note), person entities (+ reason), retention, ethics confirmation; checked locally with the server's rules, and the server's `422` messages are shown on their fields |
   | `/cases/:caseId` | redirects to the `graph` tab; the header shows title (renamed inline by editors and owners), status, legal basis, your role and the purpose |
-  | `/cases/:caseId/graph` | empty until Shuttles exist; never shows demo data |
+  | `/cases/:caseId/graph` | the case's graph from the API (never demo data): explore it, and editors of an open case add entities and relationships by hand or delete entities; see [Graph view](#graph-view) |
   | `/cases/:caseId/members` | members; owners add by email, change roles and remove; anyone can leave |
   | `/cases/:caseId/activity` | the case's audit events with readable labels (owners and editors) |
   | `/cases/:caseId/settings` | purpose, legal basis, person entities, retention (a dialog asks for the change reason where the API needs one), close / reopen / archive, delete by typing the title (owners) |
@@ -67,8 +67,27 @@ The local stack is defined in [`deploy/compose.yaml`](../deploy/compose.yaml) (s
   | anything else | "Page not found" |
 
   Tabs a role cannot use are hidden, mirroring the API's [capability table](#cases); opening one directly shows "You don't have permission". A case that does not exist and one you are not a member of both show the same "Case not found" page, as the API answers `404` for both.
-- **Demo data.** Until the graph API exists, the `/demo` page shows a typed fixture ([`src/demo/sampleGraph.ts`](../apps/web/src/demo/sampleGraph.ts)) shaped like the [data model](#data-model): entity types and provenance fields on every node and edge. It is entirely fictional (`example.org`, RFC 5737 IP addresses, RFC 5398 AS numbers, no people) and labelled "Demo data" in the UI.
+- **Demo data.** The `/demo` page shows a typed fixture ([`src/demo/sampleGraph.ts`](../apps/web/src/demo/sampleGraph.ts)) using the [data model](#data-model)'s entity types, with provenance on every node and edge. It is entirely fictional (`example.org`, RFC 5737 IP addresses, RFC 5398 AS numbers, no people) and labelled "Demo data" in the top bar. Case graphs never show that badge or any fixture data.
 - **Testable without WebGL.** Highlighting, filtering and search are pure functions over the graph; sigma only applies their results through its node and edge reducers.
+
+#### Graph view
+
+The demo and the case *Graph* tab share one component, `GraphView` ([`src/graph/GraphView.tsx`](../apps/web/src/graph/GraphView.tsx)): the sigma canvas, entity search, a type legend that toggles visibility, and a side panel. Callers pass the nodes and edges plus what the side panel shows (an overview, and an entity's details). Entity colors come from one palette ([`src/domain/entities.ts`](../apps/web/src/domain/entities.ts)) that the canvas, legend, search results and chips all use.
+
+- **No duplicated rules.** The web knows entity types only to give them a color and a label. Sensitivity, value hints and examples, the relationship allow-list, the Admiralty scales and the manual-observation defaults come from [`GET /schema`](#schema-endpoint), fetched once per page load.
+- **Incremental updates.** `GraphView` keeps one graphology graph for its lifetime and syncs the data into it ([`syncGraph`](../apps/web/src/graph/buildGraph.ts)), removing what is gone, updating what changed and adding what is new. A freshly loaded graph starts on a circle grouped by type and gets a full layout. A node added later is placed at the centre of its neighbours, or just outside the graph when it has none. If it has neighbours, a short layout follows (60 iterations) in which every other node is pinned (ForceAtlas2's `fixed`), so adding an entity never reshuffles the picture. After that layout, the camera moves to the new entity. sigma's camera does not follow a change in the graph's extent, so in a graph of up to 200 nodes it shows the whole graph, with the new entity selected and highlighted. In a larger graph, whose extent barely changes, it zooms to the entity. Graphs of up to 200 nodes also label every node.
+- **Layout never blocks.** ForceAtlas2 runs in time slices ([`src/graph/layout.ts`](../apps/web/src/graph/layout.ts)): each slice works for about 12 ms and then yields to the browser, with a hard cap on iterations (300 for a full layout, 150 above 500 nodes where Barnes-Hut is switched on). On a desktop CPU (i5-13400), the synthetic 2,000-entity graph used by [`src/graph/performance.test.ts`](../apps/web/src/graph/performance.test.ts) syncs in about 15 ms and settles in about 1.1 s over 75 slices (median 13 ms, longest 38 ms). Adding one entity to it takes about 3 ms. The generator lives in `src/test/`, which the app never imports, so no synthetic data reaches the production bundle.
+- **Loaded on demand.** sigma and graphology are only fetched when there is a graph to draw: `/demo` is a lazy route, and the case Graph tab lazy-loads `GraphView`, so its empty state and forms do not need them.
+
+**Case Graph tab** ([`src/cases/GraphTab.tsx`](../apps/web/src/cases/GraphTab.tsx)). The tab loads `GET /cases/{id}/graph` (limit 2,000) and the schema. Entities become nodes (key as id, value as label) and relationships become edges, carrying their full provenance.
+
+- **Header.** A live summary ("2 entities, 1 relationship"). When the API reports `truncated`, a banner says only the first 2,000 entities by key, with at most five relationships each, are drawn.
+- **Side panel.** For the selected entity: type, value, key (with a copy button), sensitivity, neighbour count (from `GET /entities/{key}`, so it is exact even when the view is truncated), first and last seen, observation count, sources, max confidence as a percentage, Admiralty rating (hover or focus explains both grades), evidence references, note, and its connections.
+- **Add entity** (editors and owners of an open case). Types are grouped by sensitivity. Person-related types are disabled, with the reason, when the case does not allow person entities. The value field shows the type's hint and example from the schema, and there is an optional note (and a phone region for phone numbers). The server normalizes the value: its `422` message (e.g. *A domain name needs at least two labels*) appears under the field, and a `403` or `409` appears in the form. On success the node appears, selected and in view. Adding something the case already has says so (the API merged an observation).
+- **Add relationship.** Pick both ends from the case's entities with a searchable combobox (the selected entity is pre-filled), swap the direction if needed, and choose from only the relationship types the schema allows for that pair. `RELATED_TO` asks for a note.
+- **Delete entity.** From the side panel, after a confirmation. Its relationships go too.
+- **Read-only.** Viewers, and everyone while the case is closed or archived, see the graph without these controls and a one-line explanation.
+- **Empty state.** *No entities yet.* with a hint that automated collection (Shuttles) comes next, and *Add your first entity* for editors.
 
 ### Health and readiness
 
@@ -353,6 +372,19 @@ Every entity node has the label `:Entity` plus its type's label and the properti
 | `GET /graph` | member | `?types=domain&types=ip_address&limit=2000` (1–10,000): nodes ordered by key, the edges between them (at most five per node), and `truncated` when either limit cut something off |
 
 A closed or archived case's graph is read-only (`409` for every write).
+
+### Schema endpoint
+
+`GET /api/v1/schema` (any signed-in user; `401` otherwise) describes the entity model as data, so clients never keep their own copy of its rules. Everything in it is generated from `nightloom_core` ([`routers/schema.py`](../apps/api/src/nightloom_api/routers/schema.py)):
+
+| Field | Contents |
+| --- | --- |
+| `entity_types` | `type`, Neo4j `label`, `display_name`, `sensitivity`, a `hint` describing a valid value and an `example`. Examples use documentation-only values (`www.example.org`, `192.0.2.1`, `AS64496`, …), and the tests check that each one normalizes as its type |
+| `relationship_types` | `type`, `note_required`, and every allowed `(source, target)` pair in entity type order |
+| `admiralty` | the `reliability` (A–F) and `credibility` (1–6) grades with their meaning |
+| `manual_defaults` | what a hand-made observation records: `source` `manual`, reliability, credibility, the combined `admiralty` (`B2`), `confidence` and `note_max_length` |
+
+The answer only changes with a deployment, so it is sent with `Cache-Control: private, max-age=300`. The web unit tests use a copy of it ([`apps/web/src/test/schema.json`](../apps/web/src/test/schema.json)). An API test fails when that copy drifts. To regenerate it, run `uv run python -m nightloom_api.routers.schema > apps/web/src/test/schema.json`.
 
 
 ## Shuttle contract

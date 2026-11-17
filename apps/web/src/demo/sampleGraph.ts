@@ -74,26 +74,30 @@ const nodes: EntityNode[] = [
     created: "2019-06-01",
   }),
 
-  entity("sub:www.example.org", "www.example.org", "subdomain", dns("2025-03-15T10:00:00Z")),
-  entity("sub:api.example.org", "api.example.org", "subdomain", dns("2025-04-02T08:12:00Z")),
-  entity("sub:mail.example.org", "mail.example.org", "subdomain", dns("2025-03-15T10:00:00Z")),
-  entity("sub:vpn.example.org", "vpn.example.org", "subdomain", ct("2025-08-21T13:40:00Z", 0.9)),
-  entity("sub:dev.example.org", "dev.example.org", "subdomain", ct("2026-01-09T17:05:00Z", 0.8)),
-  entity("sub:status.example.org", "status.example.org", "subdomain", dns("2025-11-30T06:00:00Z")),
-  entity("sub:cdn.example.org", "cdn.example.org", "subdomain", dns("2025-05-18T12:00:00Z")),
-  entity("sub:docs.example.org", "docs.example.org", "subdomain", ct("2025-09-03T09:25:00Z")),
+  entity("sub:www.example.org", "www.example.org", "domain", dns("2025-03-15T10:00:00Z")),
+  entity("sub:api.example.org", "api.example.org", "domain", dns("2025-04-02T08:12:00Z")),
+  entity("sub:mail.example.org", "mail.example.org", "domain", dns("2025-03-15T10:00:00Z")),
+  entity("sub:vpn.example.org", "vpn.example.org", "domain", ct("2025-08-21T13:40:00Z", 0.9)),
+  entity("sub:dev.example.org", "dev.example.org", "domain", ct("2026-01-09T17:05:00Z", 0.8)),
+  entity("sub:status.example.org", "status.example.org", "domain", dns("2025-11-30T06:00:00Z")),
+  entity("sub:cdn.example.org", "cdn.example.org", "domain", dns("2025-05-18T12:00:00Z")),
+  entity("sub:docs.example.org", "docs.example.org", "domain", ct("2025-09-03T09:25:00Z")),
 
-  entity("ip:192.0.2.10", "192.0.2.10", "ip", dns("2025-03-15T10:00:00Z"), { version: 4 }),
-  entity("ip:192.0.2.11", "192.0.2.11", "ip", dns("2025-04-02T08:12:00Z"), { version: 4 }),
-  entity("ip:192.0.2.25", "192.0.2.25", "ip", dns("2025-03-15T10:00:00Z"), { version: 4 }),
-  entity("ip:198.51.100.7", "198.51.100.7", "ip", dns("2025-08-21T13:40:00Z", 0.85), {
+  entity("ip:192.0.2.10", "192.0.2.10", "ip_address", dns("2025-03-15T10:00:00Z"), { version: 4 }),
+  entity("ip:192.0.2.11", "192.0.2.11", "ip_address", dns("2025-04-02T08:12:00Z"), { version: 4 }),
+  entity("ip:192.0.2.25", "192.0.2.25", "ip_address", dns("2025-03-15T10:00:00Z"), { version: 4 }),
+  entity("ip:198.51.100.7", "198.51.100.7", "ip_address", dns("2025-08-21T13:40:00Z", 0.85), {
     version: 4,
   }),
-  entity("ip:198.51.100.20", "198.51.100.20", "ip", dns("2026-01-09T17:05:00Z", 0.7), {
+  entity("ip:198.51.100.20", "198.51.100.20", "ip_address", dns("2026-01-09T17:05:00Z", 0.7), {
     version: 4,
   }),
-  entity("ip:203.0.113.5", "203.0.113.5", "ip", dns("2025-05-18T12:00:00Z"), { version: 4 }),
-  entity("ip:203.0.113.80", "203.0.113.80", "ip", dns("2025-11-30T06:00:00Z"), { version: 4 }),
+  entity("ip:203.0.113.5", "203.0.113.5", "ip_address", dns("2025-05-18T12:00:00Z"), {
+    version: 4,
+  }),
+  entity("ip:203.0.113.80", "203.0.113.80", "ip_address", dns("2025-11-30T06:00:00Z"), {
+    version: 4,
+  }),
 
   entity("net:192.0.2.0/24", "192.0.2.0/24", "netblock", rdap("2025-03-16T00:00:00Z"), {
     name: "EXAMPLE-NET-1",

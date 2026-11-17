@@ -14,7 +14,7 @@ from nightloom_api.config import Settings, get_settings
 from nightloom_api.infra import create_infra
 from nightloom_api.logging import configure_logging
 from nightloom_api.request_id import RequestIdMiddleware
-from nightloom_api.routers import audit, auth, cases, graph, health, readiness, users
+from nightloom_api.routers import audit, auth, cases, graph, health, readiness, schema, users
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -61,6 +61,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(audit.router, prefix=resolved.api_prefix)
     app.include_router(cases.router, prefix=resolved.api_prefix)
     app.include_router(graph.router, prefix=resolved.api_prefix)
+    app.include_router(schema.router, prefix=resolved.api_prefix)
     return app
 
 

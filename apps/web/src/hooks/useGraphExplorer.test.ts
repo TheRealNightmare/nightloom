@@ -60,7 +60,7 @@ describe("useGraphExplorer", () => {
     const { result } = setup();
     act(() => {
       result.current.selectNode("asn:64496");
-      result.current.toggleEntityType("ip");
+      result.current.toggleEntityType("ip_address");
     });
     expect(result.current.view.selectedNode).toBe("asn:64496");
   });
@@ -80,7 +80,7 @@ describe("useGraphExplorer", () => {
   it("shows all types and resets everything", () => {
     const { result } = setup();
     act(() => {
-      result.current.toggleEntityType("ip");
+      result.current.toggleEntityType("ip_address");
       result.current.toggleEntityType("url");
     });
     act(() => {
@@ -89,7 +89,7 @@ describe("useGraphExplorer", () => {
     expect(result.current.view.hiddenTypes.size).toBe(0);
 
     act(() => {
-      result.current.toggleEntityType("ip");
+      result.current.toggleEntityType("ip_address");
       result.current.selectNode("domain:example.org");
     });
     act(() => {

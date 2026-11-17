@@ -66,7 +66,7 @@ describe("SearchBox", () => {
   });
 
   it("does not offer entities of hidden types", async () => {
-    const { input } = renderSearch(["subdomain"]);
+    const { input } = renderSearch(["domain"]);
     await userEvent.type(input, "www");
     expect(screen.queryByRole("option", { name: /^www\.example\.org/ })).toBeNull();
   });

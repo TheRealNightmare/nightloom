@@ -5,10 +5,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   ADMIN_USER,
   CASE_ID,
+  EMPTY_GRAPH,
   makeCase,
   makeEvent,
   makeMember,
   OTHER_USER,
+  SCHEMA,
   serveCase,
   VIEWER_USER,
 } from "../test/caseFixtures";
@@ -61,7 +63,7 @@ describe("case header", () => {
   it("never shows demo data in a case's graph", async () => {
     serveCase(api);
     await openCase();
-    expect(screen.getByText(GRAPH_EMPTY_MESSAGE)).toBeVisible();
+    expect(await screen.findByText(GRAPH_EMPTY_MESSAGE)).toBeVisible();
     expect(screen.queryByTestId("graph-canvas")).not.toBeInTheDocument();
     expect(screen.queryByText("Demo data")).not.toBeInTheDocument();
   });
@@ -175,7 +177,9 @@ describe("what each role sees", () => {
       .on("GET", "/ready", () => json(READY_BODY))
       .on("GET", "/auth/me", () => json(TEST_USER))
       .on("GET", path, () => (fail ? json({}, 500) : json(makeCase())))
-      .on("GET", `${path}/members`, () => json([]));
+      .on("GET", `${path}/members`, () => json([]))
+      .on("GET", `${path}/graph?limit=2000`, () => json(EMPTY_GRAPH))
+      .on("GET", "/schema", () => json(SCHEMA));
     renderApp(path);
     expect(await screen.findByRole("alert")).toHaveTextContent("Something went wrong");
     fail = false;

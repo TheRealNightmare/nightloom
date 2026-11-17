@@ -201,6 +201,12 @@ class EntityBase(BaseModel):
     # The Neo4j label of the type (next to the common ``Entity`` label).
     label: ClassVar[str]
     sensitivity: ClassVar[Sensitivity]
+    # For people: the type's name, what a value looks like, and an example
+    # value (documentation-only: example.org, RFC 5737 addresses, RFC 5398
+    # AS numbers). Every example normalizes to a valid entity of its type.
+    display_name: ClassVar[str]
+    hint: ClassVar[str]
+    example: ClassVar[str]
     properties_model: ClassVar[type[Properties]] = NoProperties
 
     value: str
@@ -246,6 +252,9 @@ class Domain(EntityBase):
     entity_type = EntityType.DOMAIN
     label = "Domain"
     sensitivity = Sensitivity.INFRASTRUCTURE
+    display_name = "Domain"
+    hint = "A fully qualified domain name; subdomains are domains too."
+    example = "www.example.org"
 
 
 class IPAddress(EntityBase):
@@ -253,6 +262,9 @@ class IPAddress(EntityBase):
     entity_type = EntityType.IP_ADDRESS
     label = "IPAddress"
     sensitivity = Sensitivity.INFRASTRUCTURE
+    display_name = "IP address"
+    hint = "An IPv4 or IPv6 address."
+    example = "192.0.2.1"
 
 
 class Netblock(EntityBase):
@@ -260,6 +272,9 @@ class Netblock(EntityBase):
     entity_type = EntityType.NETBLOCK
     label = "Netblock"
     sensitivity = Sensitivity.INFRASTRUCTURE
+    display_name = "Netblock"
+    hint = "A network in CIDR notation."
+    example = "192.0.2.0/24"
     properties_model = NetblockProperties
 
 
@@ -268,6 +283,9 @@ class ASN(EntityBase):
     entity_type = EntityType.ASN
     label = "ASN"
     sensitivity = Sensitivity.INFRASTRUCTURE
+    display_name = "ASN"
+    hint = "An autonomous system number, with or without the AS prefix."
+    example = "AS64496"
     properties_model = ASNProperties
 
 
@@ -278,6 +296,9 @@ class Certificate(EntityBase):
     entity_type = EntityType.CERTIFICATE
     label = "Certificate"
     sensitivity = Sensitivity.INFRASTRUCTURE
+    display_name = "Certificate"
+    hint = "The certificate's SHA-256 fingerprint (64 hex digits; colons are fine)."
+    example = "879dc3b1e28fb00acda1fb81afd12b6e278bbd88d5670262b4b80a74413ae15e"
     properties_model = CertificateProperties
 
 
@@ -286,6 +307,9 @@ class URL(EntityBase):
     entity_type = EntityType.URL
     label = "URL"
     sensitivity = Sensitivity.INFRASTRUCTURE
+    display_name = "URL"
+    hint = "An http, https or ftp URL, without credentials."
+    example = "https://www.example.org/login"
     properties_model = URLProperties
 
 
@@ -296,6 +320,9 @@ class Service(EntityBase):
     entity_type = EntityType.SERVICE
     label = "Service"
     sensitivity = Sensitivity.INFRASTRUCTURE
+    display_name = "Port / Service"
+    hint = "ip:port/protocol (tcp or udp); IPv6 in brackets."
+    example = "192.0.2.1:443/tcp"
     properties_model = ServiceProperties
 
 
@@ -304,6 +331,9 @@ class Technology(EntityBase):
     entity_type = EntityType.TECHNOLOGY
     label = "Technology"
     sensitivity = Sensitivity.INFRASTRUCTURE
+    display_name = "Technology"
+    hint = "A product or framework name."
+    example = "nginx"
     properties_model = TechnologyProperties
 
 
@@ -312,6 +342,9 @@ class Organization(EntityBase):
     entity_type = EntityType.ORGANIZATION
     label = "Organization"
     sensitivity = Sensitivity.ORGANIZATION
+    display_name = "Organization"
+    hint = "The organization's name."
+    example = "Example Org"
     properties_model = OrganizationProperties
 
 
@@ -320,6 +353,9 @@ class Email(EntityBase):
     entity_type = EntityType.EMAIL
     label = "Email"
     sensitivity = Sensitivity.PERSON
+    display_name = "Email"
+    hint = "An email address."
+    example = "contact@example.org"
 
 
 class Username(EntityBase):
@@ -327,6 +363,9 @@ class Username(EntityBase):
     entity_type = EntityType.USERNAME
     label = "Username"
     sensitivity = Sensitivity.PERSON
+    display_name = "Username"
+    hint = "A handle, as used on its platform."
+    example = "example_user"
     properties_model = UsernameProperties
 
 
@@ -335,6 +374,9 @@ class Person(EntityBase):
     entity_type = EntityType.PERSON
     label = "Person"
     sensitivity = Sensitivity.PERSON
+    display_name = "Person"
+    hint = "A person's name."
+    example = "Alex Example"
 
 
 class Phone(EntityBase):
@@ -344,6 +386,9 @@ class Phone(EntityBase):
     entity_type = EntityType.PHONE
     label = "Phone"
     sensitivity = Sensitivity.PERSON
+    display_name = "Phone"
+    hint = "A phone number in international format (+...), or national format with a region."
+    example = "+442079460958"
 
 
 class SocialProfile(EntityBase):
@@ -351,6 +396,9 @@ class SocialProfile(EntityBase):
     entity_type = EntityType.SOCIAL_PROFILE
     label = "SocialProfile"
     sensitivity = Sensitivity.PERSON
+    display_name = "Social profile"
+    hint = "A profile name or handle and its platform."
+    example = "@example on social.example.org"
     properties_model = SocialProfileProperties
 
 
@@ -361,6 +409,9 @@ class Location(EntityBase):
     entity_type = EntityType.LOCATION
     label = "Location"
     sensitivity = Sensitivity.PERSON
+    display_name = "Location"
+    hint = "A place name or address."
+    example = "Example City"
     properties_model = LocationProperties
 
 
@@ -371,6 +422,9 @@ class CryptoWallet(EntityBase):
     entity_type = EntityType.CRYPTO_WALLET
     label = "CryptoWallet"
     sensitivity = Sensitivity.ORGANIZATION
+    display_name = "Crypto wallet"
+    hint = "A Bitcoin or Ethereum address (btc: or eth: prefix optional)."
+    example = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"
 
 
 class Document(EntityBase):
@@ -378,6 +432,9 @@ class Document(EntityBase):
     entity_type = EntityType.DOCUMENT
     label = "Document"
     sensitivity = Sensitivity.ORGANIZATION
+    display_name = "Document"
+    hint = "A document's title or file name."
+    example = "Annual report 2025"
     properties_model = DocumentProperties
 
 
@@ -388,6 +445,9 @@ class Image(EntityBase):
     entity_type = EntityType.IMAGE
     label = "Image"
     sensitivity = Sensitivity.PERSON
+    display_name = "Image"
+    hint = "An image's title or file name."
+    example = "logo.png"
     properties_model = ImageProperties
 
 
@@ -398,6 +458,9 @@ class Breach(EntityBase):
     entity_type = EntityType.BREACH
     label = "Breach"
     sensitivity = Sensitivity.ORGANIZATION
+    display_name = "Breach"
+    hint = "The name of a published data breach."
+    example = "Example Breach 2024"
     properties_model = BreachProperties
 
 

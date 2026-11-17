@@ -2,7 +2,14 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CASE_ID, EMPTY_PAGE, makeCase, makeMember } from "../test/caseFixtures";
+import {
+  CASE_ID,
+  EMPTY_GRAPH,
+  EMPTY_PAGE,
+  makeCase,
+  makeMember,
+  SCHEMA,
+} from "../test/caseFixtures";
 import { clearCookies, FakeApi, json, READY_BODY, TEST_USER } from "../test/fakeApi";
 import { renderApp } from "../test/renderApp";
 import { FakeSigma } from "../test/sigmaMock";
@@ -17,6 +24,8 @@ beforeEach(() => {
     .on("GET", "/cases?limit=25", () => json(EMPTY_PAGE))
     .on("GET", `/cases/${CASE_ID}`, () => json(makeCase()))
     .on("GET", `/cases/${CASE_ID}/members`, () => json([makeMember(TEST_USER, "owner")]))
+    .on("GET", `/cases/${CASE_ID}/graph?limit=2000`, () => json(EMPTY_GRAPH))
+    .on("GET", "/schema", () => json(SCHEMA))
     .install();
   document.cookie = "nightloom_csrf=csrf-token";
 });

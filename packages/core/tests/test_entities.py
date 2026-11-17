@@ -17,7 +17,7 @@ from nightloom_core.entities import (
     label_of,
     sensitivity_of,
 )
-from nightloom_core.normalize import NormalizationError
+from nightloom_core.normalize import NormalizationError, normalize
 
 PERSON_TYPES = {
     EntityType.PERSON,
@@ -45,6 +45,22 @@ def test_one_model_per_type() -> None:
     assert len(set(labels)) == len(labels)
     assert all(label.isidentifier() and label[0].isupper() for label in labels)
     assert "Entity" not in labels
+
+
+@pytest.mark.parametrize("entity_type", list(EntityType))
+def test_display_metadata(entity_type: EntityType) -> None:
+    model = ENTITY_MODELS[entity_type]
+    assert model.display_name.strip() == model.display_name != ""
+    assert model.hint.endswith(".")
+    # The example is a valid value of its type, and documentation-safe.
+    entity = build_entity(entity_type, model.example)
+    assert entity.key == normalize(entity_type, model.example).key
+    assert "@" not in model.example or "example.org" in model.example
+
+
+def test_display_names_are_unique() -> None:
+    names = [model.display_name for model in ENTITY_MODELS.values()]
+    assert len(set(names)) == len(names)
 
 
 @pytest.mark.parametrize("entity_type", list(EntityType))
