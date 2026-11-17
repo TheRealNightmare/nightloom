@@ -18,7 +18,8 @@ Milestones are ordered but not dated. Checked items are done; everything else is
 - [x] Cases UI
 - [x] Entity schema with provenance
 - [x] Case graph view (manual entities)
-- [ ] Shuttle SDK + Celery worker + first DNS Shuttle
+- [x] Shuttle SDK + Celery worker (first built-in Shuttle: `registrable-domain`, no network)
+- [ ] First DNS Shuttle and "Run Shuttle" in the web UI
 
 ## M1 — Infrastructure MVP
 

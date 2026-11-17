@@ -152,6 +152,7 @@ Add dependencies with `pnpm --dir apps/web add <package>` (or `add -D` for tooli
 | --- | --- | --- |
 | `web` | built from `apps/web/Dockerfile` | Web UI (nginx), proxies `/api/` to `api` |
 | `api` | built from `apps/api/Dockerfile` | Nightloom API |
+| `worker` | same image as `api` | Runs Shuttle jobs from the Valkey queue (Celery, 4 processes by default: `NIGHTLOOM_WORKER_CONCURRENCY`) |
 | `migrate` | same image as `api` | One-shot: applies the PostgreSQL migrations and the Neo4j schema, then exits |
 | `postgres` | PostgreSQL 18 | Relational store |
 | `neo4j` | Neo4j Community Edition | Graph store |
@@ -228,16 +229,16 @@ make revision m="add cases table"  # autogenerate a new revision from the ORM mo
 
 ### Tests
 
-The tests live in `apps/api/tests/` and `packages/core/tests/` (the shared entity model: table-driven normalizer tests and [Hypothesis](https://hypothesis.readthedocs.io/) property tests, which need no services). They come in four kinds:
+The tests live in `apps/api/tests/`, `apps/worker/tests/` (the job runner, against the same databases as the API's tests), `packages/core/tests/` (the shared entity model: table-driven normalizer tests and [Hypothesis](https://hypothesis.readthedocs.io/) property tests, which need no services), `packages/sdk/tests/` (the Shuttle SDK, including the SSRF guard; no services, no internet) and `shuttles/*/tests/` (the built-in Shuttles). They come in four kinds:
 
 | Kind | Marker | Needs | Run with |
 | --- | --- | --- | --- |
 | Unit | none | nothing | `make test-unit` (quick, no coverage gate); `make test-core-compat` runs the `packages/core` tests on every Python in `CORE_COMPAT_PYTHONS` (3.12.0, the latest 3.12 and 3.13, installed by uv) |
-| Database | `@pytest.mark.db` (in `apps/api/tests/db/`) | PostgreSQL, Valkey and Neo4j | `make test` |
-| Graph | `@pytest.mark.graph` (in `apps/api/tests/db/`) | Neo4j | `make test` |
+| Database | `@pytest.mark.db` (in `apps/api/tests/db/` and `apps/worker/tests/`) | PostgreSQL, Valkey and Neo4j | `make test` |
+| Graph | `@pytest.mark.graph` (in `apps/api/tests/db/` and `apps/worker/tests/`) | Neo4j | `make test` |
 | Integration | `@pytest.mark.integration` (in `apps/api/tests/integration/`) | the whole stack | `make test-integration` |
 
-`make test` runs the unit, database **and** graph tests with a coverage gate of 90% (over `nightloom_api` and `nightloom_core`), so start the services first. `make deps-up` starts only PostgreSQL, Valkey and Neo4j from the Compose file (`make up` works too):
+`make test` runs the unit, database **and** graph tests with a coverage gate of 90% (over `nightloom_api`, `nightloom_core`, `nightloom_sdk`, `nightloom_worker` and the built-in Shuttles), so start the services first. The database fixtures live in `apps/api/tests/db_fixtures.py`; both the API's and the worker's `conftest.py` import them, and the API tests replace the Celery queue with a recorder, so no test ever needs a running worker. `make deps-up` starts only PostgreSQL, Valkey and Neo4j from the Compose file (`make up` works too):
 
 ```sh
 make deps-up
@@ -264,10 +265,10 @@ Every pull request and every push to `main` runs the [CI workflow](.github/workf
 | `lint` | All pre-commit hooks except mypy and the web hooks (Ruff lint and format, YAML/TOML checks, whitespace) |
 | `typecheck` | `make typecheck` (mypy, strict) |
 | `core-compat` | `make test-core-compat` for one Python each (3.12.0, latest 3.12, 3.13): the `packages/core` tests, so canonical keys stay identical across interpreters |
-| `test` | `make test` (unit, database and graph tests, at least 90% coverage) against PostgreSQL, Valkey and Neo4j service containers; the coverage report is uploaded as an artifact |
+| `test` | `make test` (unit, database and graph tests of the API, worker, core, SDK and built-in Shuttles, at least 90% coverage) against PostgreSQL, Valkey and Neo4j service containers; the coverage report is uploaded as an artifact |
 | `web` | `pnpm install --frozen-lockfile`, then `make web-lint`, `web-typecheck`, `web-test` (at least 80% coverage; the report is uploaded as an artifact) and `web-build` |
-| `docker` | `deploy/compose.yaml` is valid; the API image builds and, started on its own, answers `/api/v1/health` with 200 and `/api/v1/ready` with 503; the web image builds and serves `/` as HTML |
-| `integration` | Starts the full stack with `make up`, runs `make test-integration`, checks `/api/v1/health` through the web container's proxy, then installs Playwright's Chromium and runs `make e2e` with throwaway CI-only credentials; dumps the container logs and uploads the Playwright report on failure |
+| `docker` | `deploy/compose.yaml` is valid; the API image builds and, started on its own, answers `/api/v1/health` with 200 and `/api/v1/ready` with 503; it ships Celery and the built-in Shuttles (the worker uses the same image); the web image builds and serves `/` as HTML |
+| `integration` | Starts the full stack with `make up`, runs `make test-integration` (including a `registrable-domain` job end to end through the API, Valkey, the worker and Neo4j), checks `/api/v1/health` through the web container's proxy, then installs Playwright's Chromium and runs `make e2e` with throwaway CI-only credentials; dumps the container logs and uploads the Playwright report on failure |
 | `dco` | Pull requests only: every non-merge commit has a `Signed-off-by:` trailer (see [DCO](#developer-certificate-of-origin-dco)) |
 
 The Python jobs install dependencies with `uv sync --locked` and the web job with `pnpm install --frozen-lockfile`, so CI fails if `uv.lock` or `pnpm-lock.yaml` is out of date. Commit the updated lockfile whenever you change dependencies.
@@ -276,6 +277,109 @@ A pull request can only be merged when all jobs are green and every commit is si
 
 ## Writing a Shuttle
 
-Shuttles are Nightloom's plugins: each one queries a single data source and returns entities and relationships. The Shuttle SDK (`packages/sdk`) is coming soon; the planned contract is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#shuttle-contract).
+Shuttles are Nightloom's plugins: each one takes **one entity** and yields **findings** (entities and relationships), usually from a single data source. They are ordinary Python packages that depend on the Shuttle SDK ([`packages/sdk`](packages/sdk/), import `nightloom_sdk`) and register under an entry point. The worker runs them; they never write to the graph, the database or the network on their own terms. The full contract, including every check the worker makes, is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#shuttle-contract).
 
-To propose a new data source now, open a **Shuttle request** issue.
+To propose a new data source without writing it yourself, open a **Shuttle request** issue.
+
+### A minimal Shuttle
+
+The built-in [`shuttles/registrable-domain`](shuttles/registrable-domain/) is a complete, small example. Its shape:
+
+```python
+from collections.abc import AsyncIterator
+
+from nightloom_core.entities import EntityType, Sensitivity
+from nightloom_core.relationships import RelationType
+from nightloom_sdk import (
+    EntityFinding,
+    EntityInput,
+    EntityRef,
+    Finding,
+    Mode,
+    RelationshipFinding,
+    Shuttle,
+    ShuttleContext,
+    ShuttleMeta,
+)
+
+
+class ParentDomain(Shuttle):
+    meta = ShuttleMeta(
+        name="parent-domain",  # lowercase slug, also the entry point's name
+        version="1.0.0",  # semver; becomes the source "shuttle:parent-domain@1.0.0"
+        title="Parent domain",
+        description="Links a subdomain to its parent domain.",
+        input_types=frozenset({EntityType.DOMAIN}),
+        output_entity_types=frozenset({EntityType.DOMAIN}),
+        output_relationship_types=frozenset({RelationType.HAS_SUBDOMAIN}),
+        mode=Mode.PASSIVE,  # active Shuttles are refused for now
+        sensitivity=Sensitivity.INFRASTRUCTURE,
+        network=False,  # True needs a rate_limit and gives you ctx.http
+        default_admiralty="C3",  # reliability A-F, credibility 1-6
+        default_confidence=0.6,
+    )
+
+    async def run(self, ctx: ShuttleContext, entity: EntityInput) -> AsyncIterator[Finding]:
+        parent = entity.value.partition(".")[2]
+        if parent.count(".") < 1:
+            return
+        yield EntityFinding(type=EntityType.DOMAIN, value=parent)
+        yield RelationshipFinding(
+            type=RelationType.HAS_SUBDOMAIN,
+            source=EntityRef(type=EntityType.DOMAIN, value=parent),
+            target=entity.ref,
+        )
+```
+
+Register it in the package's `pyproject.toml`. The entry point's name must equal `meta.name`:
+
+```toml
+[project.entry-points."nightloom.shuttles"]
+parent-domain = "nightloom_shuttle_parent_domain:ParentDomain"
+```
+
+`make shuttles` (`python -m nightloom_sdk.registry list`) shows what is installed. Discovery is strict: a duplicate name, an entry point that does not load, or invalid metadata is an error, not a silent skip.
+
+### Rules the SDK and the worker enforce
+
+- **Metadata is validated** when the class is defined and again when it is loaded: the relationship types must fit the [allow-list](docs/ARCHITECTURE.md#relationships) for your input and output entity types; `sensitivity` must be at least that of every type you take or produce (any person-related type makes it a `person` Shuttle, which only runs in cases that allow person entities); `timeout_seconds` is 1–600 (default 60).
+- **Yield raw values.** Do not normalize: the worker normalizes every value with `nightloom_core`, then checks it against your declared output types, the case's person gate and the allow-list. A finding that fails is counted as rejected (with a reason, never the value) and not stored. A relationship's endpoints must exist when it arrives, so yield an entity before the relationships that use it.
+- **Network access only through `ctx.http`**, a guarded `httpx.AsyncClient`: it refuses private, loopback, link-local, multicast and reserved destinations after DNS resolution (and connects to the address it checked), allows only `http`/`https` (redirects too), applies your `rate_limit` per host, caps responses at 5 MB and identifies itself as `Nightloom/<version> (+https://github.com/TheRealNightmare/nightloom)`. Do not create your own clients or sockets. Respect the source's terms (link them in `terms_url`) and `robots.txt`.
+- **No secrets in logs or findings.** Use `ctx.logger` and never log keys, tokens or whole responses. API keys you declare in `required_keys` arrive read-only in `ctx.keys` (user-supplied keys come in a later release; until then the mapping is empty).
+- **Stop when asked.** The worker stops between findings once a job is cancelled; in a long loop, check `ctx.cancelled` (or call `ctx.raise_if_cancelled()`) before expensive work. `ctx.progress("...")` logs a short status line.
+- **Errors** end the job as `failed` with a generic message; only the exception's type is logged. More than 5,000 findings, or running past `timeout_seconds`, also stops the job (findings already stored are kept).
+
+### Testing a Shuttle
+
+`nightloom_sdk.testing` runs a Shuttle without the worker, the databases or the internet:
+
+```python
+import httpx
+from nightloom_core.entities import EntityType
+from nightloom_sdk.testing import assert_declared, collect, entity_input, fake_context
+
+
+async def test_parent_domain() -> None:
+    entity = entity_input(
+        EntityType.DOMAIN, "WWW.Example.org"
+    )  # normalized like the case stores it
+    findings = await collect(ParentDomain(), entity)
+    assert_declared(ParentDomain.meta, findings, entity)  # only declared types
+    assert findings[0].value == "example.org"
+
+
+async def test_network_shuttle() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"ip": "192.0.2.1"})
+
+    ctx = fake_context(MyNetworkShuttle.meta, transport=httpx.MockTransport(handler))
+    findings = await collect(
+        MyNetworkShuttle(), entity_input(EntityType.DOMAIN, "example.org"), ctx=ctx
+    )
+```
+
+`fake_context()` without a transport refuses every request, so a test cannot reach the internet by accident; with a `MockTransport`, the scheme check, rate limit and size cap still apply. Use documentation-only values in tests (`example.org`, RFC 5737 addresses).
+
+### Adding a built-in Shuttle
+
+Put it in `shuttles/<name>/` (package `nightloom-shuttle-<name>`, Apache-2.0, with a `README.md`, `py.typed` and tests in `shuttles/<name>/tests/`). The uv workspace picks up every directory under `shuttles/`. Add it as a dependency of `apps/worker/pyproject.toml`, add its `pyproject.toml` to the bind mounts in `apps/api/Dockerfile`, and add its `src` and `tests` to `[tool.mypy]` in the root `pyproject.toml` and its import name to `--cov` there. `make check` then lints, type-checks and tests it with the rest.

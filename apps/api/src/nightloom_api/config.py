@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     # time; further sign-ins wait their turn without blocking other requests.
     password_hash_concurrency: int = Field(default=4, ge=1)
 
+    # Queued or running Shuttle jobs one user may have at once (429 beyond).
+    max_active_jobs_per_user: int = Field(default=5, ge=1)
+
     @field_validator("log_level", mode="before")
     @classmethod
     def _upper_log_level(cls, value: object) -> object:

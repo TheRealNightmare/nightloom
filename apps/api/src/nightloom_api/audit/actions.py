@@ -31,6 +31,10 @@ class AuditAction(StrEnum):
     ENTITY_CREATE = "entity.create"
     ENTITY_DELETE = "entity.delete"
     RELATIONSHIP_CREATE = "relationship.create"
+    # Shuttle jobs: queued by a user, cancelled by a user, finished by the worker.
+    JOB_CREATE = "job.create"
+    JOB_CANCEL = "job.cancel"
+    JOB_FINISH = "job.finish"
 
 
 class AuditOutcome(StrEnum):
@@ -48,3 +52,4 @@ class TargetType(StrEnum):
     CASE = "case"
     ENTITY = "entity"
     RELATIONSHIP = "relationship"
+    JOB = "job"

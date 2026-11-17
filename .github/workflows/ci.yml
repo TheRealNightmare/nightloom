@@ -295,6 +295,19 @@ jobs:
           fi
           echo "/api/v1/ready returned 503 as expected."
 
+      # The same image runs the worker: it must ship Celery, the SDK and
+      # the built-in Shuttles.
+      - name: Check the worker parts of the image
+        run: |
+          set -euo pipefail
+          docker run --rm nightloom-api:ci celery --version
+          shuttles=$(docker run --rm nightloom-api:ci python -m nightloom_sdk.registry list)
+          echo "$shuttles"
+          if ! grep -q '^registrable-domain ' <<< "$shuttles"; then
+            echo "::error title=Shuttles::registrable-domain is not installed in the image."
+            exit 1
+          fi
+
       - name: Build web image
         uses: docker/build-push-action@v7
         with:
@@ -405,6 +418,8 @@ jobs:
       - name: Start the stack (waits until healthy)
         run: make up
 
+      # Includes a registrable-domain job end to end: API -> Valkey ->
+      # worker -> Neo4j, checked through GET /graph.
       - run: make test-integration
 
       - name: Check the API through the web proxy

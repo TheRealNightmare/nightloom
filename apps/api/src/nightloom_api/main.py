@@ -12,9 +12,21 @@ from nightloom_api import __version__
 from nightloom_api.auth import passwords
 from nightloom_api.config import Settings, get_settings
 from nightloom_api.infra import create_infra
+from nightloom_api.jobs.queue import CeleryJobQueue
 from nightloom_api.logging import configure_logging
 from nightloom_api.request_id import RequestIdMiddleware
-from nightloom_api.routers import audit, auth, cases, graph, health, readiness, schema, users
+from nightloom_api.routers import (
+    audit,
+    auth,
+    cases,
+    graph,
+    health,
+    jobs,
+    readiness,
+    schema,
+    shuttles,
+    users,
+)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -33,9 +45,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # PostgreSQL, Neo4j, Valkey or storage being up.
         infra = create_infra(resolved)
         app.state.infra = infra
+        # Sends Shuttle jobs to the worker; connects to Valkey on first use.
+        app.state.job_queue = CeleryJobQueue(resolved)
         try:
             yield
         finally:
+            app.state.job_queue.close()
             await infra.aclose()
 
     app = FastAPI(
@@ -62,6 +77,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(cases.router, prefix=resolved.api_prefix)
     app.include_router(graph.router, prefix=resolved.api_prefix)
     app.include_router(schema.router, prefix=resolved.api_prefix)
+    app.include_router(shuttles.router, prefix=resolved.api_prefix)
+    app.include_router(jobs.router, prefix=resolved.api_prefix)
     return app
 
 

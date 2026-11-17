@@ -1,0 +1,25 @@
+[project]
+name = "nightloom-worker"
+version = "0.1.0.dev0"
+description = "Nightloom background worker (Celery): runs Shuttle jobs."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+dependencies = [
+    "celery[redis]>=5.7.0",
+    "nightloom-api",
+    "nightloom-core",
+    "nightloom-sdk",
+    # Built-in Shuttles, installed wherever the worker runs.
+    "nightloom-shuttle-registrable-domain",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+nightloom-api = { workspace = true }
+nightloom-core = { workspace = true }
+nightloom-sdk = { workspace = true }
+nightloom-shuttle-registrable-domain = { workspace = true }
