@@ -63,11 +63,14 @@ from nightloom_sdk.context import JobCancelledError, ShuttleContext
 from nightloom_sdk.findings import EntityFinding, RelationshipFinding
 from nightloom_sdk.meta import MAX_TIMEOUT_SECONDS, ShuttleMeta
 from nightloom_sdk.registry import ShuttleRegistry
-from nightloom_sdk.shuttle import EntityInput, Shuttle
+from nightloom_sdk.shuttle import EntityInput, InputRefusedError, Shuttle
 
 logger = logging.getLogger(__name__)
 
 MAX_FINDINGS_PER_JOB = 5_000
+# Keys of the entities a job created or updated, kept in its stats so the UI
+# can highlight them; at most this many.
+MAX_TOUCHED_KEYS = 200
 CANCEL_POLL_SECONDS = 2.0
 # A job still running this long after it started was abandoned by a worker
 # that died (the Celery hard limit is far shorter).
@@ -108,6 +111,12 @@ class Stats:
     relationships_created: int = 0
     relationships_updated: int = 0
     rejected: Counter[str] = field(default_factory=Counter)
+    touched: dict[str, None] = field(default_factory=dict)
+
+    def touch(self, key: str) -> None:
+        """Remember an entity the job created or updated (the first MAX_TOUCHED_KEYS)."""
+        if len(self.touched) < MAX_TOUCHED_KEYS:
+            self.touched[key] = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -118,6 +127,7 @@ class Stats:
             "relationships_updated": self.relationships_updated,
             "findings_rejected": sum(self.rejected.values()),
             "rejected_reasons": dict(sorted(self.rejected.items())),
+            "entities_touched": list(self.touched),
         }
 
 
@@ -310,6 +320,7 @@ class JobRun:
             self.stats.entities_created += 1
         else:
             self.stats.entities_updated += 1
+        self.stats.touch(entity.key)
 
     async def store_relationship(self, finding: RelationshipFinding) -> None:
         if finding.type not in self.meta.output_relationship_types:
@@ -391,6 +402,12 @@ class JobRun:
                     return Outcome(JobStatus.SUCCEEDED)
                 except JobCancelledError:
                     return Outcome(JobStatus.CANCELLED, reason="cancelled")
+                except InputRefusedError as refused:
+                    # The Shuttle refused the input before doing anything; its
+                    # message is one of the SDK's fixed, user-safe ones.
+                    return Outcome(
+                        JobStatus.FAILED, error=refused.message, reason=refused.reason.value
+                    )
                 except Exception as error:
                     # A bug or an unhandled error in the Shuttle. Only the type
                     # is logged: the text may quote a response or a key.
@@ -501,6 +518,7 @@ __all__ = [
     "CANCEL_POLL_SECONDS",
     "ERROR_WORKER_LOST",
     "MAX_FINDINGS_PER_JOB",
+    "MAX_TOUCHED_KEYS",
     "Outcome",
     "RunnerConfig",
     "Stats",

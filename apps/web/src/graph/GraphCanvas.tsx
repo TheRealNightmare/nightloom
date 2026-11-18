@@ -6,6 +6,7 @@ import {
   computeHighlight,
   edgeView,
   LABEL_COLOR,
+  NO_PULSE,
   nodeView,
   type Highlight,
   type ViewState,
@@ -27,6 +28,8 @@ export interface GraphCanvasProps {
   showAllLabels?: boolean;
   /** Changes whenever the graph's nodes or edges do, so highlights are recomputed. */
   revision?: unknown;
+  /** Nodes to emphasize for a moment (e.g. a job's results). */
+  pulse?: ReadonlySet<string>;
   ref?: Ref<GraphCanvasHandle>;
 }
 
@@ -48,14 +51,20 @@ export function GraphCanvas({
   onSelectNode,
   showAllLabels = false,
   revision,
+  pulse = NO_PULSE,
   ref,
 }: GraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sigmaRef = useRef<Sigma<NodeAttributes, EdgeAttributes> | null>(null);
   // Read by the reducers on every refresh; updated before each refresh.
-  const viewRef = useRef<{ state: ViewState; highlight: Highlight }>({
+  const viewRef = useRef<{
+    state: ViewState;
+    highlight: Highlight;
+    pulse: ReadonlySet<string>;
+  }>({
     state: view,
     highlight: computeHighlight(graph, view),
+    pulse,
   });
   const callbacksRef = useRef({ onHoverNode, onSelectNode });
 
@@ -104,7 +113,13 @@ export function GraphCanvas({
         },
       },
       nodeReducer: (node) =>
-        nodeView(graph, node, viewRef.current.state, viewRef.current.highlight),
+        nodeView(
+          graph,
+          node,
+          viewRef.current.state,
+          viewRef.current.highlight,
+          viewRef.current.pulse,
+        ),
       edgeReducer: (edge) =>
         edgeView(graph, edge, viewRef.current.state, viewRef.current.highlight),
     });
@@ -137,9 +152,9 @@ export function GraphCanvas({
   }, [graph, showAllLabels]);
 
   useEffect(() => {
-    viewRef.current = { state: view, highlight: computeHighlight(graph, view) };
+    viewRef.current = { state: view, highlight: computeHighlight(graph, view), pulse };
     sigmaRef.current?.refresh({ skipIndexation: true });
-  }, [graph, view, revision]);
+  }, [graph, view, revision, pulse]);
 
   useImperativeHandle(
     ref,

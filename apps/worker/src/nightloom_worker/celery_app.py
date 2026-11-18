@@ -17,7 +17,7 @@ import uuid
 from typing import Any
 
 from celery.exceptions import SoftTimeLimitExceeded
-from celery.signals import setup_logging
+from celery.signals import setup_logging, worker_init
 
 from nightloom_api.config import Settings, get_settings
 from nightloom_api.graph.repository import GraphRepository
@@ -26,7 +26,7 @@ from nightloom_api.infra import graph as graph_infra
 from nightloom_api.jobs.models import JobStatus
 from nightloom_api.jobs.queue import TASK_NAME, create_celery
 from nightloom_api.logging import configure_logging
-from nightloom_sdk.registry import default_registry
+from nightloom_sdk.registry import RegistryError, default_registry
 from nightloom_worker.runner import (
     ERROR_WORKER_LOST,
     Outcome,
@@ -45,6 +45,23 @@ app = create_celery(get_settings(), name="nightloom-worker")
 def _configure_logging(**_: Any) -> None:
     """Use Nightloom's log format instead of Celery's (and never print secrets)."""
     configure_logging(get_settings().log_level)
+
+
+@worker_init.connect
+def _check_shuttles(**_: Any) -> None:
+    """Refuse to start when a Shuttle cannot load or is misconfigured.
+
+    For example a private resolver in NIGHTLOOM_DNS_RESOLVERS: better one
+    clear error at startup than every job failing. Celery logs and ignores
+    ordinary exceptions from signal handlers, so this exits instead.
+    """
+    try:
+        registry = default_registry()
+        registry.check_configuration()
+    except RegistryError as error:
+        logger.critical("Refusing to start: %s", error)
+        raise SystemExit(1) from error
+    logger.info("%d Shuttle(s) installed; configuration OK.", len(registry))
 
 
 async def _with_config(settings: Settings, job_id: uuid.UUID, *, abandoned: bool) -> str | None:

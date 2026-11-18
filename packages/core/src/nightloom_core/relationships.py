@@ -21,6 +21,8 @@ class RelationType(StrEnum):
     RESOLVES_TO = "RESOLVES_TO"
     HAS_MX = "HAS_MX"
     HAS_NS = "HAS_NS"
+    # A CNAME: the source name is an alias of (points to) the target name.
+    ALIAS_OF = "ALIAS_OF"
     WITHIN = "WITHIN"
     ANNOUNCED_BY = "ANNOUNCED_BY"
     COVERS = "COVERS"
@@ -49,6 +51,7 @@ ALLOWED: dict[RelationType, frozenset[Pair]] = {
     RelationType.RESOLVES_TO: _pairs([E.DOMAIN], [E.IP_ADDRESS]),
     RelationType.HAS_MX: _pairs([E.DOMAIN], [E.DOMAIN]),
     RelationType.HAS_NS: _pairs([E.DOMAIN], [E.DOMAIN]),
+    RelationType.ALIAS_OF: _pairs([E.DOMAIN], [E.DOMAIN]),
     RelationType.WITHIN: _pairs([E.IP_ADDRESS], [E.NETBLOCK]),
     RelationType.ANNOUNCED_BY: _pairs([E.NETBLOCK], [E.ASN]),
     RelationType.COVERS: _pairs([E.CERTIFICATE], [E.DOMAIN]),

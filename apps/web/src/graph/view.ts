@@ -80,12 +80,19 @@ export function mixColor(color: string, toward: string, amount: number): string 
 
 const DIM_AMOUNT = 0.78;
 
-/** Sigma node reducer body: hidden types, dimming and emphasis. */
+/** No nodes pulsing. */
+export const NO_PULSE: ReadonlySet<string> = new Set();
+
+/**
+ * Sigma node reducer body: hidden types, dimming and emphasis. Nodes in
+ * `pulse` (e.g. what a Shuttle just found) are emphasized and never dimmed.
+ */
 export function nodeView(
   graph: NightloomGraph,
   node: string,
   state: ViewState,
   highlight: Highlight,
+  pulse: ReadonlySet<string> = NO_PULSE,
 ): Partial<NodeDisplayData> {
   const attributes = graph.getNodeAttributes(node);
   if (!isTypeVisible(attributes.entityType, state)) {
@@ -104,6 +111,15 @@ export function nodeView(
       view.labelVisibility = "hidden";
       view.zIndex = 0;
     }
+  }
+  if (pulse.has(node)) {
+    delete view.color;
+    view.highlighted = true;
+    view.size = attributes.size * 1.25;
+    view.labelVisibility = "visible";
+    view.zIndex = 2;
+    view.depth = "topNodes";
+    view.labelDepth = "topNodes";
   }
   if (node === state.selectedNode) {
     view.highlighted = true;

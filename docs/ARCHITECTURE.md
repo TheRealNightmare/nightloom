@@ -29,7 +29,7 @@ flowchart LR
 | `apps/worker` | Celery worker that runs Shuttle jobs (see [Jobs](#jobs-and-the-worker)); auto-pivot scans later |
 | `packages/core` | Shared entity model (`nightloom-core`): entity types, canonical keys, relationship allow-list, provenance |
 | `packages/sdk` | Shuttle SDK (`nightloom-sdk`): the [Shuttle contract](#shuttle-contract), the guarded HTTP client, the registry, test helpers |
-| `shuttles/` | Built-in Shuttles, one package each (`registrable-domain` so far) |
+| `shuttles/` | Built-in Shuttles, one package each: `registrable-domain` (no network) and [`dns`](#the-dns-shuttle) |
 | PostgreSQL | Users, cases, jobs, audit log, encrypted API keys |
 | Neo4j | Entities and relationships |
 | Valkey (Redis-compatible) | Celery broker, rate-limit counters, result cache |
@@ -59,7 +59,7 @@ The local stack is defined in [`deploy/compose.yaml`](../deploy/compose.yaml) (s
   | `/cases` | your cases: title search (debounced), status filter, *Load more* (keyset cursor); *New case* for admins and analysts |
   | `/cases/new` | create a case: purpose, legal basis (+ note), person entities (+ reason), retention, ethics confirmation; checked locally with the server's rules, and the server's `422` messages are shown on their fields |
   | `/cases/:caseId` | redirects to the `graph` tab; the header shows title (renamed inline by editors and owners), status, legal basis, your role and the purpose |
-  | `/cases/:caseId/graph` | the case's graph from the API (never demo data): explore it, and editors of an open case add entities and relationships by hand or delete entities; see [Graph view](#graph-view) |
+  | `/cases/:caseId/graph` | the case's graph from the API (never demo data): explore it; editors of an open case add entities and relationships by hand, delete entities and run Shuttles on an entity; everyone follows the case's jobs; see [Graph view](#graph-view) |
   | `/cases/:caseId/members` | members; owners add by email, change roles and remove; anyone can leave |
   | `/cases/:caseId/activity` | the case's audit events with readable labels (owners and editors) |
   | `/cases/:caseId/settings` | purpose, legal basis, person entities, retention (a dialog asks for the change reason where the API needs one), close / reopen / archive, delete by typing the title (owners) |
@@ -86,8 +86,11 @@ The demo and the case *Graph* tab share one component, `GraphView` ([`src/graph/
 - **Add entity** (editors and owners of an open case). Types are grouped by sensitivity. Person-related types are disabled, with the reason, when the case does not allow person entities. The value field shows the type's hint and example from the schema, and there is an optional note (and a phone region for phone numbers). The server normalizes the value: its `422` message (e.g. *A domain name needs at least two labels*) appears under the field, and a `403` or `409` appears in the form. On success the node appears, selected and in view. Adding something the case already has says so (the API merged an observation).
 - **Add relationship.** Pick both ends from the case's entities with a searchable combobox (the selected entity is pre-filled), swap the direction if needed, and choose from only the relationship types the schema allows for that pair. `RELATED_TO` asks for a note.
 - **Delete entity.** From the side panel, after a confirmation. Its relationships go too.
+- **Run Shuttle** (editors and owners of an open case). The side panel lists the installed Shuttles that accept the selected entity's type (`GET /shuttles?input_type=…`, fetched once per type and page load) with their title, description, badges (passive or active, network, sensitivity) and links to the source's terms and homepage. Person-sensitive Shuttles are disabled, with the reason, when the case does not allow person entities, and active ones until ownership verification exists (the API refuses both anyway). *Run* queues a job (`POST /jobs`); a `403`, `409` or `429` answer (e.g. *You already have 5 queued or running jobs*) is shown under the Shuttle.
+- **Jobs.** The *Jobs* button (with the number of active jobs) opens a panel above the graph, and starting a job opens it. It lists the case's jobs, newest first, 20 at a time with *Load more*: a status chip (queued, running, succeeded, failed, cancelled), the Shuttle and its input, the elapsed time (ticking while active), the stats (created, updated, rejected) and the job's error, which is always one of the API's fixed messages. Queued and running jobs are polled every 2 seconds (`GET /jobs/{id}`) while the browser tab is visible; polling stops when every job has finished or the tab is hidden. Editors and owners can *Cancel* an active job, also in a closed case. Viewers see the history only.
+- **Results.** When a job that changed something finishes, the tab loads the graph again; `GraphView` syncs it incrementally, so the existing layout stays and new nodes settle next to their neighbours. After a successful job the entities it created or updated (`stats.entities_touched`) are highlighted for four seconds.
 - **Read-only.** Viewers, and everyone while the case is closed or archived, see the graph without these controls and a one-line explanation.
-- **Empty state.** *No entities yet.* with a hint that automated collection (Shuttles) comes next, and *Add your first entity* for editors.
+- **Empty state.** *No entities yet.* with a hint to add what you know and then run Shuttles on it, and *Add your first entity* for editors.
 
 ### Health and readiness
 
@@ -268,8 +271,8 @@ Each type is a Pydantic model (`nightloom_core.entities`) with a canonical `valu
 
 | Type (`type`) | Neo4j label | Sensitivity | Properties |
 | --- | --- | --- | --- |
-| `domain` | `Domain` | infrastructure | |
-| `ip_address` | `IPAddress` | infrastructure | |
+| `domain` | `Domain` | infrastructure | DNS facts, written by the [DNS Shuttle](#the-dns-shuttle): `dns_txt`, `dns_spf`, `dns_dmarc`, `dns_mx`, `dns_caa` (lists of at most 50 records of at most 1,000 characters), `dns_soa_primary_ns`, `dns_soa_responsible`, `dns_soa_serial`, `dns_soa_refresh`, `dns_soa_retry`, `dns_soa_expire`, `dns_soa_minimum` |
+| `ip_address` | `IPAddress` | infrastructure | `scope` (`public` or `private`: not globally routable) |
 | `netblock` | `Netblock` | infrastructure | `name`, `country`, `registry` |
 | `asn` | `ASN` | infrastructure | `name`, `country`, `registry` |
 | `certificate` | `Certificate` | infrastructure | `subject`, `issuer`, `serial_number`, `not_before`, `not_after`, `self_signed` |
@@ -317,6 +320,7 @@ Relationship types (`nightloom_core.relationships`) have an explicit allow-list 
 | Type | Source → target |
 | --- | --- |
 | `HAS_SUBDOMAIN`, `HAS_MX`, `HAS_NS` | Domain → Domain |
+| `ALIAS_OF` | Domain → Domain: the source name is a CNAME alias of the target name |
 | `RESOLVES_TO` | Domain → IPAddress |
 | `WITHIN` | IPAddress → Netblock |
 | `ANNOUNCED_BY` | Netblock → ASN |
@@ -416,7 +420,7 @@ Every Shuttle subclasses `Shuttle` and declares a frozen `ShuttleMeta`, validate
 
 ### Findings
 
-`run(ctx, entity)` is an async generator. `entity` is an `EntityInput` (type, canonical value, key, properties) read from the case's graph. It yields:
+`run(ctx, entity)` is an async generator. Before doing any work it may raise `InputRefusedError(RefusalReason.…)` for an input it will not handle (the DNS Shuttle refuses internal-only names): the job fails with that reason's fixed, user-safe message from the SDK, never the input or other text, and the reason code is recorded in `job.finish`. `entity` is an `EntityInput` (type, canonical value, key, properties) read from the case's graph. It yields:
 
 - `EntityFinding(type, value, properties?, confidence?, admiralty?, note?)`
 - `RelationshipFinding(type, source, target, confidence?, note?)`, whose ends are `EntityRef(type, value)`
@@ -446,9 +450,36 @@ Values are **raw**: Shuttles never normalize. The worker normalizes everything w
 
 Shuttles register under the entry-point group `nightloom.shuttles`, named after `meta.name`. Discovery is strict: an entry point that fails to load, is not a concrete Shuttle, has invalid metadata, is named differently from its Shuttle or duplicates a name is an error. `python -m nightloom_sdk.registry list` (`make shuttles`) lists what is installed. The API and the worker image install the same set.
 
+**Configuration check.** A Shuttle with settings of its own overrides the class method `check_configuration()` and raises `ShuttleConfigurationError` with an operator-facing message (naming the setting, never printing a secret). The worker runs every installed Shuttle's check when it starts (Celery's `worker_init`) and **refuses to start** if one fails, so a bad setting is one clear error in the log instead of every job failing. `python -m nightloom_sdk.registry check` runs the same checks.
+
+### The DNS Shuttle
+
+[`shuttles/dns`](../shuttles/dns/) (`dns`, passive, infrastructure, `network=True`) asks DNS about the input domain and adds what public DNS says:
+
+| Record | Becomes |
+| --- | --- |
+| A, AAAA | an IPAddress with `scope` and `RESOLVES_TO` from the name that owns the addresses (the input, or the end of its CNAME chain). Private addresses published in public DNS are recorded too, since that is a legitimate finding, with `scope: private` and a note; the Shuttle never connects to any address it finds |
+| CNAME | the target Domain and `ALIAS_OF`, following the chain from the input for at most 5 steps (loops and internal-only targets end it) |
+| MX | the exchanger Domain and `HAS_MX`, its preference in the relationship's note, and `dns_mx` (`"10 mail.example.org"`) on the input. A null MX (`0 .`, RFC 7505) is only the property |
+| NS | the name server Domain and `HAS_NS` |
+| TXT | `dns_txt` (each record's strings joined, control characters replaced, at most 50 records of 1,000 characters); SPF records (`v=spf1`) also in `dns_spf` |
+| TXT at `_dmarc.<name>` | DMARC records (`v=DMARC1`) in `dns_dmarc`, also when `_dmarc` is a CNAME to a reporting provider |
+| SOA | `dns_soa_*` (only at a zone apex) |
+| CAA | `dns_caa` (`0 issue "letsencrypt.org"`) |
+
+Records of a name that is a CNAME belong to its target, so MX, NS, TXT, SOA and CAA answers are only used when their owner is the input itself. A name that does not exist (NXDOMAIN) or a type it does not have is not an error. Each query has 3 seconds and 2 tries (the second at the next resolver); a query that fails both is skipped, and if every query fails the job fails. The Shuttle's rate limit (10 queries per second, burst 10) applies per resolver.
+
+**Resolver policy, and why.** The worker host's resolver (`/etc/resolv.conf`) is never used: on a server it is often an internal resolver, which can answer for internal zones (split-horizon DNS, Active Directory, cloud-internal names), and its answers would put internal records into a case. Instead the Shuttle asks only the resolvers in `NIGHTLOOM_DNS_RESOLVERS` (comma-separated IP addresses; default `1.1.1.1,9.9.9.9`, [Cloudflare](https://developers.cloudflare.com/1.1.1.1/) ([privacy policy](https://developers.cloudflare.com/1.1.1.1/privacy/public-dns-resolver/)) and [Quad9](https://quad9.net/) ([privacy policy](https://quad9.net/privacy/policy/))). Each dnspython resolver is built with `configure=False`, one nameserver, no search list and no cache, and every query name is absolute. A resolver address that is not public (the SDK's `is_public_address`, the same check as the HTTP client's SSRF guard) is refused by the [configuration check](#registry), so the worker does not start. Host names are not accepted as resolvers (finding them would need another resolver).
+
+**Internal-only names are refused before any query**, with a fixed job error and no findings: single-label names and names under `.local`, `.localhost`, `.internal`, `.home.arpa`, `.lan`, `.corp`, `.intranet`, `.test`, `.invalid`, `.example` and `.onion`. A public resolver cannot answer them, and asking would tell its operator about an internal name.
+
+**Test-only mode.** `NIGHTLOOM_DNS_ALLOW_PRIVATE_RESOLVERS=true` allows private resolver addresses and lifts the refusal for the `nightloom-test.example` zone only. It exists for the integration tests, which run a local authoritative CoreDNS server ([`deploy/compose.test.yaml`](../deploy/compose.test.yaml), `make up TEST_DNS=1`) so that CI never queries the internet. The configuration check refuses it when `NIGHTLOOM_ENV=production`.
+
+Findings are rated **B2** (a recursive resolver's answer: usually reliable, probably true, not DNSSEC-validated here) with confidence 0.9.
+
 ### Jobs and the worker
 
-A **job** is one Shuttle run on one entity of a case (PostgreSQL table `jobs`, deleted with its case): `shuttle_name`, `shuttle_version`, `input_key`, `requested_by`, `status`, `created_at`/`started_at`/`finished_at`, `error` (one of a few fixed, user-safe messages, never an exception's text), `stats` (`entities_created`, `entities_updated`, `relationships_created`, `relationships_updated`, `findings_rejected` and `rejected_reasons` by reason) and `cancel_requested`.
+A **job** is one Shuttle run on one entity of a case (PostgreSQL table `jobs`, deleted with its case): `shuttle_name`, `shuttle_version`, `input_key`, `requested_by`, `status`, `created_at`/`started_at`/`finished_at`, `error` (one of a few fixed, user-safe messages, never an exception's text), `stats` (`entities_created`, `entities_updated`, `relationships_created`, `relationships_updated`, `findings_rejected`, `rejected_reasons` by reason, and `entities_touched`: the keys of up to 200 entities the job created or updated, in order, so the UI can highlight them; the audit log gets the counts but never these keys) and `cancel_requested`.
 
 ```mermaid
 stateDiagram-v2
@@ -458,7 +489,7 @@ stateDiagram-v2
     queued --> failed: guardrail fails at start (job.finish denied), enqueue fails, or lost (6 h)
     running --> succeeded: Shuttle ends (job.finish)
     running --> cancelled: cancel_requested noticed between findings
-    running --> failed: timeout, over 5,000 findings, Shuttle error, guardrail fails mid-run, worker lost
+    running --> failed: timeout, over 5,000 findings, Shuttle error or refusal, guardrail fails mid-run, worker lost
     succeeded --> [*]
     cancelled --> [*]
     failed --> [*]
@@ -481,10 +512,10 @@ stateDiagram-v2
 | `GET /shuttles` | signed in | installed Shuttles' metadata, by name; `?input_type=domain` keeps those accepting it |
 | `POST /cases/{id}/jobs` | editor, owner; case `open` | `{shuttle, entity_key}` → `201` with the queued job; `403` active or person-gated Shuttle (recorded as `authz.denied`), `409` case not open, `422` unknown Shuttle, type not accepted or no such entity, `429` too many jobs, `503` Neo4j or the queue unavailable |
 | `GET /cases/{id}/jobs` | member | newest first, `{items, next_cursor}`; `limit` 1–200, `status` filter |
-| `GET /cases/{id}/jobs/{job_id}` | member | one job; `404` for a job of another case |
+| `GET /cases/{id}/jobs/{job_id}` | member | one job, with `stats.entities_touched`; `404` for a job of another case |
 | `POST /cases/{id}/jobs/{job_id}/cancel` | editor, owner (also when the case is closed) | a queued job becomes `cancelled` at once; a running one gets `cancel_requested` and stops between findings; `409` once finished |
 
-The Compose stack runs the worker as the `worker` service (same image as the API, 4 processes by default, health-checked with `celery inspect ping`); `make worker` runs one on your machine against the stack's services.
+The Compose stack runs the worker as the `worker` service (same image as the API, 4 processes by default, health-checked with `celery inspect ping`, with `NIGHTLOOM_DNS_RESOLVERS` for the [DNS Shuttle](#the-dns-shuttle)); `make worker` runs one on your machine against the stack's services.
 
 ## Auto-pivot
 

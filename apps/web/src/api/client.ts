@@ -245,14 +245,19 @@ export class SessionExpiredError extends RequestError {
   }
 }
 
-/** `429`, with the server's `Retry-After` in seconds when it sent a usable one. */
+/**
+ * `429`, with the server's `Retry-After` in seconds when it sent a usable one,
+ * and its `detail` when it was a string (e.g. the job limit's fixed message).
+ */
 export class RateLimitedError extends RequestError {
   readonly kind = "rate_limited";
   readonly retryAfterSeconds: number | null;
-  constructor(retryAfterSeconds: number | null) {
+  readonly detail: string | null;
+  constructor(retryAfterSeconds: number | null, detail: string | null = null) {
     super("Too many attempts.");
     this.name = "RateLimitedError";
     this.retryAfterSeconds = retryAfterSeconds;
+    this.detail = detail;
   }
 }
 
@@ -267,12 +272,18 @@ export class ValidationError extends RequestError {
   }
 }
 
-/** `403`: signed in, but not allowed to do this. */
+/**
+ * `403`: signed in, but not allowed to do this. `detail` is the server's
+ * string `detail`, shown only where the API sends fixed, user-safe reasons
+ * (e.g. a person-related Shuttle in a case that does not allow them).
+ */
 export class ForbiddenError extends RequestError {
   readonly kind = "forbidden";
-  constructor() {
+  readonly detail: string | null;
+  constructor(detail: string | null = null) {
     super("You don't have permission to do this.");
     this.name = "ForbiddenError";
+    this.detail = detail;
   }
 }
 
@@ -508,14 +519,17 @@ export async function apiRequest(
       throw new SessionExpiredError();
     }
     if (status === 429)
-      throw new RateLimitedError(parseRetryAfter(response.headers.get("retry-after")));
+      throw new RateLimitedError(
+        parseRetryAfter(response.headers.get("retry-after")),
+        detailText(parsed),
+      );
     if (status === 422) {
       const messages = messagesFrom422(parsed);
       if (messages.length > 0) throw new ValidationError(messages);
     }
     // Only these few statuses carry server text, and only for known, fixed
     // messages (last owner, unknown member email).
-    if (status === 403) throw new ForbiddenError();
+    if (status === 403) throw new ForbiddenError(detailText(parsed));
     if (status === 404) throw new NotFoundError(detailText(parsed));
     if (status === 409) throw new ConflictError(detailText(parsed));
     throw new UnexpectedResponseError(status);

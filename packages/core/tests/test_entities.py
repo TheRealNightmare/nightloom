@@ -141,6 +141,12 @@ def test_build_entity_without_properties() -> None:
         (EntityType.IMAGE, {"mime_type": "not a type"}),
         (EntityType.CERTIFICATE, {"not_after": "2026-01-01T00:00:00"}),  # naive
         (EntityType.BREACH, {"data_classes": ["x"] * 51}),
+        (EntityType.DOMAIN, {"dns_txt": ["x"] * 51}),  # at most 50 records
+        (EntityType.DOMAIN, {"dns_txt": ["x" * 1001]}),  # of at most 1,000 characters
+        (EntityType.DOMAIN, {"dns_txt": [""]}),
+        (EntityType.DOMAIN, {"dns_soa_serial": 2**32}),
+        (EntityType.DOMAIN, {"dns_soa_retry": -1}),
+        (EntityType.IP_ADDRESS, {"scope": "internal"}),
     ],
 )
 def test_invalid_properties(entity_type: EntityType, properties: dict[str, Any]) -> None:
@@ -149,6 +155,7 @@ def test_invalid_properties(entity_type: EntityType, properties: dict[str, Any])
         EntityType.NETBLOCK: "192.0.2.0/24",
         EntityType.URL: "https://example.org/",
         EntityType.CERTIFICATE: "a" * 64,
+        EntityType.IP_ADDRESS: "192.0.2.1",
     }.get(entity_type, "Something")
     with pytest.raises(ValidationError):
         build_entity(entity_type, value, properties)
@@ -167,6 +174,36 @@ def test_properties_are_typed_and_serialized_for_storage() -> None:
     }
     netblock = build_entity(EntityType.NETBLOCK, "192.0.2.0/24", {"country": " bd "})
     assert netblock.stored_properties() == {"country": "BD"}
+
+
+def test_dns_properties_of_domains_and_ip_addresses() -> None:
+    domain = build_entity(
+        EntityType.DOMAIN,
+        "example.org",
+        {
+            "dns_txt": ["v=spf1 -all", " google-site-verification=abc "],
+            "dns_spf": ["v=spf1 -all"],
+            "dns_dmarc": ["v=DMARC1; p=reject"],
+            "dns_mx": ["10 mail.example.org"],
+            "dns_caa": ['0 issue "letsencrypt.org"'],
+            "dns_soa_primary_ns": "ns1.example.org",
+            "dns_soa_responsible": "hostmaster.example.org",
+            "dns_soa_serial": 2**32 - 1,
+            "dns_soa_refresh": 7200,
+            "dns_soa_retry": 3600,
+            "dns_soa_expire": 1209600,
+            "dns_soa_minimum": 3600,
+        },
+    )
+    stored = domain.stored_properties()
+    assert stored["dns_txt"] == ["v=spf1 -all", "google-site-verification=abc"]
+    assert stored["dns_soa_serial"] == 4294967295
+    assert len(stored) == 12
+    full = build_entity(EntityType.DOMAIN, "example.org", {"dns_txt": ["x" * 1000] * 50})
+    assert len(full.stored_properties()["dns_txt"]) == 50
+    ip = build_entity(EntityType.IP_ADDRESS, "10.0.0.1", {"scope": "private"})
+    assert ip.stored_properties() == {"scope": "private"}
+    assert build_entity(EntityType.IP_ADDRESS, "192.0.2.1", {"scope": "public"}).stored_properties()
 
 
 def test_build_entity_phone_region() -> None:

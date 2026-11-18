@@ -88,6 +88,9 @@ class JobStats(BaseModel):
     findings_rejected: int = 0
     # Rejected findings by reason (e.g. "invalid_value"); never the findings themselves.
     rejected_reasons: dict[str, int] = Field(default_factory=dict)
+    # Keys of the entities the job created or updated (at most 200), so a
+    # client can highlight them. Never copied into the audit log.
+    entities_touched: list[str] = Field(default_factory=list)
 
     @classmethod
     def parse(cls, raw: dict[str, Any] | None) -> "JobStats":

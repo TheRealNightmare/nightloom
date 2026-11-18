@@ -4,6 +4,8 @@ Milestones are ordered but not dated. Checked items are done; everything else is
 
 ## M0 — Foundation
 
+Complete, apart from the user management UI (users are managed through the API and `make create-admin` for now).
+
 - [x] Repository foundation (docs, license, templates, repo hygiene)
 - [x] API skeleton (FastAPI)
 - [x] CI (lint, tests, DCO check)
@@ -19,7 +21,7 @@ Milestones are ordered but not dated. Checked items are done; everything else is
 - [x] Entity schema with provenance
 - [x] Case graph view (manual entities)
 - [x] Shuttle SDK + Celery worker (first built-in Shuttle: `registrable-domain`, no network)
-- [ ] First DNS Shuttle and "Run Shuttle" in the web UI
+- [x] First networked Shuttle (DNS) and "Run Shuttle" in the web UI
 
 ## M1 — Infrastructure MVP
 

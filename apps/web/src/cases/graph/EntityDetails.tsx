@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 
 import { RequestAbortedError } from "../../api/client";
 import { getEntity, type Schema } from "../../api/graph";
@@ -114,6 +114,8 @@ export interface EntityDetailsProps {
   revision: number;
   canEdit: boolean;
   onDelete: (entity: EntityNode) => void;
+  /** Shown after the provenance (the Run Shuttle section for editors). */
+  children?: ReactNode;
 }
 
 /** The selected case entity in the side panel: key, sensitivity, provenance, neighbours. */
@@ -124,6 +126,7 @@ export function EntityDetails({
   revision,
   canEdit,
   onDelete,
+  children,
 }: EntityDetailsProps) {
   const details = entity.details;
   return (
@@ -216,6 +219,8 @@ export function EntityDetails({
           )}
         </dl>
       </section>
+
+      {children}
 
       {canEdit && (
         <div className="button-row panel__actions">

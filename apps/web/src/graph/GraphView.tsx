@@ -48,6 +48,8 @@ export interface GraphViewProps {
   /** Applied once the node exists in the graph. */
   focus?: FocusRequest | null;
   onSelectionChange?: (id: string | null) => void;
+  /** Nodes to emphasize for a moment (e.g. what a Shuttle job just found). */
+  pulse?: ReadonlySet<string>;
   /** Extra class names for the outer element (e.g. to embed it in a page). */
   className?: string;
   ref?: Ref<GraphViewHandle>;
@@ -66,6 +68,7 @@ export function GraphView({
   toolbar,
   focus = null,
   onSelectionChange,
+  pulse,
   className,
   ref,
 }: GraphViewProps) {
@@ -187,6 +190,7 @@ export function GraphView({
           onSelectNode={selectNode}
           showAllLabels={snapshot.order <= SMALL_GRAPH}
           revision={snapshot}
+          {...(pulse ? { pulse } : {})}
         />
         <div className="toolbar">
           <SearchBox nodes={data.nodes} hiddenTypes={view.hiddenTypes} onPick={focusNode} />

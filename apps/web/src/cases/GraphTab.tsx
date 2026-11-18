@@ -1,7 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 
+import { can } from "../api/cases";
 import { RequestAbortedError } from "../api/client";
 import { DEFAULT_GRAPH_LIMIT, getCaseGraph, getSchema, type Schema } from "../api/graph";
+import type { Job, ShuttleInfo } from "../api/shuttles";
 import { TypeSummary, type GraphSummary } from "../components/SidePanel";
 import type { EntityNode, InvestigationGraph } from "../domain/entities";
 import type { FocusRequest } from "../graph/GraphView";
@@ -12,6 +14,7 @@ import { AddEntityDialog } from "./graph/AddEntityDialog";
 import { AddRelationshipDialog } from "./graph/AddRelationshipDialog";
 import { DeleteEntityDialog } from "./graph/DeleteEntityDialog";
 import { EntityDetails } from "./graph/EntityDetails";
+import { JobsPanel } from "./graph/JobsPanel";
 import {
   toEntityNode,
   toInvestigationGraph,
@@ -20,14 +23,18 @@ import {
   withoutEntity,
   withRelationship,
 } from "./graph/mapping";
+import { RunShuttles } from "./graph/RunShuttles";
 import { graphSummaryText, readOnlyReason } from "./graph/text";
+import { useCaseJobs } from "./graph/useCaseJobs";
 
 // sigma and graphology are loaded only when there is a graph to draw.
 const GraphView = lazy(() => import("../graph/GraphView"));
 
 export const GRAPH_EMPTY_MESSAGE = "No entities yet.";
 export const GRAPH_EMPTY_HINT =
-  "Add what you already know by hand. Automated collection (Shuttles) comes next.";
+  "Add what you already know by hand, then select an entity and run Shuttles (such as DNS) on it to collect more.";
+/** How long a finished job's results stay highlighted in the graph. */
+export const PULSE_MS = 4000;
 
 type Load =
   | { kind: "loading" }
@@ -65,6 +72,52 @@ export function GraphTab() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
+  const [jobsOpen, setJobsOpen] = useState(false);
+  const [pulse, setPulse] = useState<ReadonlySet<string> | null>(null);
+
+  // A finished job may have changed the graph: load it again (the view syncs
+  // incrementally), and highlight what a successful job created or updated.
+  const onJobFinished = useCallback(
+    (job: Job) => {
+      const { stats } = job;
+      const changed =
+        stats.entities_created +
+          stats.entities_updated +
+          stats.relationships_created +
+          stats.relationships_updated >
+        0;
+      if (!changed) return;
+      getCaseGraph(caseId, { limit: DEFAULT_GRAPH_LIMIT }).then(
+        (graph) => {
+          setLoad((previous) =>
+            previous.kind === "ready"
+              ? { ...previous, data: toInvestigationGraph(graph), truncated: graph.truncated }
+              : previous,
+          );
+          setRevision((n) => n + 1);
+          if (job.status === "succeeded" && stats.entities_touched.length > 0) {
+            setPulse(new Set(stats.entities_touched));
+          }
+        },
+        () => {
+          setNotice("A job finished, but the graph could not be reloaded. Reload the page.");
+        },
+      );
+    },
+    [caseId],
+  );
+  const jobs = useCaseJobs(caseId, onJobFinished);
+  const { start: startJob } = jobs;
+
+  useEffect(() => {
+    if (pulse === null) return;
+    const timer = setTimeout(() => {
+      setPulse(null);
+    }, PULSE_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [pulse]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -106,6 +159,16 @@ export function GraphTab() {
   // A case can be closed (or a role changed) while a dialog is open.
   const openDialog = canEdit ? dialog : null;
 
+  const allowPersonEntities = current.allow_person_entities;
+  const runShuttle = useCallback(
+    async (shuttle: ShuttleInfo, entity: EntityNode) => {
+      const job = await startJob(shuttle.name, entity.id);
+      setJobsOpen(true);
+      return job;
+    },
+    [startJob],
+  );
+
   const renderEntity = useMemo(() => {
     if (load.kind !== "ready") return undefined;
     const { schema } = load;
@@ -119,9 +182,17 @@ export function GraphTab() {
         onDelete={(target) => {
           setDialog({ kind: "delete", entity: target });
         }}
-      />
+      >
+        {canEdit && (
+          <RunShuttles
+            entity={entity}
+            allowPersonEntities={allowPersonEntities}
+            onRun={runShuttle}
+          />
+        )}
+      </EntityDetails>
     );
-  }, [load, caseId, revision, canEdit]);
+  }, [load, caseId, revision, canEdit, allowPersonEntities, runShuttle]);
 
   if (load.kind === "loading") return <Loading label="Loading graph…" />;
   if (load.kind === "error") {
@@ -153,32 +224,50 @@ export function GraphTab() {
         <p className="case-graph__summary" role="status" aria-live="polite">
           {graphSummaryText(data.nodes.length, data.edges.length)}
         </p>
-        {canEdit && !empty && (
-          <div className="button-row">
-            <button
-              type="button"
-              className="button button--primary"
-              onClick={() => {
-                setNotice(null);
-                setDialog({ kind: "add_entity" });
-              }}
-            >
-              Add entity
-            </button>
-            <button
-              type="button"
-              className="button"
-              disabled={data.nodes.length < 2}
-              title={data.nodes.length < 2 ? "Add at least two entities first." : undefined}
-              onClick={() => {
-                setNotice(null);
-                setDialog({ kind: "add_relationship" });
-              }}
-            >
-              Add relationship
-            </button>
-          </div>
-        )}
+        <div className="button-row">
+          <button
+            type="button"
+            className="button"
+            aria-expanded={jobsOpen}
+            aria-controls="case-jobs"
+            onClick={() => {
+              setJobsOpen((open) => !open);
+            }}
+          >
+            Jobs
+            {jobs.activeCount > 0 && (
+              <span className="count-badge" aria-label={`${String(jobs.activeCount)} active`}>
+                {jobs.activeCount}
+              </span>
+            )}
+          </button>
+          {canEdit && !empty && (
+            <>
+              <button
+                type="button"
+                className="button button--primary"
+                onClick={() => {
+                  setNotice(null);
+                  setDialog({ kind: "add_entity" });
+                }}
+              >
+                Add entity
+              </button>
+              <button
+                type="button"
+                className="button"
+                disabled={data.nodes.length < 2}
+                title={data.nodes.length < 2 ? "Add at least two entities first." : undefined}
+                onClick={() => {
+                  setNotice(null);
+                  setDialog({ kind: "add_relationship" });
+                }}
+              >
+                Add relationship
+              </button>
+            </>
+          )}
+        </div>
       </div>
       {reason !== null && <p className="case-graph__readonly">{reason}</p>}
       {truncated && (
@@ -192,6 +281,24 @@ export function GraphTab() {
         <p className="notice" role="status">
           {notice}
         </p>
+      )}
+      {jobsOpen && (
+        <div id="case-jobs">
+          <JobsPanel
+            jobs={jobs.jobs}
+            loading={jobs.loading}
+            error={jobs.error}
+            hasMore={jobs.hasMore}
+            loadingMore={jobs.loadingMore}
+            // Editors and owners may cancel, also while the case is closed.
+            canCancel={can(current.my_role, "run_shuttles")}
+            onCancel={jobs.cancel}
+            onLoadMore={jobs.loadMore}
+            onClose={() => {
+              setJobsOpen(false);
+            }}
+          />
+        </div>
       )}
 
       {empty ? (
@@ -219,6 +326,7 @@ export function GraphTab() {
             {...(renderEntity ? { renderEntity } : {})}
             focus={focus}
             onSelectionChange={setSelectedId}
+            {...(pulse ? { pulse } : {})}
           />
         </Suspense>
       )}

@@ -44,6 +44,10 @@ from nightloom_sdk.registry import ShuttleRegistry, default_registry
 # log's one-key lock.
 _USER_JOBS_LOCK_CLASS = 0x6E6A  # "nj"
 
+# Stats that stay out of the audit log: entity keys (which can be personal
+# data) are never recorded there, only counts and reason codes.
+_UNAUDITED_STATS = frozenset({"entities_touched"})
+
 # Fixed, user-safe messages: the only text ever stored in jobs.error.
 ERROR_ACTIVE = "Active Shuttles cannot run until ownership verification is available."
 ERROR_PERSON = "This case does not allow person-related entities."
@@ -358,6 +362,7 @@ async def finish_job(
     ``error`` must be one of the fixed, user-safe messages (never an
     exception's text); ``reason`` is a short code for the audit event.
     ``denied`` records the event as ``denied`` (a guardrail stopped the job).
+    The event carries the counts from ``stats``, never ``entities_touched``.
     """
     if status not in FINISHED_STATUSES:
         raise ValueError("finish_job needs a final status")
@@ -366,7 +371,8 @@ async def finish_job(
     job.error = error[:ERROR_MAX_LENGTH] if error else None
     if stats is not None:
         job.stats = dict(stats)
-    extra: dict[str, Any] = {"status": status.value, "stats": dict(job.stats or {})}
+    audited = {k: v for k, v in (job.stats or {}).items() if k not in _UNAUDITED_STATS}
+    extra: dict[str, Any] = {"status": status.value, "stats": audited}
     if reason:
         extra["reason"] = reason
     await audit.record(

@@ -1,0 +1,23 @@
+[project]
+name = "nightloom-shuttle-dns"
+version = "1.0.0"
+description = "Built-in Nightloom Shuttle: a domain's public DNS records (A, AAAA, CNAME, MX, NS, TXT, SOA, CAA, DMARC) through public resolvers only."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+dependencies = [
+    "dnspython>=2.9.2",
+    "nightloom-core",
+    "nightloom-sdk",
+]
+
+[project.entry-points."nightloom.shuttles"]
+dns = "nightloom_shuttle_dns:DnsShuttle"
+
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+nightloom-core = { workspace = true }
+nightloom-sdk = { workspace = true }

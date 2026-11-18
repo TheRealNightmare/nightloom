@@ -11,6 +11,7 @@ dependencies = [
     "nightloom-core",
     "nightloom-sdk",
     # Built-in Shuttles, installed wherever the worker runs.
+    "nightloom-shuttle-dns",
     "nightloom-shuttle-registrable-domain",
 ]
 
@@ -22,4 +23,5 @@ build-backend = "uv_build"
 nightloom-api = { workspace = true }
 nightloom-core = { workspace = true }
 nightloom-sdk = { workspace = true }
+nightloom-shuttle-dns = { workspace = true }
 nightloom-shuttle-registrable-domain = { workspace = true }

@@ -54,6 +54,7 @@ known-first-party = [
     "nightloom_api",
     "nightloom_core",
     "nightloom_sdk",
+    "nightloom_shuttle_dns",
     "nightloom_shuttle_registrable_domain",
     "nightloom_worker",
 ]
@@ -77,6 +78,8 @@ files = [
     "packages/core/tests",
     "packages/sdk/src",
     "packages/sdk/tests",
+    "shuttles/dns/src",
+    "shuttles/dns/tests",
     "shuttles/registrable-domain/src",
     "shuttles/registrable-domain/tests",
 ]
@@ -90,6 +93,7 @@ mypy_path = [
     "apps/worker/src",
     "packages/core/src",
     "packages/sdk/src",
+    "shuttles/dns/src",
     "shuttles/registrable-domain/src",
 ]
 
@@ -122,18 +126,21 @@ markers = [
     "db: needs PostgreSQL and Valkey (`make deps-up`); part of `make test`",
     "graph: needs Neo4j (`make deps-up`); part of `make test`",
     "integration: needs the running stack (`make up`); run with `make test-integration`",
+    "network: queries the real internet (public DNS); opt-in with `make test-network`",
 ]
 addopts = [
     "--import-mode=importlib",
     "--strict-markers",
-    # Integration tests are opt-in: `make test-integration` passes `-m integration`.
+    # Integration and real-network tests are opt-in: `make test-integration`
+    # passes `-m integration`, `make test-network` passes `-m network`.
     # Database tests (`db`) run by default and need PostgreSQL and Valkey.
     "-m",
-    "not integration",
+    "not integration and not network",
     "--cov=nightloom_api",
     "--cov=nightloom_core",
     "--cov=nightloom_sdk",
     "--cov=nightloom_worker",
+    "--cov=nightloom_shuttle_dns",
     "--cov=nightloom_shuttle_registrable_domain",
     "--cov-report=term-missing",
     "--cov-fail-under=90",

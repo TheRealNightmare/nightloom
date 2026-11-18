@@ -8,6 +8,9 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
+import dns.rdata
+import dns.rdataclass
+import dns.rdatatype
 import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
@@ -30,16 +33,22 @@ from nightloom_sdk import (
     EntityFinding,
     EntityInput,
     EntityRef,
+    InputRefusedError,
     Mode,
+    RefusalReason,
     RelationshipFinding,
     Shuttle,
     ShuttleContext,
     ShuttleMeta,
 )
 from nightloom_sdk.registry import ShuttleRegistry
+from nightloom_sdk.shuttle import REFUSAL_MESSAGES
+from nightloom_shuttle_dns import DnsShuttle
+from nightloom_shuttle_dns.client import Answer
+from nightloom_shuttle_dns.config import DnsConfig
 from nightloom_shuttle_registrable_domain import RegistrableDomain
 from nightloom_worker import runner
-from nightloom_worker.runner import RunnerConfig, reap_stale_jobs, run_job
+from nightloom_worker.runner import MAX_TOUCHED_KEYS, RunnerConfig, reap_stale_jobs, run_job
 from support import PREFIX, csrf, login
 
 pytestmark = [pytest.mark.db, pytest.mark.graph]
@@ -250,6 +259,7 @@ async def test_registrable_domain_job_end_to_end_through_the_api(
         "relationships_updated": 0,
         "findings_rejected": 0,
         "rejected_reasons": {},
+        "entities_touched": ["domain:example.co.uk"],
     }
     nodes, edges = await world.graph()
     assert nodes == {"domain:example.co.uk", SUBDOMAIN}
@@ -266,12 +276,16 @@ async def test_registrable_domain_job_end_to_end_through_the_api(
     assert (event.outcome, event.details["status"]) == ("success", "succeeded")
     assert event.actor_label == "system:worker"
     assert event.details["stats"]["entities_created"] == 1
+    # Entity keys never reach the audit log; counts do.
+    assert "entities_touched" not in event.details["stats"]
+    assert "example.co.uk" not in str(event.details["stats"])
     assert event.details["shuttle"] == "registrable-domain"
 
     # The job is visible through the API with its final state.
     shown = await world.owner_client.get(f"{PREFIX}/cases/{world.case_id}/jobs/{job_id}")
     assert shown.json()["status"] == "succeeded"
     assert shown.json()["stats"]["relationships_created"] == 1
+    assert shown.json()["stats"]["entities_touched"] == ["domain:example.co.uk"]
 
     # Running it again merges observations instead of creating.
     again = await world.queue(RegistrableDomain)
@@ -494,6 +508,87 @@ async def test_shuttle_exceptions_are_never_stored_raw(
         assert SECRET not in text_
         assert "Traceback" not in text_
     assert "the Shuttle raised RuntimeError" in caplog.text
+
+
+async def test_refused_inputs_fail_with_the_fixed_message(world: World) -> None:
+    async def refuse() -> None:
+        raise InputRefusedError(RefusalReason.INTERNAL_NAME)
+
+    shuttle = scripted([refuse])
+    job_id = await world.queue(shuttle)
+    assert await run_job(job_id, world.config(shuttle)) == JobStatus.FAILED
+    job = await world.job(job_id)
+    assert job.error == REFUSAL_MESSAGES[RefusalReason.INTERNAL_NAME]
+    assert job.stats["entities_created"] == 0
+    event = await world.finish_event(job_id)
+    assert (event.outcome, event.details["reason"]) == ("failure", "internal_name")
+
+
+async def test_touched_entities_are_capped(world: World) -> None:
+    shuttle = scripted([domain(f"n{i}.example.co.uk") for i in range(MAX_TOUCHED_KEYS + 20)])
+    job_id = await world.queue(shuttle)
+    assert await run_job(job_id, world.config(shuttle)) == JobStatus.SUCCEEDED
+    job = await world.job(job_id)
+    touched = job.stats["entities_touched"]
+    assert len(touched) == MAX_TOUCHED_KEYS == 200
+    assert touched[:2] == ["domain:n0.example.co.uk", "domain:n1.example.co.uk"]
+    assert job.stats["entities_created"] == MAX_TOUCHED_KEYS + 20
+
+
+class _FakeDns:
+    """Fixed answers for www.shop.example.co.uk (a CNAME) and its target."""
+
+    def answer(self, name: str, rdtype: dns.rdatatype.RdataType, *texts: str) -> Answer:
+        records = tuple(dns.rdata.from_text(dns.rdataclass.IN, rdtype, t) for t in texts)
+        return Answer(name=name, records=records)
+
+    async def query(self, name: str, rdtype: dns.rdatatype.RdataType) -> Answer | None:
+        types = dns.rdatatype.RdataType
+        table = {
+            ("www.shop.example.co.uk", types.CNAME): (
+                "www.shop.example.co.uk",
+                "shop.example.net.",
+            ),
+            ("www.shop.example.co.uk", types.A): ("shop.example.net", "192.0.2.80", "10.0.0.8"),
+            ("www.shop.example.co.uk", types.TXT): ("www.shop.example.co.uk", '"v=spf1 -all"'),
+        }
+        row = table.get((name, rdtype))
+        return self.answer(row[0], rdtype, *row[1:]) if row else None
+
+
+async def test_dns_shuttle_through_the_runner(world: World) -> None:
+    """The DNS Shuttle's findings (with a fake resolver) pass every runner check."""
+
+    class FakeResolvedDns(DnsShuttle):
+        def __init__(self) -> None:
+            super().__init__(client=_FakeDns(), config=DnsConfig())
+
+    job_id = await world.queue(FakeResolvedDns)
+    assert await run_job(job_id, world.config(FakeResolvedDns)) == JobStatus.SUCCEEDED
+    job = await world.job(job_id)
+    assert job.stats["findings_rejected"] == 0, job.stats
+    assert set(job.stats["entities_touched"]) == {
+        "domain:shop.example.net",
+        "ip_address:192.0.2.80",
+        "ip_address:10.0.0.8",
+        SUBDOMAIN,
+    }
+    _, edges = await world.graph()
+    assert edges == {
+        f"{SUBDOMAIN}|ALIAS_OF|domain:shop.example.net",
+        "domain:shop.example.net|RESOLVES_TO|ip_address:192.0.2.80",
+        "domain:shop.example.net|RESOLVES_TO|ip_address:10.0.0.8",
+    }
+    repo = GraphRepository(world.infra.graph)
+    private = await repo.get_entity(world.case_id, "ip_address:10.0.0.8")
+    assert private is not None
+    assert private.entity.properties == {"scope": "private"}
+    assert private.entity.provenance.note is not None
+    assert "never contacted" in private.entity.provenance.note
+    origin = await repo.get_entity(world.case_id, SUBDOMAIN)
+    assert origin is not None
+    assert origin.entity.properties == {"dns_txt": ["v=spf1 -all"], "dns_spf": ["v=spf1 -all"]}
+    assert origin.entity.provenance.sources == ["manual", "shuttle:dns@1.0.0"]
 
 
 async def test_graph_outage_fails_with_a_safe_message(world: World) -> None:
