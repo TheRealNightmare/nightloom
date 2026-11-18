@@ -19,6 +19,7 @@ class RefusalReason(StrEnum):
     """Why a Shuttle refuses an input. Each has one fixed, user-safe message."""
 
     INTERNAL_NAME = "internal_name"
+    NOT_REGISTRABLE = "not_registrable"
 
 
 REFUSAL_MESSAGES: dict[RefusalReason, str] = {
@@ -26,6 +27,35 @@ REFUSAL_MESSAGES: dict[RefusalReason, str] = {
         "This Shuttle does not look up internal-only names (single-label names or names "
         "under reserved or private suffixes such as .local, .internal or .test). "
         "Nothing was queried."
+    ),
+    RefusalReason.NOT_REGISTRABLE: (
+        "This Shuttle only looks up domains under a public suffix (such as example.org or "
+        "shop.example.co.uk), not public suffixes themselves (such as co.uk) or internal-only "
+        "names. Nothing was queried."
+    ),
+}
+
+
+class FailureReason(StrEnum):
+    """Why a Shuttle gave up during a run. Each has one fixed, user-safe message."""
+
+    SOURCE_UNAVAILABLE = "source_unavailable"
+    SOURCE_INVALID_RESPONSE = "source_invalid_response"
+    RESULT_TOO_LARGE = "result_too_large"
+
+
+FAILURE_MESSAGES: dict[FailureReason, str] = {
+    FailureReason.SOURCE_UNAVAILABLE: (
+        "The data source did not answer after several tries (it may be overloaded or down). "
+        "Try again later. Findings stored before the failure were kept."
+    ),
+    FailureReason.SOURCE_INVALID_RESPONSE: (
+        "The data source sent an answer this Shuttle could not read. "
+        "Findings stored before the failure were kept."
+    ),
+    FailureReason.RESULT_TOO_LARGE: (
+        "The data source's answer is too large to process, even after narrowing the query. "
+        "Run the Shuttle on a narrower input instead (for a domain: one of its subdomains)."
     ),
 }
 
@@ -44,6 +74,24 @@ class InputRefusedError(Exception):
     @property
     def message(self) -> str:
         return REFUSAL_MESSAGES[self.reason]
+
+
+class ShuttleFailedError(Exception):
+    """Raised by :meth:`Shuttle.run` when it cannot finish for a known, explainable reason.
+
+    The job fails with the fixed message for ``reason`` instead of the generic
+    one; ``reason`` is recorded in the audit log. Findings already yielded are
+    kept. Unexpected errors should still just raise: they end the job with the
+    generic message.
+    """
+
+    def __init__(self, reason: FailureReason) -> None:
+        self.reason = FailureReason(reason)
+        super().__init__(FAILURE_MESSAGES[self.reason])
+
+    @property
+    def message(self) -> str:
+        return FAILURE_MESSAGES[self.reason]
 
 
 class ShuttleConfigurationError(Exception):
@@ -107,10 +155,13 @@ class Shuttle(ABC):
 
 
 __all__ = [
+    "FAILURE_MESSAGES",
     "REFUSAL_MESSAGES",
     "EntityInput",
+    "FailureReason",
     "InputRefusedError",
     "RefusalReason",
     "Shuttle",
     "ShuttleConfigurationError",
+    "ShuttleFailedError",
 ]

@@ -10,16 +10,19 @@ from nightloom_sdk.findings import EntityFinding, EntityRef, Finding, Relationsh
 from nightloom_sdk.meta import Mode, RateLimit, ShuttleMeta
 from nightloom_sdk.shuttle import (
     EntityInput,
+    FailureReason,
     InputRefusedError,
     RefusalReason,
     Shuttle,
     ShuttleConfigurationError,
+    ShuttleFailedError,
 )
 
 __all__ = [
     "EntityFinding",
     "EntityInput",
     "EntityRef",
+    "FailureReason",
     "Finding",
     "InputRefusedError",
     "JobCancelledError",
@@ -30,5 +33,6 @@ __all__ = [
     "Shuttle",
     "ShuttleConfigurationError",
     "ShuttleContext",
+    "ShuttleFailedError",
     "ShuttleMeta",
 ]

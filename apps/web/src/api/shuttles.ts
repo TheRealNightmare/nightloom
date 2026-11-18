@@ -52,6 +52,11 @@ export interface JobStats {
   rejected_reasons: Record<string, number>;
   /** Keys of the entities the job created or updated (at most 200). */
   entities_touched: string[];
+  /**
+   * Short remarks from the Shuttle (at most 10), e.g. that a result was capped.
+   * Missing on jobs stored before notes existed.
+   */
+  notes?: string[];
 }
 
 /** Mirrors `JobOut`. */
@@ -117,7 +122,8 @@ function isJobStats(value: unknown): value is JobStats {
     isNumber(value["relationships_updated"]) &&
     isNumber(value["findings_rejected"]) &&
     isRecord(value["rejected_reasons"]) &&
-    isStringArray(value["entities_touched"])
+    isStringArray(value["entities_touched"]) &&
+    (value["notes"] === undefined || isStringArray(value["notes"]))
   );
 }
 

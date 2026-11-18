@@ -62,6 +62,7 @@ function JobRow({
   const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const label = `${job.shuttle_name} on ${valueOf(job.input_key)}`;
+  const notes = job.stats.notes ?? [];
 
   const cancel = () => {
     setCancelling(true);
@@ -107,6 +108,13 @@ function JobRow({
         <p className="job__stats" title={statsTitle(job)}>
           {statsText(job)}
         </p>
+      )}
+      {notes.length > 0 && (
+        <ul className="job__notes" aria-label="Notes">
+          {notes.map((note) => (
+            <li key={note}>{note}</li>
+          ))}
+        </ul>
       )}
       {job.error && <p className="job__error">{job.error}</p>}
       {error && (

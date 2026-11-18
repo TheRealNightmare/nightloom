@@ -5,13 +5,19 @@ import logging
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Sequence
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import dns.rdata
 import dns.rdataclass
 import dns.rdatatype
+import httpx
 import pytest
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.serialization import Encoding
+from cryptography.x509.oid import NameOID
 from fastapi import FastAPI
 from httpx import AsyncClient
 from pydantic import BaseModel
@@ -33,16 +39,21 @@ from nightloom_sdk import (
     EntityFinding,
     EntityInput,
     EntityRef,
+    FailureReason,
     InputRefusedError,
     Mode,
     RefusalReason,
     RelationshipFinding,
     Shuttle,
     ShuttleContext,
+    ShuttleFailedError,
     ShuttleMeta,
 )
+from nightloom_sdk.http import create_http_client
+from nightloom_sdk.ratelimit import HostRateLimiter
 from nightloom_sdk.registry import ShuttleRegistry
-from nightloom_sdk.shuttle import REFUSAL_MESSAGES
+from nightloom_sdk.shuttle import FAILURE_MESSAGES, REFUSAL_MESSAGES
+from nightloom_shuttle_crtsh import CrtShShuttle
 from nightloom_shuttle_dns import DnsShuttle
 from nightloom_shuttle_dns.client import Answer
 from nightloom_shuttle_dns.config import DnsConfig
@@ -260,6 +271,7 @@ async def test_registrable_domain_job_end_to_end_through_the_api(
         "findings_rejected": 0,
         "rejected_reasons": {},
         "entities_touched": ["domain:example.co.uk"],
+        "notes": [],
     }
     nodes, edges = await world.graph()
     assert nodes == {"domain:example.co.uk", SUBDOMAIN}
@@ -524,6 +536,30 @@ async def test_refused_inputs_fail_with_the_fixed_message(world: World) -> None:
     assert (event.outcome, event.details["reason"]) == ("failure", "internal_name")
 
 
+async def test_known_failures_keep_findings_and_notes(world: World) -> None:
+    class Noting(Shuttle):
+        meta = meta("noting")
+
+        async def run(self, ctx: ShuttleContext, entity: EntityInput) -> AsyncIterator[Any]:
+            ctx.note("Expired certificates were excluded.")
+            yield domain("example.co.uk")
+            ctx.note(f"token={SECRET}")  # a careless note: kept for users, never audited
+            raise ShuttleFailedError(FailureReason.SOURCE_UNAVAILABLE)
+
+    job_id = await world.queue(Noting)
+    assert await run_job(job_id, world.config(Noting)) == JobStatus.FAILED
+    job = await world.job(job_id)
+    assert job.error == FAILURE_MESSAGES[FailureReason.SOURCE_UNAVAILABLE]
+    assert job.stats["entities_created"] == 1
+    assert job.stats["notes"] == ["Expired certificates were excluded.", f"token={SECRET}"]
+    event = await world.finish_event(job_id)
+    assert (event.outcome, event.details["reason"]) == ("failure", "source_unavailable")
+    assert "notes" not in event.details["stats"]
+    assert SECRET not in str(event.details)
+    shown = await world.owner_client.get(f"{PREFIX}/cases/{world.case_id}/jobs/{job_id}")
+    assert shown.json()["stats"]["notes"][0] == "Expired certificates were excluded."
+
+
 async def test_touched_entities_are_capped(world: World) -> None:
     shuttle = scripted([domain(f"n{i}.example.co.uk") for i in range(MAX_TOUCHED_KEYS + 20)])
     job_id = await world.queue(shuttle)
@@ -589,6 +625,105 @@ async def test_dns_shuttle_through_the_runner(world: World) -> None:
     assert origin is not None
     assert origin.entity.properties == {"dns_txt": ["v=spf1 -all"], "dns_spf": ["v=spf1 -all"]}
     assert origin.entity.provenance.sources == ["manual", "shuttle:dns@1.0.0"]
+
+
+def _test_certificate(names: list[str]) -> x509.Certificate:
+    """A throwaway self-signed certificate (never a real one)."""
+    key = ec.generate_private_key(ec.SECP256R1())
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, names[0])])
+    start = datetime(2026, 9, 1, tzinfo=UTC)
+    return (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(subject)
+        .public_key(key.public_key())
+        .serial_number(0x1234)
+        .not_valid_before(start)
+        .not_valid_after(start + timedelta(days=90))
+        .add_extension(
+            x509.SubjectAlternativeName(
+                [x509.DNSName(n) for n in names] + [x509.RFC822Name("ops@example.co.uk")]
+            ),
+            critical=False,
+        )
+        .sign(key, hashes.SHA256())
+    )
+
+
+async def test_crtsh_shuttle_through_the_runner(world: World) -> None:
+    """The crt.sh Shuttle's findings (crt.sh faked at the HTTP level) pass every runner check."""
+    scope = "www.shop.example.co.uk"
+    names = [scope, f"api.{scope}", f"*.cdn.{scope}", "other.example.net"]
+    certificate = _test_certificate(names)
+    row = {
+        "id": 77,
+        "common_name": scope,
+        "name_value": "\n".join([*names, "ops@example.co.uk"]),
+        "not_before": "2026-09-01T00:00:00",
+        "not_after": "2026-11-30T00:00:00",
+    }
+
+    def crtsh(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "crt.sh"
+        params = request.url.params
+        if "d" in params:
+            return httpx.Response(200, content=certificate.public_bytes(Encoding.PEM))
+        return httpx.Response(200, json=[row] if params["q"].startswith("%.") else [])
+
+    now = [0.0]
+
+    async def sleep(seconds: float) -> None:
+        now[0] += seconds
+
+    def clock() -> float:
+        return now[0]
+
+    meta_ = CrtShShuttle.meta
+    assert meta_.rate_limit is not None
+    http = create_http_client(
+        meta_,
+        transport=httpx.MockTransport(crtsh),
+        limiter=HostRateLimiter(meta_.rate_limit, clock=clock, sleep=sleep),
+    )
+
+    class FakeCrtSh(CrtShShuttle):
+        def __init__(self) -> None:
+            super().__init__(http=http, sleep=sleep, clock=clock)
+
+    try:
+        job_id = await world.queue(FakeCrtSh)
+        assert await run_job(job_id, world.config(FakeCrtSh)) == JobStatus.SUCCEEDED
+    finally:
+        await http.aclose()
+    job = await world.job(job_id)
+    assert job.stats["findings_rejected"] == 0, job.stats
+    fingerprint = certificate.fingerprint(hashes.SHA256()).hex()
+    nodes, edges = await world.graph()
+    assert nodes == {
+        SUBDOMAIN,
+        f"domain:api.{scope}",
+        f"domain:cdn.{scope}",
+        f"certificate:{fingerprint}",
+    }
+    assert edges == {
+        f"{SUBDOMAIN}|HAS_SUBDOMAIN|domain:api.{scope}",
+        f"{SUBDOMAIN}|HAS_SUBDOMAIN|domain:cdn.{scope}",
+        f"certificate:{fingerprint}|COVERS|{SUBDOMAIN}",
+        f"certificate:{fingerprint}|COVERS|domain:api.{scope}",
+        f"certificate:{fingerprint}|COVERS|domain:cdn.{scope}",
+    }
+    assert job.stats["notes"] == [
+        "Dropped 2 name(s): 1 email addresses, 1 outside the searched domain."
+    ]
+    repo = GraphRepository(world.infra.graph)
+    stored = await repo.get_entity(world.case_id, f"certificate:{fingerprint}")
+    assert stored is not None
+    assert stored.entity.properties["crtsh_id"] == 77
+    assert stored.entity.properties["self_signed"] is True
+    assert stored.entity.properties["san_count"] == 5
+    assert stored.entity.provenance.sources == ["shuttle:crtsh@1.0.0"]
+    event = await world.finish_event(job_id)
+    assert "notes" not in event.details["stats"]
 
 
 async def test_graph_outage_fails_with_a_safe_message(world: World) -> None:

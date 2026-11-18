@@ -25,9 +25,15 @@ Complete, apart from the user management UI (users are managed through the API a
 
 ## M1 — Infrastructure MVP
 
-- [ ] 8–10 infrastructure Shuttles
-- [ ] Graph UI (Sigma.js)
-- [ ] Provenance panel
+Passive infrastructure Shuttles from free public sources, then a graph UI good enough to work in.
+
+- [x] 1.1 Certificate Transparency Shuttle (`crtsh`: subdomains and certificates via crt.sh)
+- [ ] 1.2 RDAP Shuttle (domain and IP registration data)
+- [ ] 1.3 ASN/BGP Shuttle via RIPEstat (IP → prefix → ASN)
+- [ ] 1.4 Shodan InternetDB Shuttle (open ports, CPEs, tags; no key)
+- [ ] 1.5 Wayback Machine CDX Shuttle (historical URLs)
+- [ ] 1.6 Reverse DNS Shuttle (PTR records)
+- [ ] 1.7 Graph UX and export (provenance panel, layout and filtering, export)
 
 ## M2 — Auto-pivot
 

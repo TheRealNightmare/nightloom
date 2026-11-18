@@ -63,7 +63,7 @@ from nightloom_sdk.context import JobCancelledError, ShuttleContext
 from nightloom_sdk.findings import EntityFinding, RelationshipFinding
 from nightloom_sdk.meta import MAX_TIMEOUT_SECONDS, ShuttleMeta
 from nightloom_sdk.registry import ShuttleRegistry
-from nightloom_sdk.shuttle import EntityInput, InputRefusedError, Shuttle
+from nightloom_sdk.shuttle import EntityInput, InputRefusedError, Shuttle, ShuttleFailedError
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +112,8 @@ class Stats:
     relationships_updated: int = 0
     rejected: Counter[str] = field(default_factory=Counter)
     touched: dict[str, None] = field(default_factory=dict)
+    # The Shuttle's own remarks (ShuttleContext.note), shown with the job.
+    notes: list[str] = field(default_factory=list)
 
     def touch(self, key: str) -> None:
         """Remember an entity the job created or updated (the first MAX_TOUCHED_KEYS)."""
@@ -128,6 +130,7 @@ class Stats:
             "findings_rejected": sum(self.rejected.values()),
             "rejected_reasons": dict(sorted(self.rejected.items())),
             "entities_touched": list(self.touched),
+            "notes": list(self.notes),
         }
 
 
@@ -408,6 +411,12 @@ class JobRun:
                     return Outcome(
                         JobStatus.FAILED, error=refused.message, reason=refused.reason.value
                     )
+                except ShuttleFailedError as failed:
+                    # A known failure (e.g. the source is down); again a fixed
+                    # SDK message, never the Shuttle's own text.
+                    return Outcome(
+                        JobStatus.FAILED, error=failed.message, reason=failed.reason.value
+                    )
                 except Exception as error:
                     # A bug or an unhandled error in the Shuttle. Only the type
                     # is logged: the text may quote a response or a key.
@@ -454,6 +463,7 @@ class JobRun:
         except _StopRunError as stop:
             return stop.outcome
         finally:
+            self.stats.notes = list(ctx.notes)
             watcher.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await watcher

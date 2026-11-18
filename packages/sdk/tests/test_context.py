@@ -19,6 +19,7 @@ from nightloom_sdk import (
     ShuttleContext,
     ShuttleMeta,
 )
+from nightloom_sdk.context import MAX_NOTES, NOTE_MAX_LENGTH
 from nightloom_sdk.http import NetworkNotDeclaredError, ShuttleHttpClient
 from nightloom_sdk.meta import RateLimit
 from nightloom_sdk.testing import assert_declared, collect, entity_input, fake_context
@@ -96,6 +97,22 @@ def test_progress_is_one_short_line(caplog: pytest.LogCaptureFixture) -> None:
     assert ctx.last_progress.startswith("step one x")
     assert len(ctx.last_progress) == 200
     assert caplog.messages[0].startswith("[offline] progress: step one")
+
+
+def test_notes_are_short_unique_and_capped(caplog: pytest.LogCaptureFixture) -> None:
+    ctx = ShuttleContext(OFFLINE)
+    assert ctx.notes == ()
+    with caplog.at_level(logging.INFO, logger="nightloom.shuttle.offline"):
+        ctx.note("Result\n capped  " + "x" * 500)
+    ctx.note("Result capped " + "x" * 500)  # the same note again
+    ctx.note("   ")
+    assert len(ctx.notes) == 1
+    assert ctx.notes[0].startswith("Result capped x")
+    assert len(ctx.notes[0]) == NOTE_MAX_LENGTH
+    assert caplog.messages[0].startswith("[offline] note: Result capped")
+    for index in range(MAX_NOTES + 5):
+        ctx.note(f"note {index}")
+    assert len(ctx.notes) == MAX_NOTES
 
 
 async def test_collect_with_a_mock_transport() -> None:
