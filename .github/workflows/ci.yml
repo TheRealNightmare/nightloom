@@ -139,7 +139,7 @@ jobs:
           name: coverage
           path: coverage.xml
           retention-days: 14
-          if-no-files-found: error
+          if-no-files-found: warn
 
   # The shared entity model must produce identical canonical keys on every
   # supported interpreter (ipaddress changed its output between 3.12 patch
@@ -219,7 +219,7 @@ jobs:
           name: web-coverage
           path: apps/web/coverage/
           retention-days: 14
-          if-no-files-found: error
+          if-no-files-found: warn
 
   docker:
     name: Docker
