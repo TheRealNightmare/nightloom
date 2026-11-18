@@ -33,6 +33,7 @@ ALLOWED_CASES = [
     (R.RESOLVES_TO, E.DOMAIN, E.IP_ADDRESS),
     (R.HAS_MX, E.DOMAIN, E.DOMAIN),
     (R.HAS_NS, E.DOMAIN, E.DOMAIN),
+    (R.ALIAS_OF, E.DOMAIN, E.DOMAIN),
     (R.WITHIN, E.IP_ADDRESS, E.NETBLOCK),
     (R.ANNOUNCED_BY, E.NETBLOCK, E.ASN),
     (R.COVERS, E.CERTIFICATE, E.DOMAIN),
@@ -65,6 +66,8 @@ REFUSED_CASES = [
     (R.ACCOUNT_OF, E.PERSON, E.USERNAME),
     (R.MENTIONS, E.DOMAIN, E.DOCUMENT),
     (R.HAS_EMAIL, E.ORGANIZATION, E.EMAIL),
+    (R.ALIAS_OF, E.DOMAIN, E.IP_ADDRESS),  # a CNAME points to a name, never an address
+    (R.ALIAS_OF, E.URL, E.DOMAIN),
 ]
 
 
@@ -92,6 +95,12 @@ def test_allow_list_sizes() -> None:
     assert len(ALLOWED[R.RELATED_TO]) == len(EntityType) ** 2
     narrow = set(RelationType) - {R.MENTIONS, R.RELATED_TO}
     assert all(len(ALLOWED[relation]) <= 3 for relation in narrow)
+
+
+def test_alias_of_is_a_cname_between_two_domains() -> None:
+    assert ALLOWED[R.ALIAS_OF] == {(E.DOMAIN, E.DOMAIN)}
+    assert R.ALIAS_OF.value == "ALIAS_OF"
+    assert R.ALIAS_OF not in NOTE_REQUIRED
 
 
 @pytest.mark.parametrize("note", [None, "", "   "])

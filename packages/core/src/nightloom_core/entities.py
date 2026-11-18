@@ -110,6 +110,51 @@ class NoProperties(Properties):
     """For types that carry no properties (yet)."""
 
 
+# DNS facts stored on a Domain (written by the DNS Shuttle): at most this many
+# records per list, each at most DNS_TEXT_MAX_LENGTH characters.
+DNS_MAX_RECORDS = 50
+DNS_TEXT_MAX_LENGTH = 1000
+DnsText = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=DNS_TEXT_MAX_LENGTH)
+]
+DnsRecords = Annotated[list[DnsText], Field(max_length=DNS_MAX_RECORDS)]
+# A domain name as text (at most 253 characters, plus a trailing dot).
+NameText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
+Uint32 = Annotated[int, Field(ge=0, le=2**32 - 1)]
+
+
+class DomainProperties(Properties):
+    """What public DNS says about the name. Every field is optional.
+
+    ``dns_txt`` holds the TXT records (each joined from its strings);
+    ``dns_spf`` and ``dns_dmarc`` repeat the SPF (``v=spf1``) and DMARC
+    (``v=DMARC1``, from ``_dmarc.<name>``) records among them; ``dns_mx`` is
+    ``"<preference> <exchange>"``; ``dns_caa`` is ``"<flags> <tag> <value>"``;
+    the ``dns_soa_*`` fields are the zone's SOA record when the name is a
+    zone apex.
+    """
+
+    dns_txt: DnsRecords | None = None
+    dns_spf: DnsRecords | None = None
+    dns_dmarc: DnsRecords | None = None
+    dns_mx: DnsRecords | None = None
+    dns_caa: DnsRecords | None = None
+    dns_soa_primary_ns: NameText | None = None
+    dns_soa_responsible: NameText | None = None
+    dns_soa_serial: Uint32 | None = None
+    dns_soa_refresh: Uint32 | None = None
+    dns_soa_retry: Uint32 | None = None
+    dns_soa_expire: Uint32 | None = None
+    dns_soa_minimum: Uint32 | None = None
+
+
+class IPAddressProperties(Properties):
+    """``scope``: ``private`` for addresses that are not globally routable
+    (RFC 1918, loopback, link-local, ...), ``public`` otherwise."""
+
+    scope: Literal["public", "private"] | None = None
+
+
 class NetblockProperties(Properties):
     name: ShortText | None = None
     country: CountryCode | None = None
@@ -255,6 +300,7 @@ class Domain(EntityBase):
     display_name = "Domain"
     hint = "A fully qualified domain name; subdomains are domains too."
     example = "www.example.org"
+    properties_model = DomainProperties
 
 
 class IPAddress(EntityBase):
@@ -265,6 +311,7 @@ class IPAddress(EntityBase):
     display_name = "IP address"
     hint = "An IPv4 or IPv6 address."
     example = "192.0.2.1"
+    properties_model = IPAddressProperties
 
 
 class Netblock(EntityBase):

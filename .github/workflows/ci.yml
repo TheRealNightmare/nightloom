@@ -230,8 +230,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Validate Compose file
-        run: docker compose -f deploy/compose.yaml --env-file .env.example config -q
+      - name: Validate Compose files
+        run: |
+          docker compose -f deploy/compose.yaml --env-file .env.example config -q
+          docker compose -f deploy/compose.yaml -f deploy/compose.test.yaml \
+            --env-file .env.example config -q
 
       - uses: docker/setup-buildx-action@v4
 
@@ -303,8 +306,18 @@ jobs:
           docker run --rm nightloom-api:ci celery --version
           shuttles=$(docker run --rm nightloom-api:ci python -m nightloom_sdk.registry list)
           echo "$shuttles"
-          if ! grep -q '^registrable-domain ' <<< "$shuttles"; then
-            echo "::error title=Shuttles::registrable-domain is not installed in the image."
+          for name in dns registrable-domain; do
+            if ! grep -q "^$name " <<< "$shuttles"; then
+              echo "::error title=Shuttles::$name is not installed in the image."
+              exit 1
+            fi
+          done
+          # Every Shuttle's configuration is valid with the defaults...
+          docker run --rm nightloom-api:ci python -m nightloom_sdk.registry check
+          # ...and a private DNS resolver is refused.
+          if docker run --rm -e NIGHTLOOM_DNS_RESOLVERS=10.0.0.53 nightloom-api:ci \
+              python -m nightloom_sdk.registry check; then
+            echo "::error title=Shuttles::a private DNS resolver was accepted."
             exit 1
           fi
 
@@ -375,6 +388,11 @@ jobs:
       # and must never be used anywhere else.
       NIGHTLOOM_E2E_EMAIL: e2e-admin@example.org
       NIGHTLOOM_E2E_PASSWORD: ci-only-throwaway-e2e-password
+      # DNS jobs never touch the internet here: the stack runs with the
+      # test-only CoreDNS server (deploy/compose.test.yaml) and the Playwright
+      # DNS test uses its zone.
+      NIGHTLOOM_E2E_DNS_DOMAIN: nightloom-test.example
+      NIGHTLOOM_E2E_DNS_EXPECT_MX: "1"
     steps:
       - uses: actions/checkout@v7
         with:
@@ -415,12 +433,14 @@ jobs:
       # The example values are fine for a throwaway CI stack.
       - run: cp .env.example .env
 
-      - name: Start the stack (waits until healthy)
-        run: make up
+      # TEST_DNS=1 adds a local authoritative DNS server (CoreDNS, zone
+      # nightloom-test.example) and points the worker's DNS Shuttle at it.
+      - name: Start the stack with the test DNS server (waits until healthy)
+        run: make up TEST_DNS=1
 
-      # Includes a registrable-domain job end to end: API -> Valkey ->
-      # worker -> Neo4j, checked through GET /graph.
-      - run: make test-integration
+      # Includes a registrable-domain job and a DNS job end to end: API ->
+      # Valkey -> worker -> (test DNS) -> Neo4j, checked through GET /graph.
+      - run: make test-integration TEST_DNS=1
 
       - name: Check the API through the web proxy
         run: |
@@ -448,12 +468,13 @@ jobs:
       - name: Dump stack logs
         if: failure()
         run: |
-          make ps
-          docker compose -f deploy/compose.yaml --env-file .env logs --no-color --timestamps
+          make ps TEST_DNS=1
+          docker compose -f deploy/compose.yaml -f deploy/compose.test.yaml --env-file .env \
+            logs --no-color --timestamps
 
       - name: Stop the stack
         if: always()
-        run: make down
+        run: make down TEST_DNS=1
 
   dco:
     name: DCO sign-off

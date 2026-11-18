@@ -1,0 +1,12 @@
+# Test-only DNS server for the integration tests (deploy/compose.test.yaml).
+# It is authoritative for nightloom-test.example and answers nothing else, so
+# a DNS Shuttle job in CI never reaches the internet.
+nightloom-test.example:53 {
+    file /etc/coredns/nightloom-test.example.zone
+    errors
+    log
+}
+
+.:53 {
+    errors
+}

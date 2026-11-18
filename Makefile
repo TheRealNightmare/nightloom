@@ -3,7 +3,11 @@
 # Local stack (deploy/compose.yaml). Targets other than `up` fall back to
 # .env.example when .env does not exist yet, so they still work.
 ENV_FILE := $(if $(wildcard .env),.env,.env.example)
-COMPOSE := docker compose -f deploy/compose.yaml --env-file $(ENV_FILE)
+# TEST_DNS=1 adds deploy/compose.test.yaml: a test-only local DNS server that
+# the worker's DNS Shuttle asks instead of the public resolvers (CI uses it so
+# DNS jobs never touch the internet). Pass it to up, test-integration and down.
+COMPOSE_FILES := -f deploy/compose.yaml $(if $(TEST_DNS),-f deploy/compose.test.yaml)
+COMPOSE := docker compose $(COMPOSE_FILES) --env-file $(ENV_FILE)
 SERVICE ?=
 
 # Shell prefix for host-side tools that talk to the running stack (integration
@@ -47,7 +51,8 @@ CORE_COMPAT_RUN = uv run --python $(1) --no-project --with ./packages/core \
 	pytest packages/core/tests -q -p no:cacheprovider -o addopts="" \
 	-W ignore::pytest.PytestConfigWarning
 
-.PHONY: help install lint fmt typecheck test test-unit test-core-compat test-integration check check-all api \
+.PHONY: help install lint fmt typecheck test test-unit test-core-compat test-integration test-network \
+	check check-all api \
 	worker shuttles \
 	up deps-up down logs ps reset compose-config migrate revision create-admin \
 	web-install web-dev web-lint web-fmt web-typecheck web-test web-build check-web e2e
@@ -82,8 +87,11 @@ test-core-compat: ## Run the packages/core tests on every Python in CORE_COMPAT_
 		$(call CORE_COMPAT_RUN,$$python); \
 	done
 
-test-integration: ## Run integration tests against the running stack (needs `make up`)
-	@$(STACK_ENV) uv run pytest -m integration --no-cov
+test-integration: ## Run integration tests against the running stack (needs `make up`; TEST_DNS=1 adds the DNS job test)
+	@$(STACK_ENV) $(if $(TEST_DNS),NIGHTLOOM_TEST_DNS=1) uv run pytest -m integration --no-cov
+
+test-network: ## Run the opt-in tests that use the real internet (the DNS Shuttle against public resolvers)
+	uv run pytest -m network --no-cov
 
 check: lint typecheck test ## Run lint, typecheck and tests (Python)
 
@@ -107,13 +115,13 @@ up: ## Start the local stack (creates .env from .env.example if missing)
 		cp .env.example .env; \
 		echo "Created .env from .env.example. Change the change-me-... passwords in it."; \
 	fi
-	docker compose -f deploy/compose.yaml --env-file .env up -d --build --wait
+	docker compose $(COMPOSE_FILES) --env-file .env up -d --build --wait
 
 deps-up: ## Start only PostgreSQL, Valkey and Neo4j (enough for `make test`)
 	$(COMPOSE) up -d --wait postgres valkey neo4j
 
-down: ## Stop the local stack (keeps data volumes)
-	$(COMPOSE) down
+down: ## Stop the local stack (keeps data volumes; also removes the TEST_DNS server)
+	$(COMPOSE) down --remove-orphans
 
 logs: ## Follow stack logs (one service: make logs SERVICE=api)
 	$(COMPOSE) logs -f $(SERVICE)

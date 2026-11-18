@@ -84,7 +84,7 @@ test("add, connect and delete entities in a case graph", async ({ page }) => {
 
   // Empty state.
   await expect(page.getByRole("heading", { name: "No entities yet." })).toBeVisible();
-  await expect(page.getByText(/Automated collection \(Shuttles\) comes next/)).toBeVisible();
+  await expect(page.getByText(/run Shuttles \(such as DNS\) on it/)).toBeVisible();
   await expect(summary).toHaveText("0 entities, 0 relationships");
   await expect(page.getByText("Demo data")).toHaveCount(0);
 

@@ -125,6 +125,21 @@ describe("nodeView", () => {
     expect(result.highlighted).toBe(true);
     expect(result.size).toBeCloseTo(graph.getNodeAttribute("d", "size") * 1.35);
   });
+
+  it("emphasizes pulsing nodes and never dims them", () => {
+    const view = state({ hoveredNode: "d" });
+    const highlight = computeHighlight(graph, view);
+    const pulse = new Set(["a"]);
+    const result = nodeView(graph, "a", view, highlight, pulse);
+    expect(result).toMatchObject({ highlighted: true, labelVisibility: "visible", zIndex: 2 });
+    expect(result.color).toBeUndefined();
+    expect(result.size).toBeCloseTo(graph.getNodeAttribute("a", "size") * 1.25);
+    // Hidden types stay hidden.
+    const hiddenView = state({ hiddenTypes: hidden("asn") });
+    expect(
+      nodeView(graph, "a", hiddenView, computeHighlight(graph, hiddenView), pulse),
+    ).toMatchObject({ visibility: "hidden" });
+  });
 });
 
 describe("edgeView", () => {

@@ -423,6 +423,7 @@ describe("adding relationships", () => {
       "has subdomain",
       "has mx",
       "has ns",
+      "alias of",
       "related to (needs a note)",
     ]);
 

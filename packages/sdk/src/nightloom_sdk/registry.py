@@ -11,7 +11,8 @@ Loading is strict: an entry point that does not load, is not a concrete
 registered under another name, or shares its name with another Shuttle makes
 discovery fail with :class:`RegistryError` instead of being skipped quietly.
 
-List what is installed with ``python -m nightloom_sdk.registry list``.
+List what is installed with ``python -m nightloom_sdk.registry list``, and
+check their configuration with ``python -m nightloom_sdk.registry check``.
 """
 
 import argparse
@@ -25,7 +26,7 @@ from pydantic import ValidationError
 
 from nightloom_core.entities import EntityType
 from nightloom_sdk.meta import ShuttleMeta
-from nightloom_sdk.shuttle import Shuttle
+from nightloom_sdk.shuttle import Shuttle, ShuttleConfigurationError
 
 ENTRY_POINT_GROUP = "nightloom.shuttles"
 
@@ -97,6 +98,22 @@ class ShuttleRegistry:
             if input_type is None or shuttle.meta.accepts(input_type)
         ]
 
+    def check_configuration(self) -> None:
+        """Run every Shuttle's :meth:`~Shuttle.check_configuration`; raise :class:`RegistryError`.
+
+        The message names the Shuttle and repeats its (operator-facing) reason.
+        An unexpected exception is reported by type only.
+        """
+        for name, shuttle in sorted(self._shuttles.items()):
+            try:
+                shuttle.check_configuration()
+            except ShuttleConfigurationError as exc:
+                raise RegistryError(f"Shuttle {name!r} is misconfigured: {exc}") from exc
+            except Exception as exc:
+                raise RegistryError(
+                    f"Shuttle {name!r} failed its configuration check: {type(exc).__name__}."
+                ) from exc
+
     def __len__(self) -> int:
         return len(self._shuttles)
 
@@ -124,9 +141,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("list", help="list the installed Shuttles")
-    parser.parse_args(argv)
+    commands.add_parser("check", help="check every installed Shuttle's configuration")
+    args = parser.parse_args(argv)
     try:
         registry = ShuttleRegistry.discover()
+        if args.command == "check":
+            registry.check_configuration()
+            print(f"{len(registry)} Shuttle(s) installed; configuration OK.")
+            return 0
     except RegistryError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

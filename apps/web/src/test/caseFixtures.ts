@@ -1,6 +1,7 @@
 import type { AuditEvent, Case, CaseRole, Member } from "../api/cases";
 import type { User } from "../api/client";
 import type { ApiEntity, ApiGraph, ApiProvenance, ApiRelationship, Schema } from "../api/graph";
+import type { Job, ShuttleInfo } from "../api/shuttles";
 import type { EntityType, Sensitivity } from "../domain/entities";
 import { json, READY_BODY, TEST_USER, type FakeApi } from "./fakeApi";
 import schemaJson from "./schema.json";
@@ -121,6 +122,59 @@ export function makeEvent(overrides: Partial<AuditEvent> = {}): AuditEvent {
   };
 }
 
+export function makeShuttle(overrides: Partial<ShuttleInfo> = {}): ShuttleInfo {
+  return {
+    name: "dns",
+    version: "1.0.0",
+    title: "DNS records",
+    description: "Looks up the domain's public DNS records through public resolvers only.",
+    input_types: ["domain"],
+    output_entity_types: ["domain", "ip_address"],
+    output_relationship_types: ["ALIAS_OF", "HAS_MX", "HAS_NS", "RESOLVES_TO"],
+    mode: "passive",
+    sensitivity: "infrastructure",
+    network: true,
+    required_keys: [],
+    rate_limit: { requests: 10, period_seconds: 1 },
+    timeout_seconds: 60,
+    terms_url: "https://developers.cloudflare.com/1.1.1.1/privacy/public-dns-resolver/",
+    homepage: "https://developers.cloudflare.com/1.1.1.1/",
+    default_admiralty: "B2",
+    default_confidence: 0.9,
+    ...overrides,
+  };
+}
+
+export const DNS_SHUTTLE = makeShuttle();
+
+export function makeJob(overrides: Partial<Job> = {}): Job {
+  return {
+    id: "7c3e1b2a-0d4f-4e5a-9b6c-8d7e6f5a4b3c",
+    case_id: CASE_ID,
+    shuttle_name: "dns",
+    shuttle_version: "1.0.0",
+    input_key: "domain:example.org",
+    requested_by: TEST_USER.id,
+    status: "queued",
+    cancel_requested: false,
+    created_at: "2026-11-12T08:30:00Z",
+    started_at: null,
+    finished_at: null,
+    error: null,
+    ...overrides,
+    stats: {
+      entities_created: 0,
+      entities_updated: 0,
+      relationships_created: 0,
+      relationships_updated: 0,
+      findings_rejected: 0,
+      rejected_reasons: {},
+      entities_touched: [],
+      ...overrides.stats,
+    },
+  };
+}
+
 export const ADMIN_USER: User = { ...TEST_USER, role: "admin" };
 export const VIEWER_USER: User = { ...TEST_USER, role: "viewer" };
 
@@ -136,6 +190,8 @@ export function serveCase(
     members,
     events = [],
     graph = EMPTY_GRAPH,
+    jobs = [],
+    shuttles = [DNS_SHUTTLE],
   }: {
     user?: User;
     role?: CaseRole;
@@ -143,6 +199,8 @@ export function serveCase(
     members?: Member[];
     events?: AuditEvent[];
     graph?: ApiGraph;
+    jobs?: Job[];
+    shuttles?: ShuttleInfo[];
   } = {},
 ): void {
   const path = `/cases/${CASE_ID}`;
@@ -154,5 +212,8 @@ export function serveCase(
     .on("GET", `${path}/audit?limit=50`, () => json({ items: events, next_before_id: null }))
     .on("GET", `${path}/graph?limit=2000`, () => json(graph))
     .on("GET", "/schema", () => json(SCHEMA))
+    .on("GET", `${path}/jobs?limit=20`, () => json({ items: jobs, next_cursor: null }))
+    .on("GET", "/shuttles?input_type=domain", () => json(shuttles))
+    .on("GET", "/shuttles?input_type=ip_address", () => json([]))
     .on("GET", "/cases?limit=25", () => json(EMPTY_PAGE));
 }

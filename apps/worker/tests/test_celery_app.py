@@ -81,3 +81,25 @@ def test_real_task_against_the_test_databases(
     # The abandoned path is a no-op for a job that does not exist.
     assert asyncio.run(celery_app._with_config(settings, uuid.uuid4(), abandoned=True)) == "failed"
     get_settings.cache_clear()
+
+
+def test_startup_checks_every_shuttle_configuration(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.delenv("NIGHTLOOM_DNS_RESOLVERS", raising=False)
+    celery_app._check_shuttles()  # the defaults are fine
+
+    monkeypatch.setenv("NIGHTLOOM_DNS_RESOLVERS", "192.168.1.1")
+    with pytest.raises(SystemExit) as stopped:
+        celery_app._check_shuttles()
+    assert stopped.value.code == 1
+    assert "Refusing to start: Shuttle 'dns' is misconfigured" in caplog.text
+    assert "not a public address" in caplog.text
+
+    monkeypatch.setenv("NIGHTLOOM_DNS_RESOLVERS", "172.30.0.53")
+    monkeypatch.setenv("NIGHTLOOM_DNS_ALLOW_PRIVATE_RESOLVERS", "true")
+    celery_app._check_shuttles()  # the test-only mode allows it...
+    monkeypatch.setenv("NIGHTLOOM_ENV", "production")
+    with pytest.raises(SystemExit):  # ...but never in production
+        celery_app._check_shuttles()
+    assert "test-only setting" in caplog.text

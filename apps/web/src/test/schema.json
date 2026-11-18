@@ -175,6 +175,11 @@
       "pairs": [["domain", "domain"]]
     },
     {
+      "type": "ALIAS_OF",
+      "note_required": false,
+      "pairs": [["domain", "domain"]]
+    },
+    {
       "type": "WITHIN",
       "note_required": false,
       "pairs": [["ip_address", "netblock"]]

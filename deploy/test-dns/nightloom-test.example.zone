@@ -1,0 +1,23 @@
+; Fixed test zone for the DNS Shuttle's integration tests. Documentation
+; addresses only (RFC 5737, RFC 3849) and one RFC 1918 address, to check that
+; private addresses are recorded with scope "private".
+$ORIGIN nightloom-test.example.
+$TTL 60
+@           IN SOA   ns1.nightloom-test.example. hostmaster.nightloom-test.example. (
+                     2026111801 3600 600 86400 60 )
+@           IN NS    ns1.nightloom-test.example.
+@           IN NS    ns2.nightloom-test.example.
+@           IN A     192.0.2.10
+@           IN AAAA  2001:db8::10
+@           IN MX    10 mail.nightloom-test.example.
+@           IN MX    20 backup-mx.nightloom-test.example.
+@           IN TXT   "v=spf1 mx -all"
+@           IN TXT   "nightloom-test=ok"
+@           IN CAA   0 issue "letsencrypt.org"
+_dmarc      IN TXT   "v=DMARC1; p=reject"
+www         IN CNAME edge.nightloom-test.example.
+edge        IN A     192.0.2.20
+mail        IN A     192.0.2.25
+backup-mx   IN A     10.0.0.25
+ns1         IN A     192.0.2.53
+ns2         IN A     192.0.2.54

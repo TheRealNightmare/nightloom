@@ -8,9 +8,19 @@ import pytest
 
 from nightloom_core.entities import EntityType, Sensitivity
 from nightloom_core.relationships import RelationType
-from nightloom_sdk import EntityInput, Finding, Shuttle, ShuttleContext, ShuttleMeta
+from nightloom_sdk import (
+    EntityInput,
+    Finding,
+    InputRefusedError,
+    RefusalReason,
+    Shuttle,
+    ShuttleConfigurationError,
+    ShuttleContext,
+    ShuttleMeta,
+)
 from nightloom_sdk import registry as registry_module
 from nightloom_sdk.registry import RegistryError, ShuttleRegistry, main
+from nightloom_sdk.shuttle import REFUSAL_MESSAGES
 
 
 def make_meta(name: str, **overrides: Any) -> ShuttleMeta:
@@ -151,3 +161,55 @@ def test_cli_reports_registry_errors(
 def test_default_registry_is_cached() -> None:
     registry_module.default_registry.cache_clear()
     assert registry_module.default_registry() is registry_module.default_registry()
+
+
+class Misconfigured(Shuttle):
+    meta = make_meta("misconfigured")
+
+    @classmethod
+    def check_configuration(cls) -> None:
+        raise ShuttleConfigurationError("Set NIGHTLOOM_EXAMPLE to a public address.")
+
+    async def run(self, ctx: ShuttleContext, entity: EntityInput) -> AsyncIterator[Finding]:
+        return
+        yield
+
+
+class CheckCrashes(Shuttle):
+    meta = make_meta("crashes")
+
+    @classmethod
+    def check_configuration(cls) -> None:
+        raise KeyError("secret-looking text")
+
+    async def run(self, ctx: ShuttleContext, entity: EntityInput) -> AsyncIterator[Finding]:
+        return
+        yield
+
+
+def test_configuration_checks() -> None:
+    ShuttleRegistry([Alpha, Beta]).check_configuration()  # the default checks nothing
+    with pytest.raises(RegistryError, match="'misconfigured' is misconfigured: Set NIGHTLOOM_"):
+        ShuttleRegistry([Alpha, Misconfigured]).check_configuration()
+    with pytest.raises(RegistryError, match="'crashes' failed its configuration check: KeyError"):
+        ShuttleRegistry([CheckCrashes]).check_configuration()
+
+
+def test_cli_checks_configuration(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["check"]) == 0
+    assert "configuration OK" in capsys.readouterr().out
+    monkeypatch.setattr(
+        ShuttleRegistry, "discover", classmethod(lambda cls, **_: cls([Misconfigured]))
+    )
+    assert main(["check"]) == 1
+    assert "is misconfigured" in capsys.readouterr().err
+
+
+def test_input_refused_error_has_a_fixed_message() -> None:
+    error = InputRefusedError(RefusalReason.INTERNAL_NAME)
+    assert error.reason is RefusalReason.INTERNAL_NAME
+    assert error.message == str(error) == REFUSAL_MESSAGES[RefusalReason.INTERNAL_NAME]
+    assert "Nothing was queried" in error.message
+    assert set(REFUSAL_MESSAGES) == set(RefusalReason)

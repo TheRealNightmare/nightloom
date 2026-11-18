@@ -244,6 +244,9 @@ services:
       NIGHTLOOM_S3_SECRET_KEY: ${NIGHTLOOM_S3_SECRET_KEY}
       NIGHTLOOM_S3_BUCKET: ${NIGHTLOOM_S3_BUCKET}
       NIGHTLOOM_S3_REGION: ${NIGHTLOOM_S3_REGION:-us-east-1}
+      # Public resolvers the DNS Shuttle asks (never the host's own resolver).
+      # Private addresses are refused at startup; see docs/ARCHITECTURE.md.
+      NIGHTLOOM_DNS_RESOLVERS: ${NIGHTLOOM_DNS_RESOLVERS:-1.1.1.1,9.9.9.9}
     # A running job may take up to 10 minutes; on shutdown, jobs that do not
     # finish in time are re-delivered and then recorded as failed.
     stop_grace_period: 60s

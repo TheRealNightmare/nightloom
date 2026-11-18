@@ -1,0 +1,32 @@
+# TEST ONLY: a local authoritative DNS server for the integration tests.
+#
+#   make up TEST_DNS=1      # = docker compose -f deploy/compose.yaml -f deploy/compose.test.yaml ...
+#
+# Adds `dns-test` (CoreDNS, authoritative for nightloom-test.example only) at a
+# fixed address on the stack's network, and points the worker's DNS Shuttle at
+# it instead of the public resolvers, so DNS jobs in CI never touch the
+# internet. That needs NIGHTLOOM_DNS_ALLOW_PRIVATE_RESOLVERS=true, which also
+# lets the Shuttle query the nightloom-test.example zone; the worker refuses
+# to start with it when NIGHTLOOM_ENV=production. Never use this file outside
+# tests.
+
+services:
+  dns-test:
+    image: coredns/coredns:1.15.0
+    restart: "no"
+    command: ["-conf", "/etc/coredns/Corefile"]
+    volumes:
+      - ./test-dns:/etc/coredns:ro
+    networks:
+      default:
+        # Outside NIGHTLOOM_NETWORK_IP_RANGE (172.30.0.128/25), like the web proxy.
+        ipv4_address: ${NIGHTLOOM_TEST_DNS_IP:-172.30.0.53}
+    # Not published on the host: only the worker talks to it.
+
+  worker:
+    depends_on:
+      dns-test:
+        condition: service_started
+    environment:
+      NIGHTLOOM_DNS_RESOLVERS: ${NIGHTLOOM_TEST_DNS_IP:-172.30.0.53}
+      NIGHTLOOM_DNS_ALLOW_PRIVATE_RESOLVERS: "true"
