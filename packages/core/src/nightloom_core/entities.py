@@ -168,12 +168,19 @@ class ASNProperties(Properties):
 
 
 class CertificateProperties(Properties):
+    """``subject_cn`` is the subject's common name; ``san_count`` the number of
+    entries in the subjectAltName extension; ``crtsh_id`` the certificate's ID
+    at crt.sh (Certificate Transparency search), when it came from there."""
+
     subject: LongText | None = None
+    subject_cn: ShortText | None = None
     issuer: LongText | None = None
     serial_number: ShortText | None = None
     not_before: AwareDatetime | None = None
     not_after: AwareDatetime | None = None
     self_signed: bool | None = None
+    san_count: int | None = Field(default=None, ge=0, le=100_000)
+    crtsh_id: int | None = Field(default=None, ge=1)
 
 
 class URLProperties(Properties):

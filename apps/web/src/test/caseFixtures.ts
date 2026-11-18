@@ -170,6 +170,7 @@ export function makeJob(overrides: Partial<Job> = {}): Job {
       findings_rejected: 0,
       rejected_reasons: {},
       entities_touched: [],
+      notes: [],
       ...overrides.stats,
     },
   };

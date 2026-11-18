@@ -275,7 +275,7 @@ Each type is a Pydantic model (`nightloom_core.entities`) with a canonical `valu
 | `ip_address` | `IPAddress` | infrastructure | `scope` (`public` or `private`: not globally routable) |
 | `netblock` | `Netblock` | infrastructure | `name`, `country`, `registry` |
 | `asn` | `ASN` | infrastructure | `name`, `country`, `registry` |
-| `certificate` | `Certificate` | infrastructure | `subject`, `issuer`, `serial_number`, `not_before`, `not_after`, `self_signed` |
+| `certificate` | `Certificate` | infrastructure | `subject`, `subject_cn`, `issuer`, `serial_number`, `not_before`, `not_after`, `self_signed`, `san_count` (entries in the subjectAltName extension), `crtsh_id` (written by the [crt.sh Shuttle](#the-crtsh-shuttle)) |
 | `url` | `URL` | infrastructure | `status_code`, `title`, `content_type` |
 | `service` | `Service` | infrastructure | `product`, `version`, `banner` |
 | `technology` | `Technology` | infrastructure | `version`, `category` |
@@ -427,6 +427,8 @@ Every Shuttle subclasses `Shuttle` and declares a frozen `ShuttleMeta`, validate
 
 Values are **raw**: Shuttles never normalize. The worker normalizes everything with `nightloom_core`, so a key is computed in exactly one way.
 
+During a run, a Shuttle that cannot finish for a known reason raises `ShuttleFailedError(FailureReason.…)`: `source_unavailable` (the source did not answer after the Shuttle's retries), `source_invalid_response` (an answer it could not read) or `result_too_large` (too large even after narrowing). Like a refusal, the job fails with the reason's fixed message from the SDK and the reason code is recorded in `job.finish`; findings stored before it are kept. Any other exception ends the job with the generic `The Shuttle failed.` message.
+
 ### Context
 
 `ShuttleContext` gives a running Shuttle:
@@ -434,7 +436,8 @@ Values are **raw**: Shuttles never normalize. The worker normalizes everything w
 - `logger`: messages prefixed with `[<name>]`;
 - `http`: a guarded `httpx.AsyncClient` (below), only when `network=True`;
 - `keys`: a read-only mapping of the declared API keys;
-- `cancelled` / `raise_if_cancelled()`, and `progress(message)` (one short line, logged).
+- `cancelled` / `raise_if_cancelled()`, and `progress(message)` (one short line, logged);
+- `note(message)`: a remark kept with the job (at most 10 of 200 characters, repeats dropped), stored in the job's `stats.notes` and shown in the *Jobs* panel, but not copied into the audit log. Shuttles write fixed text and counts there, never found values or responses.
 
 ### The guarded HTTP client
 
@@ -477,9 +480,30 @@ Records of a name that is a CNAME belong to its target, so MX, NS, TXT, SOA and 
 
 Findings are rated **B2** (a recursive resolver's answer: usually reliable, probably true, not DNSSEC-validated here) with confidence 0.9.
 
+### The crt.sh Shuttle
+
+[`shuttles/crtsh`](../shuttles/crtsh/) (`crtsh`, passive, infrastructure, `network=True`) maps a domain from public **Certificate Transparency** logs through [crt.sh](https://crt.sh/), using only `ctx.http` (so the SSRF guard and the 5 MB response cap apply). For the input it sends two searches, `?q=<domain>&output=json` and `?q=%25.<domain>&output=json` (the domain itself and every name under it), validates each JSON row with a Pydantic model (malformed rows are ignored and counted), removes duplicate certificate IDs and orders them by `not_before`, newest first.
+
+| Found | Becomes |
+| --- | --- |
+| a name in a certificate (SANs, one per line, and the common name) that is the input or under it | a Domain and `HAS_SUBDOMAIN` from the input (one edge from the input, not a parent chain), deduplicated; at most 2,000, most recently certified first (a job note says when more were found) |
+| `*.<name>` | `<name>`, with `wildcard: true (certificates name *.<name>)` in the relationship's note (relationships carry no properties) |
+| one of the 50 most recent certificates | downloaded (`?d=<id>`), parsed with `cryptography`: a Certificate keyed by the SHA-256 fingerprint of its DER encoding, with `issuer` (email attributes removed), `subject_cn`, `serial_number`, `not_before`, `not_after`, `crtsh_id`, `san_count`, `self_signed` (issuer equals subject and the signature verifies with its own key), and `COVERS` to each kept name it contains |
+| an older certificate | its names only |
+
+**Scope filtering.** Every name has a leading `*.` stripped and is lower-cased and normalized with `nightloom_core` (IDNs become A-labels); it is kept only if it is the input or ends in `.<input>`. Lookalikes such as `notexample.org` or `example.org.attacker.example`, and other customers' names on shared certificates, are dropped. **Email addresses** (in SANs, as a common name, in an issuer) are dropped before anything else is done with them: they are person data, and the Shuttle is infrastructure-only. **IP addresses** in SANs are dropped too. The drops are counted by reason (`email`, `ip_address`, `out_of_scope`, `invalid`) and reported in a job note with counts only. Public suffixes (`co.uk`) and internal-only names are refused before anything is sent (`not_registrable`).
+
+**Fingerprint downloads.** crt.sh's JSON has no fingerprint, so a Certificate costs one download. At most 50 are downloaded per run, the most recent first, and at most 900 `COVERS` relationships are added in all, which keeps a run (2 × 2,000 + 50 + 900 findings at most) under the worker's 5,000-finding limit. A download is retried once; a certificate that cannot be downloaded or parsed is skipped (counted in a note), and three failures in a row stop the downloads. Cancellation is checked before every request.
+
+**Large domains.** A search answer over 5 MB is asked again once with `&exclude=expired`, and the job gets the note *Expired certificates excluded (result too large).* If it is still too large, the job fails with `result_too_large`, whose message suggests running the Shuttle on a narrower input (one of the domain's subdomains).
+
+**An unwell crt.sh.** crt.sh is free and busy, and often answers 502/503 or times out. A search that fails that way (or with 429, 500, 504 or a network error; read timeout 60 s) is retried up to 3 times after 2, 5 and 10 seconds of backoff; then the job fails with `source_unavailable`. A 4xx or a body that is not a JSON list fails at once with `source_invalid_response`. The rate limit is **one request every 3 seconds** per host (retries included). The timeout is 300 seconds; no search starts after 180 seconds and no download after 250, so a slow run ends with a clear error or a note (*Reached the time limit after N of 50 certificate downloads*) rather than the generic timeout.
+
+crt.sh (run by Sectigo) publishes no terms of use; see the Shuttle's [README](../shuttles/crtsh/README.md#using-crtsh-politely) for how it is used politely. Names are rated **B2** (confidence 0.8: logged certificates are reliable, but a certified name need not resolve today); certificates, downloaded and fingerprinted locally, **B1** (0.95). The tests never call crt.sh: they use a fake crt.sh behind the SDK's guarded client and certificates generated with `cryptography`; one opt-in `network` test (`make test-network`) asks the real crt.sh about `example.org`.
+
 ### Jobs and the worker
 
-A **job** is one Shuttle run on one entity of a case (PostgreSQL table `jobs`, deleted with its case): `shuttle_name`, `shuttle_version`, `input_key`, `requested_by`, `status`, `created_at`/`started_at`/`finished_at`, `error` (one of a few fixed, user-safe messages, never an exception's text), `stats` (`entities_created`, `entities_updated`, `relationships_created`, `relationships_updated`, `findings_rejected`, `rejected_reasons` by reason, and `entities_touched`: the keys of up to 200 entities the job created or updated, in order, so the UI can highlight them; the audit log gets the counts but never these keys) and `cancel_requested`.
+A **job** is one Shuttle run on one entity of a case (PostgreSQL table `jobs`, deleted with its case): `shuttle_name`, `shuttle_version`, `input_key`, `requested_by`, `status`, `created_at`/`started_at`/`finished_at`, `error` (one of a few fixed, user-safe messages, never an exception's text), `stats` (`entities_created`, `entities_updated`, `relationships_created`, `relationships_updated`, `findings_rejected`, `rejected_reasons` by reason, `entities_touched`: the keys of up to 200 entities the job created or updated, in order, so the UI can highlight them; and `notes`: the Shuttle's [notes](#context), kept also when the job fails; the audit log gets the counts but never the keys or the notes) and `cancel_requested`.
 
 ```mermaid
 stateDiagram-v2
@@ -489,7 +513,7 @@ stateDiagram-v2
     queued --> failed: guardrail fails at start (job.finish denied), enqueue fails, or lost (6 h)
     running --> succeeded: Shuttle ends (job.finish)
     running --> cancelled: cancel_requested noticed between findings
-    running --> failed: timeout, over 5,000 findings, Shuttle error or refusal, guardrail fails mid-run, worker lost
+    running --> failed: timeout, over 5,000 findings, Shuttle error, failure or refusal, guardrail fails mid-run, worker lost
     succeeded --> [*]
     cancelled --> [*]
     failed --> [*]

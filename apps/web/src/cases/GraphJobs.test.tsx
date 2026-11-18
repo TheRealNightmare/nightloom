@@ -241,6 +241,38 @@ describe("jobs", () => {
     expect(api.callsTo("GET", `${path}/graph?limit=2000`)).toHaveLength(1);
   });
 
+  it("shows the Shuttle's notes with the job", async () => {
+    const noted = makeJob({
+      id: "0b6f8e1c-2a3d-4c5e-8f9a-1b2c3d4e5f60",
+      shuttle_name: "crtsh",
+      status: "succeeded",
+      started_at: "2026-11-12T08:30:01Z",
+      finished_at: "2026-11-12T08:30:09Z",
+      stats: {
+        entities_created: 3,
+        entities_updated: 0,
+        relationships_created: 3,
+        relationships_updated: 0,
+        findings_rejected: 0,
+        rejected_reasons: {},
+        entities_touched: [],
+        notes: [
+          "Expired certificates excluded (result too large).",
+          "Dropped 2 name(s): 1 email addresses, 1 IP addresses.",
+        ],
+      },
+    });
+    await openGraph({ jobs: [noted, succeeded] });
+    await userEvent.click(screen.getByRole("button", { name: /Jobs/ }));
+    const notes = within(jobRow("crtsh on example.org")).getByRole("list", { name: "Notes" });
+    expect(
+      within(notes)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual(noted.stats.notes);
+    expect(within(jobRow()).queryByRole("list", { name: "Notes" })).toBeNull();
+  });
+
   it("does not poll while the page is hidden", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     api.on("GET", `${path}/jobs/${running.id}`, () => json(running));

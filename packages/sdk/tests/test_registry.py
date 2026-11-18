@@ -10,17 +10,19 @@ from nightloom_core.entities import EntityType, Sensitivity
 from nightloom_core.relationships import RelationType
 from nightloom_sdk import (
     EntityInput,
+    FailureReason,
     Finding,
     InputRefusedError,
     RefusalReason,
     Shuttle,
     ShuttleConfigurationError,
     ShuttleContext,
+    ShuttleFailedError,
     ShuttleMeta,
 )
 from nightloom_sdk import registry as registry_module
 from nightloom_sdk.registry import RegistryError, ShuttleRegistry, main
-from nightloom_sdk.shuttle import REFUSAL_MESSAGES
+from nightloom_sdk.shuttle import FAILURE_MESSAGES, REFUSAL_MESSAGES
 
 
 def make_meta(name: str, **overrides: Any) -> ShuttleMeta:
@@ -213,3 +215,14 @@ def test_input_refused_error_has_a_fixed_message() -> None:
     assert error.message == str(error) == REFUSAL_MESSAGES[RefusalReason.INTERNAL_NAME]
     assert "Nothing was queried" in error.message
     assert set(REFUSAL_MESSAGES) == set(RefusalReason)
+    assert all("Nothing was queried" in message for message in REFUSAL_MESSAGES.values())
+
+
+def test_shuttle_failed_error_has_a_fixed_message() -> None:
+    error = ShuttleFailedError(FailureReason.RESULT_TOO_LARGE)
+    assert error.reason is FailureReason.RESULT_TOO_LARGE
+    assert error.message == str(error) == FAILURE_MESSAGES[FailureReason.RESULT_TOO_LARGE]
+    assert "narrower" in error.message
+    assert set(FAILURE_MESSAGES) == set(FailureReason)
+    loose = ShuttleFailedError("source_unavailable")  # type: ignore[arg-type]
+    assert loose.reason is FailureReason.SOURCE_UNAVAILABLE

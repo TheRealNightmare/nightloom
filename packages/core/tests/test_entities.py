@@ -140,6 +140,9 @@ def test_build_entity_without_properties() -> None:
         (EntityType.DOCUMENT, {"sha256": "abc"}),
         (EntityType.IMAGE, {"mime_type": "not a type"}),
         (EntityType.CERTIFICATE, {"not_after": "2026-01-01T00:00:00"}),  # naive
+        (EntityType.CERTIFICATE, {"crtsh_id": 0}),
+        (EntityType.CERTIFICATE, {"san_count": -1}),
+        (EntityType.CERTIFICATE, {"subject_cn": "x" * 201}),
         (EntityType.BREACH, {"data_classes": ["x"] * 51}),
         (EntityType.DOMAIN, {"dns_txt": ["x"] * 51}),  # at most 50 records
         (EntityType.DOMAIN, {"dns_txt": ["x" * 1001]}),  # of at most 1,000 characters
@@ -171,6 +174,16 @@ def test_properties_are_typed_and_serialized_for_storage() -> None:
         "subject": "CN=example.org",
         "not_after": "2027-01-01T00:00:00Z",
         "self_signed": False,
+    }
+    crtsh = build_entity(
+        EntityType.CERTIFICATE,
+        "b" * 64,
+        {"subject_cn": " *.example.org ", "crtsh_id": 123, "san_count": 2},
+    )
+    assert crtsh.stored_properties() == {
+        "subject_cn": "*.example.org",
+        "crtsh_id": 123,
+        "san_count": 2,
     }
     netblock = build_entity(EntityType.NETBLOCK, "192.0.2.0/24", {"country": " bd "})
     assert netblock.stored_properties() == {"country": "BD"}

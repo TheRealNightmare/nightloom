@@ -54,6 +54,7 @@ known-first-party = [
     "nightloom_api",
     "nightloom_core",
     "nightloom_sdk",
+    "nightloom_shuttle_crtsh",
     "nightloom_shuttle_dns",
     "nightloom_shuttle_registrable_domain",
     "nightloom_worker",
@@ -78,6 +79,8 @@ files = [
     "packages/core/tests",
     "packages/sdk/src",
     "packages/sdk/tests",
+    "shuttles/crtsh/src",
+    "shuttles/crtsh/tests",
     "shuttles/dns/src",
     "shuttles/dns/tests",
     "shuttles/registrable-domain/src",
@@ -93,6 +96,7 @@ mypy_path = [
     "apps/worker/src",
     "packages/core/src",
     "packages/sdk/src",
+    "shuttles/crtsh/src",
     "shuttles/dns/src",
     "shuttles/registrable-domain/src",
 ]
@@ -126,7 +130,7 @@ markers = [
     "db: needs PostgreSQL and Valkey (`make deps-up`); part of `make test`",
     "graph: needs Neo4j (`make deps-up`); part of `make test`",
     "integration: needs the running stack (`make up`); run with `make test-integration`",
-    "network: queries the real internet (public DNS); opt-in with `make test-network`",
+    "network: queries the real internet (public DNS, crt.sh); opt-in with `make test-network`",
 ]
 addopts = [
     "--import-mode=importlib",
@@ -140,6 +144,7 @@ addopts = [
     "--cov=nightloom_core",
     "--cov=nightloom_sdk",
     "--cov=nightloom_worker",
+    "--cov=nightloom_shuttle_crtsh",
     "--cov=nightloom_shuttle_dns",
     "--cov=nightloom_shuttle_registrable_domain",
     "--cov-report=term-missing",

@@ -1,0 +1,25 @@
+[project]
+name = "nightloom-shuttle-crtsh"
+version = "1.0.0"
+description = "Built-in Nightloom Shuttle: a domain's subdomains and certificates from Certificate Transparency logs, via crt.sh."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+dependencies = [
+    "cryptography>=50.0.2",
+    "httpx>=0.28.1",
+    "nightloom-core",
+    "nightloom-sdk",
+    "pydantic>=2.14.3",
+]
+
+[project.entry-points."nightloom.shuttles"]
+crtsh = "nightloom_shuttle_crtsh:CrtShShuttle"
+
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+nightloom-core = { workspace = true }
+nightloom-sdk = { workspace = true }

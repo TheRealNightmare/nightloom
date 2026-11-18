@@ -117,6 +117,11 @@ describe("jobs", () => {
     const stats: Partial<Job["stats"]> = { ...makeJob().stats };
     delete stats.entities_touched;
     expect(isJob({ ...makeJob(), stats })).toBe(false);
+    // Notes are optional (older jobs have none) but must be strings.
+    const withoutNotes: Partial<Job["stats"]> = { ...makeJob().stats };
+    delete withoutNotes.notes;
+    expect(isJob({ ...makeJob(), stats: withoutNotes })).toBe(true);
+    expect(isJob({ ...makeJob(), stats: { ...makeJob().stats, notes: [1] } })).toBe(false);
   });
 
   it("refuses a malformed page", async () => {

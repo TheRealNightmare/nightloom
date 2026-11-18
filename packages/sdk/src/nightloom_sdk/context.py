@@ -13,6 +13,9 @@ from nightloom_sdk.meta import ShuttleMeta
 
 ProgressCallback = Callable[[str], None]
 PROGRESS_MAX_LENGTH = 200
+# Job notes: at most this many per run, each at most this long.
+MAX_NOTES = 10
+NOTE_MAX_LENGTH = 200
 
 
 class JobCancelledError(Exception):
@@ -40,6 +43,8 @@ class ShuttleContext:
       cancelled. The runner also stops between findings, so long loops only
       need to check before expensive work.
     - :meth:`progress`: a short, human-readable status line.
+    - :meth:`note`: a short remark kept with the job (shown to its users),
+      e.g. that a result was narrowed or capped.
     """
 
     def __init__(
@@ -61,6 +66,7 @@ class ShuttleContext:
         self._cancel_event = cancel_event or asyncio.Event()
         self._on_progress = on_progress
         self.last_progress: str | None = None
+        self._notes: list[str] = []
 
     @property
     def http(self) -> httpx.AsyncClient:
@@ -87,6 +93,24 @@ class ShuttleContext:
         if self._on_progress is not None:
             self._on_progress(text)
 
+    def note(self, message: str) -> None:
+        """Keep a short remark with the job (at most MAX_NOTES; repeats are dropped).
+
+        Notes are stored in the job's stats and shown to the case's members,
+        but not copied into the audit log. Write fixed text and counts: never
+        values the Shuttle found, responses or secrets.
+        """
+        text = " ".join(str(message).split())[:NOTE_MAX_LENGTH]
+        if not text or text in self._notes:
+            return
+        self.logger.info("note: %s", text)
+        if len(self._notes) < MAX_NOTES:
+            self._notes.append(text)
+
+    @property
+    def notes(self) -> tuple[str, ...]:
+        return tuple(self._notes)
+
     async def aclose(self) -> None:
         """Close the HTTP client (the context owns it, whether given or created)."""
         if self._http is not None:
@@ -94,4 +118,4 @@ class ShuttleContext:
             self._http = None
 
 
-__all__ = ["JobCancelledError", "ShuttleContext"]
+__all__ = ["MAX_NOTES", "NOTE_MAX_LENGTH", "JobCancelledError", "ShuttleContext"]

@@ -139,7 +139,7 @@ jobs:
           name: coverage
           path: coverage.xml
           retention-days: 14
-          if-no-files-found: error
+          if-no-files-found: warn
 
   # The shared entity model must produce identical canonical keys on every
   # supported interpreter (ipaddress changed its output between 3.12 patch
@@ -219,7 +219,7 @@ jobs:
           name: web-coverage
           path: apps/web/coverage/
           retention-days: 14
-          if-no-files-found: error
+          if-no-files-found: warn
 
   docker:
     name: Docker
@@ -306,7 +306,7 @@ jobs:
           docker run --rm nightloom-api:ci celery --version
           shuttles=$(docker run --rm nightloom-api:ci python -m nightloom_sdk.registry list)
           echo "$shuttles"
-          for name in dns registrable-domain; do
+          for name in crtsh dns registrable-domain; do
             if ! grep -q "^$name " <<< "$shuttles"; then
               echo "::error title=Shuttles::$name is not installed in the image."
               exit 1

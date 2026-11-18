@@ -1,0 +1,105 @@
+{
+  "wildcard": [
+    {
+      "issuer_ca_id": 999001,
+      "issuer_name": "C=XX, O=Nightloom Test CA, CN=Nightloom Test Issuing CA",
+      "common_name": "*.example.org",
+      "name_value": "*.example.org\nexample.org",
+      "id": 9000000005,
+      "entry_timestamp": "2026-10-01T00:00:00.123",
+      "not_before": "2026-10-01T00:00:00",
+      "not_after": "2026-12-30T00:00:00",
+      "serial_number": "05aa",
+      "result_count": 3
+    },
+    {
+      "issuer_ca_id": 999001,
+      "issuer_name": "C=XX, O=Nightloom Test CA, CN=Nightloom Test Issuing CA",
+      "common_name": "www.example.org",
+      "name_value": "example.org\nwww.example.org\nWWW.Example.org\nxn--bcher-kva.example.org",
+      "id": 9000000004,
+      "entry_timestamp": "2026-09-15T08:30:00.123",
+      "not_before": "2026-09-15T08:30:00",
+      "not_after": "2026-12-14T08:29:59",
+      "serial_number": "04aa",
+      "result_count": 5
+    },
+    {
+      "issuer_ca_id": 999001,
+      "issuer_name": "C=XX, O=Nightloom Test CA, CN=Nightloom Test Issuing CA",
+      "common_name": "mail.example.org",
+      "name_value": "hostmaster@example.org\nmail.example.org\n192.0.2.25",
+      "id": 9000000003,
+      "entry_timestamp": "2026-08-01T00:00:00.123",
+      "not_before": "2026-08-01T00:00:00",
+      "not_after": "2026-10-30T00:00:00",
+      "serial_number": "03aa",
+      "result_count": 4
+    },
+    {
+      "issuer_ca_id": 999001,
+      "issuer_name": "C=XX, O=Nightloom Test CA, CN=Nightloom Test Issuing CA",
+      "common_name": "shop.example.org",
+      "name_value": "*.*.example.org\n*.dev.example.org\ncdn.example.com\nexample.org.attacker.example\nnotexample.org\nshop.example.net\nshop.example.org",
+      "id": 9000000002,
+      "entry_timestamp": "2026-06-01T12:00:00.123",
+      "not_before": "2026-06-01T12:00:00",
+      "not_after": "2026-08-30T12:00:00",
+      "serial_number": "02aa",
+      "result_count": 8
+    },
+    {
+      "issuer_ca_id": 999001,
+      "issuer_name": "C=XX, O=Nightloom Test CA, CN=Nightloom Test Issuing CA",
+      "common_name": "legacy.example.org",
+      "name_value": "legacy.example.org\nold.legacy.example.org",
+      "id": 9000000001,
+      "entry_timestamp": "2025-01-01T00:00:00.123",
+      "not_before": "2025-01-01T00:00:00",
+      "not_after": "2026-01-01T00:00:00",
+      "serial_number": "01aa",
+      "result_count": 3
+    },
+    {
+      "id": "not-a-number",
+      "name_value": "bad.example.org",
+      "not_before": "2026-01-01T00:00:00"
+    },
+    {
+      "name_value": "missing-id.example.org",
+      "not_before": "2026-01-01T00:00:00"
+    },
+    "a row that is not an object",
+    {
+      "id": 9000000099,
+      "name_value": "when.example.org",
+      "not_before": "not a date"
+    }
+  ],
+  "exact": [
+    {
+      "issuer_ca_id": 999001,
+      "issuer_name": "C=XX, O=Nightloom Test CA, CN=Nightloom Test Issuing CA",
+      "common_name": "*.example.org",
+      "name_value": "*.example.org\nexample.org",
+      "id": 9000000005,
+      "entry_timestamp": "2026-10-01T00:00:00.123",
+      "not_before": "2026-10-01T00:00:00",
+      "not_after": "2026-12-30T00:00:00",
+      "serial_number": "05aa",
+      "result_count": 3
+    },
+    {
+      "issuer_ca_id": 999001,
+      "issuer_name": "C=XX, O=Nightloom Test CA, CN=Nightloom Test Issuing CA",
+      "common_name": "www.example.org",
+      "name_value": "example.org\nwww.example.org\nWWW.Example.org\nxn--bcher-kva.example.org",
+      "id": 9000000004,
+      "entry_timestamp": "2026-09-15T08:30:00.123",
+      "not_before": "2026-09-15T08:30:00",
+      "not_after": "2026-12-14T08:29:59",
+      "serial_number": "04aa",
+      "result_count": 5
+    }
+  ]
+}

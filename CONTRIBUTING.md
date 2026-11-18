@@ -237,7 +237,7 @@ The tests live in `apps/api/tests/`, `apps/worker/tests/` (the job runner, again
 | Database | `@pytest.mark.db` (in `apps/api/tests/db/` and `apps/worker/tests/`) | PostgreSQL, Valkey and Neo4j | `make test` |
 | Graph | `@pytest.mark.graph` (in `apps/api/tests/db/` and `apps/worker/tests/`) | Neo4j | `make test` |
 | Integration | `@pytest.mark.integration` (in `apps/api/tests/integration/`) | the whole stack | `make test-integration` (`TEST_DNS=1` adds the DNS job test, below) |
-| Network | `@pytest.mark.network` | the internet (public DNS) | `make test-network`; never in CI |
+| Network | `@pytest.mark.network` | the internet (public DNS, crt.sh) | `make test-network`; never in CI |
 
 `make test` runs the unit, database **and** graph tests with a coverage gate of 90% (over `nightloom_api`, `nightloom_core`, `nightloom_sdk`, `nightloom_worker` and the built-in Shuttles), so start the services first. The database fixtures live in `apps/api/tests/db_fixtures.py`; both the API's and the worker's `conftest.py` import them, and the API tests replace the Celery queue with a recorder, so no test ever needs a running worker. `make deps-up` starts only PostgreSQL, Valkey and Neo4j from the Compose file (`make up` works too):
 
@@ -276,7 +276,7 @@ Every pull request and every push to `main` runs the [CI workflow](.github/workf
 | `core-compat` | `make test-core-compat` for one Python each (3.12.0, latest 3.12, 3.13): the `packages/core` tests, so canonical keys stay identical across interpreters |
 | `test` | `make test` (unit, database and graph tests of the API, worker, core, SDK and built-in Shuttles, at least 90% coverage) against PostgreSQL, Valkey and Neo4j service containers; the coverage report is uploaded as an artifact |
 | `web` | `pnpm install --frozen-lockfile`, then `make web-lint`, `web-typecheck`, `web-test` (at least 80% coverage; the report is uploaded as an artifact) and `web-build` |
-| `docker` | `deploy/compose.yaml` (alone and with `deploy/compose.test.yaml`) is valid; the API image builds and, started on its own, answers `/api/v1/health` with 200 and `/api/v1/ready` with 503; it ships Celery and the built-in Shuttles (the worker uses the same image), their configuration check passes with the defaults and refuses a private DNS resolver; the web image builds and serves `/` as HTML |
+| `docker` | `deploy/compose.yaml` (alone and with `deploy/compose.test.yaml`) is valid; the API image builds and, started on its own, answers `/api/v1/health` with 200 and `/api/v1/ready` with 503; it ships Celery and the built-in Shuttles (`crtsh`, `dns`, `registrable-domain`; the worker uses the same image), their configuration check passes with the defaults and refuses a private DNS resolver; the web image builds and serves `/` as HTML |
 | `integration` | Starts the full stack with `make up TEST_DNS=1` (adds the test-only CoreDNS server), runs `make test-integration TEST_DNS=1` (including a `registrable-domain` job and a `dns` job against the test zone, end to end through the API, Valkey, the worker and Neo4j), checks `/api/v1/health` through the web container's proxy, then installs Playwright's Chromium and runs `make e2e` with throwaway CI-only credentials (the DNS Shuttle test uses the test zone); dumps the container logs and uploads the Playwright report on failure |
 | `dco` | Pull requests only: every non-merge commit has a `Signed-off-by:` trailer (see [DCO](#developer-certificate-of-origin-dco)) |
 
@@ -289,6 +289,14 @@ A pull request can only be merged when all jobs are green and every commit is si
 Shuttles are Nightloom's plugins: each one takes **one entity** and yields **findings** (entities and relationships), usually from a single data source. They are ordinary Python packages that depend on the Shuttle SDK ([`packages/sdk`](packages/sdk/), import `nightloom_sdk`) and register under an entry point. The worker runs them; they never write to the graph, the database or the network on their own terms. The full contract, including every check the worker makes, is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#shuttle-contract).
 
 To propose a new data source without writing it yourself, open a **Shuttle request** issue.
+
+### Built-in Shuttles
+
+| Shuttle | Package | What it does |
+| --- | --- | --- |
+| `registrable-domain` | [`shuttles/registrable-domain`](shuttles/registrable-domain/) | Domain → its registrable domain, from the bundled Public Suffix List (no network). The smallest complete example. |
+| `dns` | [`shuttles/dns`](shuttles/dns/) | Domain → its public DNS records, through public resolvers only. The example for a non-HTTP protocol behind a fake client. |
+| `crtsh` | [`shuttles/crtsh`](shuttles/crtsh/) | Domain → subdomains and certificates from Certificate Transparency via crt.sh. The example for an HTTP source through `ctx.http`: retries, a response that is too large, job notes and fixed failure messages. |
 
 ### A minimal Shuttle
 
@@ -354,11 +362,13 @@ parent-domain = "nightloom_shuttle_parent_domain:ParentDomain"
 - **Metadata is validated** when the class is defined and again when it is loaded: the relationship types must fit the [allow-list](docs/ARCHITECTURE.md#relationships) for your input and output entity types; `sensitivity` must be at least that of every type you take or produce (any person-related type makes it a `person` Shuttle, which only runs in cases that allow person entities); `timeout_seconds` is 1–600 (default 60).
 - **Yield raw values.** Do not normalize: the worker normalizes every value with `nightloom_core`, then checks it against your declared output types, the case's person gate and the allow-list. A finding that fails is counted as rejected (with a reason, never the value) and not stored. A relationship's endpoints must exist when it arrives, so yield an entity before the relationships that use it.
 - **Network access only through `ctx.http`**, a guarded `httpx.AsyncClient`: it refuses private, loopback, link-local, multicast and reserved destinations after DNS resolution (and connects to the address it checked), allows only `http`/`https` (redirects too), applies your `rate_limit` per host, caps responses at 5 MB and identifies itself as `Nightloom/<version> (+https://github.com/TheRealNightmare/nightloom)`. Do not create your own clients or sockets. Respect the source's terms (link them in `terms_url`) and `robots.txt`. The one exception so far is the [DNS Shuttle](docs/ARCHITECTURE.md#the-dns-shuttle), which speaks DNS, not HTTP: it talks only to configured resolvers that must be public addresses, and applies `rate_limit` per resolver with the SDK's `HostRateLimiter`. Another non-HTTP protocol needs the same kind of guard; discuss it in an issue first.
-- **Refuse inputs early with a fixed reason.** If your Shuttle must not handle an input (the DNS Shuttle refuses internal-only names), raise `InputRefusedError(RefusalReason.…)` before doing any work: the job fails with that reason's fixed message. Add a reason (and its message) to the SDK rather than raising free text.
+- **Refuse inputs early with a fixed reason.** If your Shuttle must not handle an input (the DNS Shuttle refuses internal-only names, the crt.sh Shuttle public suffixes such as `co.uk`), raise `InputRefusedError(RefusalReason.…)` before doing any work: the job fails with that reason's fixed message. Add a reason (and its message) to the SDK rather than raising free text.
+- **Fail clearly when the source fails.** When a run cannot finish for a reason the user can act on (the source is down after your retries, its answer is unreadable or too large), raise `ShuttleFailedError(FailureReason.…)`: the job fails with that reason's fixed, user-safe message instead of the generic one, and keeps what was stored. Again, add a reason to the SDK rather than raising free text.
+- **Say what you narrowed.** `ctx.note("...")` keeps a short remark with the job (at most 10, of 200 characters), shown in the *Jobs* panel: that a result was capped, that expired certificates were left out, how many names were dropped and why. Write fixed text and counts, never values you found, responses or secrets. Notes are not copied into the audit log.
 - **Check your settings at startup.** A Shuttle configured through environment variables overrides `check_configuration()` and raises `ShuttleConfigurationError` with a message that names the setting; the worker refuses to start if it fails (`python -m nightloom_sdk.registry check` runs it too).
 - **No secrets in logs or findings.** Use `ctx.logger` and never log keys, tokens or whole responses. API keys you declare in `required_keys` arrive read-only in `ctx.keys` (user-supplied keys come in a later release; until then the mapping is empty).
 - **Stop when asked.** The worker stops between findings once a job is cancelled; in a long loop, check `ctx.cancelled` (or call `ctx.raise_if_cancelled()`) before expensive work. `ctx.progress("...")` logs a short status line.
-- **Errors** end the job as `failed` with a generic message; only the exception's type is logged. More than 5,000 findings, or running past `timeout_seconds`, also stops the job (findings already stored are kept).
+- **Other errors** end the job as `failed` with a generic message; only the exception's type is logged. More than 5,000 findings, or running past `timeout_seconds`, also stops the job (findings already stored are kept).
 
 ### Testing a Shuttle
 
@@ -393,7 +403,7 @@ async def test_network_shuttle() -> None:
 
 #### Testing networked Shuttles with fakes
 
-Unit tests never use the real network. For HTTP, pass a `MockTransport` as above. For anything else, keep the protocol behind a small interface your Shuttle receives in its constructor, and give it a fake in tests; the worker creates Shuttles without arguments, so the real client is the default. The [DNS Shuttle](shuttles/dns/) does exactly that: `DnsShuttle(client=..., config=...)` takes any object with `async query(name, rdtype) -> Answer | None`, and its tests answer from a table of real dnspython records:
+Unit tests never use the real network. For HTTP, pass a `MockTransport` as above; the [crt.sh Shuttle's tests](shuttles/crtsh/tests/) are a fuller example, with a fake server that routes by query parameter, JSON fixtures in `tests/fixtures/`, fake time for the rate limit and backoff (give `HostRateLimiter` and the Shuttle the same fake `clock` and `sleep`), and test certificates generated with `cryptography`. For anything else, keep the protocol behind a small interface your Shuttle receives in its constructor, and give it a fake in tests; the worker creates Shuttles without arguments, so the real client is the default. The [DNS Shuttle](shuttles/dns/) does exactly that: `DnsShuttle(client=..., config=...)` takes any object with `async query(name, rdtype) -> Answer | None`, and its tests answer from a table of real dnspython records:
 
 ```python
 import dns.rdata, dns.rdataclass, dns.rdatatype
@@ -428,4 +438,4 @@ Test the real client separately by replacing what it wraps (the DNS tests give `
 
 ### Adding a built-in Shuttle
 
-Put it in `shuttles/<name>/` (package `nightloom-shuttle-<name>`, Apache-2.0, with a `README.md`, `py.typed` and tests in `shuttles/<name>/tests/`). The uv workspace picks up every directory under `shuttles/`. Add it as a dependency of `apps/worker/pyproject.toml`, add its `pyproject.toml` to the bind mounts in `apps/api/Dockerfile`, and add its `src` and `tests` to `[tool.mypy]` in the root `pyproject.toml` and its import name to `--cov` there. `make check` then lints, type-checks and tests it with the rest.
+Put it in `shuttles/<name>/` (package `nightloom-shuttle-<name>`, Apache-2.0, with a `README.md`, `py.typed` and tests in `shuttles/<name>/tests/`). The uv workspace picks up every directory under `shuttles/`. Add it as a dependency of `apps/worker/pyproject.toml`, add its `pyproject.toml` to the bind mounts in `apps/api/Dockerfile`, and add its `src` and `tests` to `[tool.mypy]` in the root `pyproject.toml` and its import name to `--cov` and to Ruff's `known-first-party` there, and add its name to the list the CI `docker` job checks in the image. List it under [Built-in Shuttles](#built-in-shuttles) and in the README. `make check` then lints, type-checks and tests it with the rest.
