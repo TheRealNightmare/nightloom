@@ -11,6 +11,8 @@ export interface ModalProps {
   initialFocus?: RefObject<HTMLElement | null>;
   /** Wider layout for forms with several fields. */
   wide?: boolean;
+  /** A panel along the right edge, for reading details next to a list. */
+  drawer?: boolean;
   children: ReactNode;
 }
 
@@ -18,7 +20,15 @@ export interface ModalProps {
  * A modal dialog: focus moves into it, Tab stays inside, Escape closes it,
  * and focus returns to where it was when it closes.
  */
-export function Modal({ title, description, onClose, initialFocus, wide, children }: ModalProps) {
+export function Modal({
+  title,
+  description,
+  onClose,
+  initialFocus,
+  wide,
+  drawer,
+  children,
+}: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const descriptionId = useId();
@@ -50,10 +60,10 @@ export function Modal({ title, description, onClose, initialFocus, wide, childre
   }, [onClose]);
 
   return (
-    <div className="dialog-backdrop">
+    <div className={drawer ? "dialog-backdrop dialog-backdrop--drawer" : "dialog-backdrop"}>
       <div
         ref={dialogRef}
-        className={wide ? "dialog dialog--wide" : "dialog"}
+        className={drawer ? "dialog dialog--drawer" : wide ? "dialog dialog--wide" : "dialog"}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

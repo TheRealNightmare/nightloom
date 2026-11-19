@@ -11,9 +11,17 @@ export interface TopBarProps {
   account?: ReactNode;
   /** Shows the "Demo data" badge (only on the demo graph). */
   demo?: boolean;
+  /** Adds the admin pages (Users, Audit log) to the navigation. */
+  admin?: boolean;
 }
 
-export function TopBar({ readiness, onRecheck, account, demo = false }: TopBarProps) {
+export function TopBar({
+  readiness,
+  onRecheck,
+  account,
+  demo = false,
+  admin = false,
+}: TopBarProps) {
   return (
     <header className="topbar">
       <div className="topbar__start">
@@ -29,6 +37,16 @@ export function TopBar({ readiness, onRecheck, account, demo = false }: TopBarPr
           <NavLink to="/demo" className="topnav__link">
             Demo
           </NavLink>
+          {admin && (
+            <>
+              <NavLink to="/admin/users" className="topnav__link">
+                Users
+              </NavLink>
+              <NavLink to="/admin/audit" className="topnav__link">
+                Audit log
+              </NavLink>
+            </>
+          )}
         </nav>
       </div>
       <div className="topbar__end">

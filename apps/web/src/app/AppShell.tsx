@@ -15,6 +15,7 @@ export function AppShell({ user }: { user: User }) {
         readiness={readiness}
         onRecheck={recheck}
         demo={demo}
+        admin={user.role === "admin"}
         account={<UserMenu user={user} />}
       />
       <Outlet />

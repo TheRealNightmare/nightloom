@@ -17,11 +17,13 @@ pytestmark = pytest.mark.db
 
 UserFactory = Callable[..., Coroutine[Any, Any, User]]
 ClientFactory = Callable[[], AsyncClient]
-NEW_USER = {
+NEW_USER: dict[str, Any] = {
     "email": "New.Analyst@Example.org",
     "display_name": "  New Analyst ",
     "role": "analyst",
+    "generate_password": False,
     "password": "a sufficiently long password",
+    "must_change_password": False,
 }
 
 
@@ -43,12 +45,17 @@ async def test_admin_creates_and_lists_users(admin: AsyncClient) -> None:
     assert created["role"] == "analyst"
     assert created["is_active"] is True
     assert created["last_login_at"] is None
-    assert "password" not in response.text
+    assert created["must_change_password"] is False
+    assert created["temporary_password"] is None  # the admin supplied it
+    assert NEW_USER["password"] not in response.text
+    assert "password_hash" not in response.text
 
     listed = await admin.get(f"{PREFIX}/users")
     assert listed.status_code == 200
     assert [user["email"] for user in listed.json()] == [ADMIN_EMAIL, "new.analyst@example.org"]
-    assert "password" not in listed.text
+    assert NEW_USER["password"] not in listed.text
+    assert "password_hash" not in listed.text
+    assert "temporary_password" not in listed.text
 
 
 async def test_created_user_can_log_in(admin: AsyncClient, new_client: ClientFactory) -> None:

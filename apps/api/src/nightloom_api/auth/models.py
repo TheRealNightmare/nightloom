@@ -10,6 +10,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     String,
+    false,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -55,6 +56,10 @@ class User(Base):
         )
     )
     is_active: Mapped[bool] = mapped_column(default=True)
+    # Set with a temporary password (admin create or reset); cleared by a
+    # password change. While true, only /auth/me, /auth/password and
+    # /auth/logout answer (see auth.deps.current_session).
+    must_change_password: Mapped[bool] = mapped_column(default=False, server_default=false())
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, server_default=func.now()
     )

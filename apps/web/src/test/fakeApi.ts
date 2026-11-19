@@ -32,6 +32,7 @@ export const TEST_USER: User = {
   display_name: "Ada Analyst",
   role: "analyst",
   is_active: true,
+  must_change_password: false,
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
   last_login_at: null,

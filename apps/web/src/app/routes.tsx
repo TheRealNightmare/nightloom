@@ -1,5 +1,8 @@
 import { Navigate, type RouteObject } from "react-router";
 
+import { AuditPage } from "../admin/AuditPage";
+import { RequireAdmin } from "../admin/RequireAdmin";
+import { UsersPage } from "../admin/UsersPage";
 import { AuthGate } from "../auth/AuthGate";
 import { ActivityTab } from "../cases/ActivityTab";
 import { CaseCreatePage } from "../cases/CaseCreatePage";
@@ -32,6 +35,17 @@ export const routes: RouteObject[] = [
           { path: "activity", element: <ActivityTab /> },
           { path: "settings", element: <SettingsTab /> },
           { path: "*", element: <NotFoundPage embedded /> },
+        ],
+      },
+      {
+        // Global admins only; everyone else gets "Page not found".
+        path: "admin",
+        element: <RequireAdmin />,
+        children: [
+          { index: true, element: <Navigate to="users" replace /> },
+          { path: "users", element: <UsersPage /> },
+          { path: "audit", element: <AuditPage /> },
+          { path: "*", element: <NotFoundPage /> },
         ],
       },
       {

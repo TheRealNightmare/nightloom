@@ -17,6 +17,7 @@ class AuditAction(StrEnum):
     USER_CREATE = "user.create"
     USER_UPDATE = "user.update"
     USER_SESSIONS_REVOKE = "user.sessions_revoke"
+    USER_PASSWORD_RESET = "user.password_reset"  # noqa: S105 - an action name
     AUTHZ_DENIED = "authz.denied"
     AUDIT_VERIFY = "audit.verify"
     CASE_CREATE = "case.create"
