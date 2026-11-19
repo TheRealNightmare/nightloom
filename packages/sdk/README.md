@@ -2,9 +2,9 @@
 
 The Shuttle SDK (import `nightloom_sdk`): everything needed to write a Nightloom Shuttle.
 
-- `ShuttleMeta`: what a Shuttle declares (name, version, input and output types, mode, sensitivity, network use, rate limit, timeout, Admiralty defaults). Validated against `nightloom_core`'s relationship allow-list and sensitivities.
+- `ShuttleMeta`: what a Shuttle declares (name, version, input and output types, mode, sensitivity, network use, rate limit, timeout, terms and homepage links, `usage_note` for conditions of use such as a non-commercial licence, Admiralty defaults). Validated against `nightloom_core`'s relationship allow-list and sensitivities.
 - `Shuttle`: the base class; `run(ctx, entity)` is an async generator of findings.
-- `EntityFinding`, `RelationshipFinding`, `EntityRef`: what a Shuttle yields. Values are raw; the worker normalizes and checks them.
+- `EntityFinding`, `RelationshipFinding`, `EntityRef`: what a Shuttle yields. Values are raw; the worker normalizes and checks them. Both findings may override the Shuttle's Admiralty rating and confidence.
 - `ShuttleContext`: the logger, the guarded HTTP client (`ctx.http`: SSRF guard after DNS resolution, http/https only, per-host rate limit, 5 MB response cap), API keys, cancellation and progress.
 - `InputRefusedError` / `RefusalReason`: refuse an input before doing any work; the job fails with the reason's fixed message.
 - `ShuttleFailedError` / `FailureReason`: give up mid-run for a known reason (the source is down, its answer is unreadable or too large); the job fails with the reason's fixed message and keeps the findings stored so far.

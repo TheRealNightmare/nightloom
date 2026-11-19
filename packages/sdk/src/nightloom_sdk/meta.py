@@ -86,6 +86,24 @@ def _http_url(value: str) -> str:
 
 HttpUrlText = Annotated[str, StringConstraints(max_length=2048), AfterValidator(_http_url)]
 
+USAGE_NOTE_MAX_LENGTH = 300
+# Control characters (line breaks included) and markup brackets.
+_NOT_PLAIN_TEXT = re.compile(r"[\x00-\x1f\x7f-\x9f<>]")
+
+
+def _plain_text(value: str) -> str:
+    """One line of plain text: no control characters, line breaks or markup brackets."""
+    if _NOT_PLAIN_TEXT.search(value):
+        raise ValueError("must be one line of plain text (no control characters, < or >).")
+    return value
+
+
+UsageNote = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=USAGE_NOTE_MAX_LENGTH),
+    AfterValidator(_plain_text),
+]
+
 
 class ShuttleMeta(BaseModel):
     """A Shuttle's declaration. Frozen, and validated as a whole.
@@ -97,6 +115,11 @@ class ShuttleMeta(BaseModel):
     - ``sensitivity`` is at least that of every input and output entity type
       (so any person-related type makes it a ``person`` Shuttle);
     - a Shuttle that uses the network declares a ``rate_limit``.
+
+    ``usage_note`` is one line of plain text (at most
+    :data:`USAGE_NOTE_MAX_LENGTH` characters) stating conditions the operator
+    must respect when using the source, such as a non-commercial licence. The
+    API exposes it and the web UI shows it before a run, next to ``terms_url``.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -124,6 +147,9 @@ class ShuttleMeta(BaseModel):
     timeout_seconds: int = Field(default=DEFAULT_TIMEOUT_SECONDS, ge=1, le=MAX_TIMEOUT_SECONDS)
     terms_url: HttpUrlText | None = None
     homepage: HttpUrlText | None = None
+    # Conditions an operator must respect when using the source (e.g. "free for
+    # non-commercial use only"), shown next to the terms link before a run.
+    usage_note: UsageNote | None = None
     # Provenance defaults for every finding; a finding may override them.
     default_admiralty: Admiralty = "F6"
     default_confidence: float = Field(default=0.5, ge=0, le=1, allow_inf_nan=False)
@@ -176,6 +202,7 @@ class ShuttleMeta(BaseModel):
 __all__ = [
     "DEFAULT_TIMEOUT_SECONDS",
     "MAX_TIMEOUT_SECONDS",
+    "USAGE_NOTE_MAX_LENGTH",
     "Admiralty",
     "Mode",
     "RateLimit",

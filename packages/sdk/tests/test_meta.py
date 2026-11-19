@@ -7,7 +7,7 @@ from pydantic import ValidationError
 
 from nightloom_core.entities import EntityType, Sensitivity
 from nightloom_core.relationships import RelationType
-from nightloom_sdk.meta import Mode, RateLimit, ShuttleMeta
+from nightloom_sdk.meta import USAGE_NOTE_MAX_LENGTH, Mode, RateLimit, ShuttleMeta
 
 
 def meta(**overrides: Any) -> ShuttleMeta:
@@ -150,6 +150,25 @@ def test_urls_must_be_http() -> None:
     for bad in ("ftp://example.org/", "javascript:alert(1)", "not a url"):
         with pytest.raises(ValidationError):
             meta(homepage=bad)
+
+
+def test_usage_note() -> None:
+    assert meta().usage_note is None
+    note = "Free for non-commercial use. Commercial products need a licence."
+    assert meta(usage_note=f"  {note} ").usage_note == note  # trimmed
+    assert meta(usage_note="x" * USAGE_NOTE_MAX_LENGTH).usage_note == "x" * 300
+    for bad in (
+        "x" * (USAGE_NOTE_MAX_LENGTH + 1),
+        "",
+        "   ",
+        "two\nlines",
+        "a\ttab",
+        "bell\x07",
+        "<b>bold</b>",
+        "see <https://example.org>",
+    ):
+        with pytest.raises(ValidationError):
+            meta(usage_note=bad)
 
 
 def test_key_names_and_unknown_fields() -> None:

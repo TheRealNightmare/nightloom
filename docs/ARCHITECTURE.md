@@ -29,7 +29,7 @@ flowchart LR
 | `apps/worker` | Celery worker that runs Shuttle jobs (see [Jobs](#jobs-and-the-worker)); auto-pivot scans later |
 | `packages/core` | Shared entity model (`nightloom-core`): entity types, canonical keys, relationship allow-list, provenance |
 | `packages/sdk` | Shuttle SDK (`nightloom-sdk`): the [Shuttle contract](#shuttle-contract), the guarded HTTP client, the registry, test helpers |
-| `shuttles/` | Built-in Shuttles, one package each: `registrable-domain` (no network), [`dns`](#the-dns-shuttle), [`crtsh`](#the-crtsh-shuttle), [`rdap`](#the-rdap-shuttle) and [`ripestat`](#the-ripestat-shuttle) |
+| `shuttles/` | Built-in Shuttles, one package each: `registrable-domain` (no network), [`dns`](#the-dns-shuttle), [`crtsh`](#the-crtsh-shuttle), [`rdap`](#the-rdap-shuttle), [`ripestat`](#the-ripestat-shuttle) and [`internetdb`](#the-internetdb-shuttle) |
 | PostgreSQL | Users, cases, jobs, audit log, encrypted API keys |
 | Neo4j | Entities and relationships |
 | Valkey (Redis-compatible) | Celery broker, rate-limit counters, result cache |
@@ -86,7 +86,7 @@ The demo and the case *Graph* tab share one component, `GraphView` ([`src/graph/
 - **Add entity** (editors and owners of an open case). Types are grouped by sensitivity. Person-related types are disabled, with the reason, when the case does not allow person entities. The value field shows the type's hint and example from the schema, and there is an optional note (and a phone region for phone numbers). The server normalizes the value: its `422` message (e.g. *A domain name needs at least two labels*) appears under the field, and a `403` or `409` appears in the form. On success the node appears, selected and in view. Adding something the case already has says so (the API merged an observation).
 - **Add relationship.** Pick both ends from the case's entities with a searchable combobox (the selected entity is pre-filled), swap the direction if needed, and choose from only the relationship types the schema allows for that pair. `RELATED_TO` asks for a note.
 - **Delete entity.** From the side panel, after a confirmation. Its relationships go too.
-- **Run Shuttle** (editors and owners of an open case). The side panel lists the installed Shuttles that accept the selected entity's type (`GET /shuttles?input_type=…`, fetched once per type and page load) with their title, description, badges (passive or active, network, sensitivity) and links to the source's terms and homepage. Person-sensitive Shuttles are disabled, with the reason, when the case does not allow person entities, and active ones until ownership verification exists (the API refuses both anyway). *Run* queues a job (`POST /jobs`); a `403`, `409` or `429` answer (e.g. *You already have 5 queued or running jobs*) is shown under the Shuttle.
+- **Run Shuttle** (editors and owners of an open case). The side panel lists the installed Shuttles that accept the selected entity's type (`GET /shuttles?input_type=…`, fetched once per type and page load) with their title, description, badges (passive or active, network, sensitivity), the Shuttle's [usage note](#metadata) when it declares one (conditions of use such as *free for non-commercial use*, under the description with an info icon) and links to the source's terms and homepage. Person-sensitive Shuttles are disabled, with the reason, when the case does not allow person entities, and active ones until ownership verification exists (the API refuses both anyway). *Run* queues a job (`POST /jobs`); a `403`, `409` or `429` answer (e.g. *You already have 5 queued or running jobs*) is shown under the Shuttle.
 - **Jobs.** The *Jobs* button (with the number of active jobs) opens a panel above the graph, and starting a job opens it. It lists the case's jobs, newest first, 20 at a time with *Load more*: a status chip (queued, running, succeeded, failed, cancelled), the Shuttle and its input, the elapsed time (ticking while active), the stats (created, updated, rejected) and the job's error, which is always one of the API's fixed messages. Queued and running jobs are polled every 2 seconds (`GET /jobs/{id}`) while the browser tab is visible; polling stops when every job has finished or the tab is hidden. Editors and owners can *Cancel* an active job, also in a closed case. Viewers see the history only.
 - **Results.** When a job that changed something finishes, the tab loads the graph again; `GraphView` syncs it incrementally, so the existing layout stays and new nodes settle next to their neighbours. After a successful job the entities it created or updated (`stats.entities_touched`) are highlighted for four seconds.
 - **Read-only.** Viewers, and everyone while the case is closed or archived, see the graph without these controls and a one-line explanation.
@@ -272,7 +272,7 @@ Each type is a Pydantic model (`nightloom_core.entities`) with a canonical `valu
 | Type (`type`) | Neo4j label | Sensitivity | Properties |
 | --- | --- | --- | --- |
 | `domain` | `Domain` | infrastructure | DNS facts, written by the [DNS Shuttle](#the-dns-shuttle): `dns_txt`, `dns_spf`, `dns_dmarc`, `dns_mx`, `dns_caa` (lists of at most 50 records of at most 1,000 characters), `dns_soa_primary_ns`, `dns_soa_responsible`, `dns_soa_serial`, `dns_soa_refresh`, `dns_soa_retry`, `dns_soa_expire`, `dns_soa_minimum`; registration data, written by the [RDAP Shuttle](#the-rdap-shuttle): `registered`, `expires`, `last_changed` (ISO 8601 date-times), `status` (at most 30 EPP statuses), `dnssec_signed`, `registrar`, `registrar_iana_id`, `rdap_server` |
-| `ip_address` | `IPAddress` | infrastructure | `scope` (`public` or `private`: not globally routable) |
+| `ip_address` | `IPAddress` | infrastructure | `scope` (`public` or `private`: not globally routable); exposure data, written by the [InternetDB Shuttle](#the-internetdb-shuttle): `open_ports` (TCP ports, ascending, at most 200), `cpes` (CPE names, at most 100), `vulns` (CVE IDs, ascending, at most 500), `tags` (at most 50), `internetdb_checked_at` |
 | `netblock` | `Netblock` | infrastructure | `name`, `country`, `registry` (the Regional Internet Registry); from RDAP also `handle`, `type` (as the registry names it, e.g. `DIRECT ALLOCATION`), `registered`, `last_changed`, `parent_handle`; from [RIPEstat](#the-ripestat-shuttle) `announced`, `bgp_first_seen`, `bgp_last_seen`, `iana_block`, `iana_block_description` |
 | `asn` | `ASN` | infrastructure | `name`, `country`, `registry`; from RDAP also `handle`, `registered`, `last_changed`; from [RIPEstat](#the-ripestat-shuttle) `as_name` (the network name in the AS holder), `announced`, `iana_block`, `iana_block_description` |
 | `certificate` | `Certificate` | infrastructure | `subject`, `subject_cn`, `issuer`, `serial_number`, `not_before`, `not_after`, `self_signed`, `san_count` (entries in the subjectAltName extension), `crtsh_id` (written by the [crt.sh Shuttle](#the-crtsh-shuttle)) |
@@ -291,7 +291,7 @@ Each type is a Pydantic model (`nightloom_core.entities`) with a canonical `valu
 | `location` | `Location` | **person** (a place next to a person is sensitive) | `latitude`, `longitude`, `country` |
 | `image` | `Image` | **person** (images can show people) | `mime_type`, `sha256`, `width`, `height` |
 
-Properties are flat (strings, numbers, booleans, dates as ISO 8601, lists of strings), validated per type (unknown fields are refused) and stored on the node with a `prop_` prefix. A later observation overwrites the properties it carries and keeps the others.
+Properties are flat (strings, numbers, booleans, dates as ISO 8601, lists of strings or of integers), validated per type (unknown fields are refused) and stored on the node with a `prop_` prefix. A later observation overwrites the properties it carries and keeps the others.
 
 ### Canonical keys
 
@@ -416,6 +416,7 @@ Every Shuttle subclasses `Shuttle` and declares a frozen `ShuttleMeta`, validate
 | `rate_limit` | `{requests, period_seconds}` per destination host |
 | `timeout_seconds` | 1–600, default 60 |
 | `terms_url`, `homepage` | optional `http(s)` URLs |
+| `usage_note` | optional conditions of use of the source (e.g. *Free for non-commercial use.*): one line of plain text, at most 300 characters, no control characters, `<` or `>`. `GET /shuttles` returns it and the *Run Shuttle* panel shows it under the description, next to the terms link |
 | `default_admiralty`, `default_confidence` | the provenance of its findings (default `F6`, 0.5); a finding may override them |
 
 ### Findings
@@ -423,7 +424,7 @@ Every Shuttle subclasses `Shuttle` and declares a frozen `ShuttleMeta`, validate
 `run(ctx, entity)` is an async generator. Before doing any work it may raise `InputRefusedError(RefusalReason.…)` for an input it will not handle (the DNS Shuttle refuses internal-only names): the job fails with that reason's fixed, user-safe message from the SDK, never the input or other text, and the reason code is recorded in `job.finish`. `entity` is an `EntityInput` (type, canonical value, key, properties) read from the case's graph. It yields:
 
 - `EntityFinding(type, value, properties?, confidence?, admiralty?, note?)`
-- `RelationshipFinding(type, source, target, confidence?, note?)`, whose ends are `EntityRef(type, value)`
+- `RelationshipFinding(type, source, target, confidence?, admiralty?, note?)`, whose ends are `EntityRef(type, value)`
 
 Values are **raw**: Shuttles never normalize. The worker normalizes everything with `nightloom_core`, so a key is computed in exactly one way.
 
@@ -542,6 +543,26 @@ crt.sh (run by Sectigo) publishes no terms of use; see the Shuttle's [README](..
 **HTTP.** Rate limit two requests per second to `stat.ripe.net` (RIPEstat's [rules of usage](https://stat.ripe.net/docs/data-api/ripestat-data-api) set no request limit but allow 8 concurrent requests per IP address and ask for a `sourceapp`; the [service terms](https://www.ripe.net/about-us/legal/ripestat-service-terms-and-conditions/) apply). A 429 waits for `Retry-After` (5 seconds without one) at most twice and never longer than 30 seconds; 5xx and network errors are retried twice after 2 and 5 seconds, then `source_unavailable`; any other status (RIPEstat answers `400`, `status: "error"`, for a resource it does not understand) is `source_invalid_response`. A failed holder lookup for one of an address's origin ASes only costs a note. Timeout 120 seconds; no request starts after 100; `announced-prefixes` for a large network takes RIPEstat over 20 seconds, so it may read for 60.
 
 **Admiralty.** **B2** (confidence 0.8): RIS is a usually reliable observer of the global routing table and what it saw is probably true, but routing changes all the time, a collector's view is not the whole Internet, and RIPEstat filters routes seen by few peers. The tests use a fake RIPEstat behind the SDK's guarded client with fictional data only; one opt-in `network` test asks the real RIPEstat about `1.1.1.1` and `AS13335`.
+
+### The InternetDB Shuttle
+
+[`shuttles/internetdb`](../shuttles/internetdb/) (`internetdb`, passive, infrastructure, `network=True`) reads [Shodan's InternetDB](https://internetdb.shodan.io/), a free summary of Shodan's own Internet-wide scans updated about weekly: per IPv4 address, the open ports, the software identified (CPE names), the vulnerabilities Shodan associates with that software (CVE IDs), tags (`cdn`, `self-signed`, …) and hostnames. No API key is needed.
+
+| Found | Becomes |
+| --- | --- |
+| each open port | a Service `<ip>:<port>/tcp` with `RUNS_ON` to the address; the lowest 200 (a note says when there were more) |
+| each hostname | a Domain with `RESOLVES_TO` to the address, normalized with `nightloom_core`, alphabetical, at most 100; invalid and internal-looking names (no registrable domain, `.arpa`, `.onion`) are dropped and counted in a note |
+| the record | properties on the input IPAddress: `open_ports`, `cpes` (at most 100), `vulns` (only IDs matching `^CVE-\d{4}-\d{4,}$`, sorted by year and number, at most 500; others are counted, never quoted), `tags` (at most 50) and `internetdb_checked_at`. Empty lists are written too, so a new run replaces an older one's lists |
+
+**Why passive.** The Shuttle reads data Shodan has already collected: its only request is `GET https://internetdb.shodan.io/<ip>`, through `ctx.http`. Nothing is ever sent to the address being looked up, so the target cannot tell it was investigated; the tests check the destination of every request. IPv6 addresses (InternetDB covers IPv4 only) and addresses that are not publicly routable (`is_public_address`) are skipped with a job note before any request, as InternetDB cannot know them.
+
+**Why CPEs and CVEs are properties, not entities.** They are Shodan's inference about one address at one time: a CVE is listed because of a software version Shodan saw in a banner, not because anyone checked it, and the same CVE on two addresses says nothing about a link between them. As nodes they would add hundreds of entities per address and suggest connections through shared software that do not exist. As properties they stay with the address they describe, are replaced by the next run, and remain searchable. A dedicated Vulnerability type can come later, once something can confirm one.
+
+**Rating.** Ports, CPEs, CVEs and tags are **B2** (confidence 0.8): Shodan's own scans are a usually reliable source and probably true, but up to a week old. Hostnames are **B3** (0.6): Shodan saw the name for this address at some point (in a certificate, a banner or reverse DNS), but the name may point elsewhere now, so the Domain and the `RESOLVES_TO` edge carry the lower rating, and the edge has the note *hostname reported by Shodan; may not resolve to this address now*. Running the [DNS Shuttle](#the-dns-shuttle) on the name confirms or refutes it; its B2 observation then raises the edge's `max_confidence`. Relationship findings take an `admiralty` of their own for this.
+
+**HTTP.** One request per run; rate limit one request per second. A 404 (`No information available`) ends the job successfully with a note; a 429 waits for `Retry-After` (5 seconds without one) at most twice and never longer than 30 seconds; 5xx and network errors are retried twice after 2 and 5 seconds, then `source_unavailable`; any other status, a record for a different address or one whose fields are not lists is `source_invalid_response`. Malformed list items are skipped and counted. Timeout 60 seconds; no request starts after 45.
+
+**Usage conditions.** InternetDB is free for non-commercial use; building a paid product on its data needs a Shodan license. The Shuttle states this in its metadata's `usage_note`, which `GET /shuttles` returns and the *Run Shuttle* panel shows under the Shuttle's description with an info icon, next to the link to [Shodan's terms](https://account.shodan.io/legal/tos). The mechanism is generic: any Shuttle whose source sets conditions (non-commercial only, attribution, a quota) declares them the same way, so the operator sees them before every run instead of in a README. Nightloom cannot check how its output is used; the note informs, it does not enforce. The tests use a fake InternetDB with fictional records for documentation addresses only; one opt-in `network` test asks the real InternetDB about `1.1.1.1`.
 
 ### Jobs and the worker
 

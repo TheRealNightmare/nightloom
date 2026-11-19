@@ -23,7 +23,7 @@ import { FakeSigma } from "../test/sigmaMock";
 import { PULSE_MS } from "./GraphTab";
 import { NO_JOBS_MESSAGE } from "./graph/JobsPanel";
 import { PERSON_SHUTTLE_REASON } from "./graph/jobText";
-import { NO_SHUTTLES_MESSAGE } from "./graph/RunShuttles";
+import { NO_SHUTTLES_MESSAGE, USAGE_NOTE_LABEL } from "./graph/RunShuttles";
 import { JOB_POLL_MS } from "./graph/useCaseJobs";
 
 vi.mock("sigma", () => import("../test/sigmaMock"));
@@ -113,6 +113,42 @@ describe("Run Shuttle section", () => {
     expect(terms).toHaveAttribute("href", DNS_SHUTTLE.terms_url);
     expect(terms).toHaveAttribute("rel", "noopener noreferrer");
     expect(within(card).getByRole("button", { name: "Run DNS records" })).toBeEnabled();
+    // No usage conditions declared: nothing shown.
+    expect(within(card).queryByText(new RegExp(USAGE_NOTE_LABEL))).toBeNull();
+    expect(within(card).queryByTestId("usage-note-icon")).toBeNull();
+  });
+
+  it("shows a Shuttle's usage note under its description, with an info icon", async () => {
+    const note =
+      "Free for non-commercial use. Building a paid product on this data requires a Shodan license.";
+    const internetdb = makeShuttle({
+      name: "internetdb",
+      title: "Open ports and exposures (Shodan InternetDB)",
+      description: "Looks up open ports in Shodan's InternetDB.",
+      terms_url: "https://account.shodan.io/legal/tos",
+      homepage: "https://internetdb.shodan.io",
+      usage_note: note,
+    });
+    await openGraph({ shuttles: [internetdb] });
+    await select(apex.key);
+    const card = await within(details()).findByRole("listitem", {
+      name: "Open ports and exposures (Shodan InternetDB)",
+    });
+    const usage = within(card).getByText(note);
+    expect(usage).toBeVisible();
+    // Screen readers hear what it is; the icon itself is decorative.
+    expect(usage.closest("p")).toHaveTextContent(`${USAGE_NOTE_LABEL}: ${note}`);
+    const icon = within(card).getByTestId("usage-note-icon");
+    expect(icon).toHaveAttribute("aria-hidden", "true");
+    expect(usage.closest("p")).toContainElement(icon);
+    // Below the description, right before the terms link.
+    const description = within(card).getByText(internetdb.description);
+    const terms = within(card).getByRole("link", { name: "Terms" });
+    expect(terms).toHaveAttribute("href", internetdb.terms_url);
+    const following = Node.DOCUMENT_POSITION_FOLLOWING;
+    expect(description.compareDocumentPosition(usage) & following).toBeTruthy();
+    expect(usage.compareDocumentPosition(terms) & following).toBeTruthy();
+    expect(usage.closest("p")?.nextElementSibling).toContainElement(terms);
   });
 
   it("disables person-related and active Shuttles with the reason", async () => {

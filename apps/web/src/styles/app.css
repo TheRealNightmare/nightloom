@@ -2004,6 +2004,21 @@ select.field__input {
   line-height: 1.45;
 }
 
+.shuttle-card__usage {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  color: var(--color-warn);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.shuttle-card__usage-icon {
+  flex: none;
+  margin-top: 2px;
+}
+
 .shuttle-card__links {
   display: flex;
   gap: 12px;
@@ -2013,6 +2028,16 @@ select.field__input {
 
 .shuttle-card .field__hint {
   margin: 0;
+}
+
+/* "Run <title>" can be long; let it wrap instead of widening the panel. */
+.shuttle-card .button {
+  height: auto;
+  min-height: 36px;
+  max-width: 100%;
+  padding-block: 7px;
+  white-space: normal;
+  text-align: left;
 }
 
 .shuttle-card__started {

@@ -1,0 +1,24 @@
+[project]
+name = "nightloom-shuttle-internetdb"
+version = "1.0.0"
+description = "Built-in Nightloom Shuttle: open ports, software (CPEs), known vulnerabilities, tags and hostnames of an IPv4 address from Shodan's InternetDB."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+dependencies = [
+    "httpx>=0.28.1",
+    "nightloom-core",
+    "nightloom-sdk",
+    "pydantic>=2.14.3",
+]
+
+[project.entry-points."nightloom.shuttles"]
+internetdb = "nightloom_shuttle_internetdb:InternetDBShuttle"
+
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+nightloom-core = { workspace = true }
+nightloom-sdk = { workspace = true }

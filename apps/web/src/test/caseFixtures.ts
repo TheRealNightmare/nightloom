@@ -139,6 +139,7 @@ export function makeShuttle(overrides: Partial<ShuttleInfo> = {}): ShuttleInfo {
     timeout_seconds: 60,
     terms_url: "https://developers.cloudflare.com/1.1.1.1/privacy/public-dns-resolver/",
     homepage: "https://developers.cloudflare.com/1.1.1.1/",
+    usage_note: null,
     default_admiralty: "B2",
     default_confidence: 0.9,
     ...overrides,
