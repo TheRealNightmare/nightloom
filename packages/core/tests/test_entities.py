@@ -268,6 +268,75 @@ def test_invalid_exposure_properties(properties: dict[str, Any]) -> None:
         build_entity(EntityType.IP_ADDRESS, "192.0.2.10", properties)
 
 
+def test_archive_properties_of_urls_and_domains() -> None:
+    url = build_entity(
+        EntityType.URL,
+        "https://www.example.org/search",
+        {
+            "first_captured": "2015-03-04T05:06:07Z",
+            "last_captured": "2024-01-02T03:04:05Z",
+            "capture_count": 3,
+            "last_status": 200,
+            "mimetype": "Text/HTML",
+            "archive_url": "https://web.archive.org/web/20240102030405/https://www.example.org/search",
+            "query_params": ["page", "q"],
+        },
+    )
+    assert url.stored_properties() == {
+        "first_captured": "2015-03-04T05:06:07Z",
+        "last_captured": "2024-01-02T03:04:05Z",
+        "capture_count": 3,
+        "last_status": 200,
+        "mimetype": "text/html",
+        "archive_url": "https://web.archive.org/web/20240102030405/https://www.example.org/search",
+        "query_params": ["page", "q"],
+    }
+    full = {"query_params": [f"p{i}" for i in range(30)], "capture_count": 1}
+    assert build_entity(EntityType.URL, "https://example.org/", full).stored_properties()
+    domain = build_entity(
+        EntityType.DOMAIN,
+        "example.org",
+        {
+            "wayback_first_capture": "2002-01-21T08:50:54Z",
+            "wayback_last_capture": "2026-11-19T05:58:12Z",
+            "wayback_url_count": 0,
+        },
+    )
+    assert domain.stored_properties()["wayback_url_count"] == 0
+
+
+@pytest.mark.parametrize(
+    "properties",
+    [
+        {"first_captured": "2015-03-04T05:06:07"},  # naive
+        {"capture_count": 0},
+        {"last_status": 99},
+        {"last_status": 600},
+        {"mimetype": "unk"},
+        {"archive_url": "https://example.org/web/2024/https://example.org/"},  # not the archive
+        {"archive_url": "https://web.archive.org/web/1/" + "a" * 2200},
+        {"query_params": ["p"] * 31},
+        {"query_params": [""]},
+        {"query_params": ["x" * 65]},
+    ],
+)
+def test_invalid_archive_properties_of_urls(properties: dict[str, Any]) -> None:
+    with pytest.raises(ValidationError):
+        build_entity(EntityType.URL, "https://example.org/", properties)
+
+
+@pytest.mark.parametrize(
+    "properties",
+    [
+        {"wayback_first_capture": "2002-01-21T08:50:54"},  # naive
+        {"wayback_url_count": -1},
+    ],
+)
+def test_invalid_archive_properties_of_domains(properties: dict[str, Any]) -> None:
+    with pytest.raises(ValidationError):
+        build_entity(EntityType.DOMAIN, "example.org", properties)
+
+
 def test_build_entity_phone_region() -> None:
     phone = build_entity(EntityType.PHONE, "020 7946 0958", phone_region="GB")
     assert isinstance(phone, Phone)

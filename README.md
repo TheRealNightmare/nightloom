@@ -60,8 +60,9 @@ Only members can see a case, admins included. The rules are described in [Cases]
 | `rdap` | Domain, IP address, Netblock, ASN | Looks up public registration data (RDAP) at the responsible registry, found through IANA's bootstrap registries (no API key): a domain's dates, status, registrar, organization registrant and name servers; an address's or netblock's registered network and owner; an ASN's registration and owner. Keeps only organization names, never contact details. |
 | `ripestat` | IP address, Netblock, ASN | Looks up routing data in the RIPE NCC's RIPEstat (no API key): the announced prefix covering an address and its origin ASes; whether a netblock is announced, by whom, and the covering prefix; an ASN's holder and the prefixes it announces (at most 500). AS holders become Organizations. |
 | `internetdb` | IP address (public IPv4) | Looks up what Shodan's scans saw on the address in Shodan's InternetDB (no API key): open ports as Services, hostnames as Domains, and CPEs, CVE IDs and tags as properties. Never contacts the address. **Free for non-commercial use only**; a paid product built on this data needs a Shodan license. |
+| `wayback` | Domain | Lists the pages of the domain and its subdomains that the Internet Archive's Wayback Machine has captured (no API key): URLs with their first capture, last status and a link to the archived copy, and the subdomains that host them. Never contacts the domain. Leaves out other domains and static assets, removes query strings (keeping only parameter names) and drops addresses containing an email address. |
 
-All six are passive. `rdap` and `ripestat` add Organizations, so they have the `organization` sensitivity; the others are infrastructure-only. None handles person-related types. `make shuttles` lists what is installed.
+All seven are passive. `rdap` and `ripestat` add Organizations, so they have the `organization` sensitivity; the others are infrastructure-only. None handles person-related types. `make shuttles` lists what is installed.
 
 ## Planned features
 

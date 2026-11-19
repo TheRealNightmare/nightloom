@@ -146,6 +146,12 @@ class DomainProperties(Properties):
     such as ``client transfer prohibited``), ``dnssec_signed``, the
     ``registrar``'s name and ``registrar_iana_id``, and the ``rdap_server``
     that answered.
+
+    From the Wayback Machine (Internet Archive): ``wayback_first_capture`` and
+    ``wayback_last_capture`` (the earliest and the latest capture of the name
+    or a page under it that the archive reported) and ``wayback_url_count``
+    (how many distinct page URLs under the name were found in the archive,
+    after static assets and unusable URLs were left out).
     """
 
     dns_txt: DnsRecords | None = None
@@ -168,6 +174,9 @@ class DomainProperties(Properties):
     registrar: ShortText | None = None
     registrar_iana_id: int | None = Field(default=None, ge=1, le=2**31 - 1)
     rdap_server: UrlText | None = None
+    wayback_first_capture: AwareDatetime | None = None
+    wayback_last_capture: AwareDatetime | None = None
+    wayback_url_count: int | None = Field(default=None, ge=0, le=10_000_000)
 
 
 # Exposure data on an IP address (Shodan InternetDB): at most this many of each.
@@ -273,10 +282,58 @@ class CertificateProperties(Properties):
     crtsh_id: int | None = Field(default=None, ge=1)
 
 
+# Archive data on a URL (Wayback Machine): query parameter names kept per URL.
+ARCHIVE_MAX_QUERY_PARAMS = 30
+ARCHIVE_QUERY_PARAM_MAX_LENGTH = 64
+QueryParamName = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True, min_length=1, max_length=ARCHIVE_QUERY_PARAM_MAX_LENGTH
+    ),
+]
+ARCHIVE_URL_PREFIX = "https://web.archive.org/web/"
+
+
+def _archive_url(value: str) -> str:
+    if not value.startswith(ARCHIVE_URL_PREFIX):
+        raise ValueError(f"must start with {ARCHIVE_URL_PREFIX}")
+    return value
+
+
 class URLProperties(Properties):
+    """``status_code``, ``title`` and ``content_type`` describe the page as fetched.
+
+    From the Wayback Machine (Internet Archive's CDX index, never the site
+    itself): ``first_captured`` and ``last_captured`` (the earliest and, when
+    the archive reported it, the latest capture), ``capture_count`` (how many
+    distinct archived addresses, such as query-string variants, became this
+    URL), ``last_status`` (the HTTP status code of the latest capture seen),
+    ``mimetype`` (its media type), ``archive_url`` (a link to the archived
+    copy at web.archive.org) and ``query_params`` (the sorted names, never the
+    values, of the query parameters the archived addresses had; at most 30,
+    each at most 64 characters). The URL itself never carries a query string
+    from the archive: values can hold tokens or personal data.
+    """
+
     status_code: int | None = Field(default=None, ge=100, le=599)
     title: LongText | None = None
     content_type: MimeType | None = None
+    first_captured: AwareDatetime | None = None
+    last_captured: AwareDatetime | None = None
+    capture_count: int | None = Field(default=None, ge=1, le=10_000_000)
+    last_status: int | None = Field(default=None, ge=100, le=599)
+    mimetype: MimeType | None = None
+    archive_url: (
+        Annotated[
+            str,
+            StringConstraints(strip_whitespace=True, max_length=2200),
+            AfterValidator(_archive_url),
+        ]
+        | None
+    ) = None
+    query_params: (
+        Annotated[list[QueryParamName], Field(max_length=ARCHIVE_MAX_QUERY_PARAMS)] | None
+    ) = None
 
 
 class ServiceProperties(Properties):

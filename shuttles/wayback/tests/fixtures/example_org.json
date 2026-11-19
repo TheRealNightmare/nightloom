@@ -1,0 +1,22 @@
+[
+  ["timestamp", "original", "statuscode", "mimetype"],
+  ["20030101000000", "http://example.org:80/", "200", "text/html"],
+  ["20100203040506", "http://example.org/about", "200", "text/html"],
+  ["20120101000000", "http://example.org/about?lang=en", "200", "text/html"],
+  ["20150101000000", "http://example.org/about?lang=de&ref=nav", "200", "text/html"],
+  ["20160101000000", "http://example.org/login?token=SECRET&email=a@b.example", "302", "text/html"],
+  ["20170101000000", "http://example.org/static/app.js", "200", "application/javascript"],
+  ["20170101000001", "http://example.org/logo.png", "200", "image/png"],
+  ["20170101000002", "http://example.org/fonts/brand", "200", "font/woff2"],
+  ["20180101000000", "http://example.org/users/alice@example.net/profile", "200", "text/html"],
+  ["20180101000001", "http://example.org/u/bob%40example.net", "200", "text/html"],
+  ["20190101000000", "http://evilexample.org/phish", "200", "text/html"],
+  ["20200101000000", "https://www.example.org/news#top", "200", "text/html"],
+  ["20210101000000", "https://blog.example.org/post/1", "404", "text/html"],
+  ["20220101000000", "https://blog.example.org/post/2;jsessionid=ABC123", "200", "text/html"],
+  ["20230101000000", "https://api.example.org/v1/", "-", "warc/revisit"],
+  ["2023", "http://example.org/broken", "200", "text/html"],
+  ["20230101000000", "http://example.org/short"],
+  ["20240101000000", "mailto:someone@example.org", "-", "unk"],
+  ["20240202000000", "http://192.0.2.1/", "200", "text/html"]
+]
