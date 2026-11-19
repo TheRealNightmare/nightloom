@@ -11,6 +11,7 @@ The Shuttle SDK (import `nightloom_sdk`): everything needed to write a Nightloom
 - `ctx.note(text)`: a short remark kept with the job and shown to its users (at most 10 of 200 characters), e.g. that a result was capped; not copied into the audit log.
 - `Shuttle.check_configuration()` / `ShuttleConfigurationError`: check a Shuttle's own settings; the worker refuses to start if one fails.
 - `nightloom_sdk.registry`: discovers Shuttles from the `nightloom.shuttles` entry-point group. `python -m nightloom_sdk.registry list` lists the installed ones, `check` runs their configuration checks.
+- `nightloom_sdk.redaction`: `is_redacted()` and the one list of `REDACTION_MARKERS` (`REDACTED`, `Data Protected`, `GDPR`, …), for Shuttles that must not turn a withheld value into an entity.
 - `nightloom_sdk.testing`: `entity_input()`, `fake_context()`, `collect()` and `assert_declared()` for unit tests without services or network.
 
 See "Writing a Shuttle" in [CONTRIBUTING.md](../../CONTRIBUTING.md#writing-a-shuttle) and the [Shuttle contract](../../docs/ARCHITECTURE.md#shuttle-contract).

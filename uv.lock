@@ -16,6 +16,7 @@ members = [
     "nightloom-shuttle-dns",
     "nightloom-shuttle-rdap",
     "nightloom-shuttle-registrable-domain",
+    "nightloom-shuttle-ripestat",
     "nightloom-worker",
 ]
 
@@ -2095,6 +2096,25 @@ requires-dist = [
 ]
 
 [[package]]
+name = "nightloom-shuttle-ripestat"
+version = "1.0.0"
+source = { editable = "shuttles/ripestat" }
+dependencies = [
+    { name = "httpx" },
+    { name = "nightloom-core" },
+    { name = "nightloom-sdk" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "nightloom-core", editable = "packages/core" },
+    { name = "nightloom-sdk", editable = "packages/sdk" },
+    { name = "pydantic", specifier = ">=2.14.3" },
+]
+
+[[package]]
 name = "nightloom-worker"
 version = "0.1.0.dev0"
 source = { editable = "apps/worker" }
@@ -2107,6 +2127,7 @@ dependencies = [
     { name = "nightloom-shuttle-dns" },
     { name = "nightloom-shuttle-rdap" },
     { name = "nightloom-shuttle-registrable-domain" },
+    { name = "nightloom-shuttle-ripestat" },
 ]
 
 [package.metadata]
@@ -2119,6 +2140,7 @@ requires-dist = [
     { name = "nightloom-shuttle-dns", editable = "shuttles/dns" },
     { name = "nightloom-shuttle-rdap", editable = "shuttles/rdap" },
     { name = "nightloom-shuttle-registrable-domain", editable = "shuttles/registrable-domain" },
+    { name = "nightloom-shuttle-ripestat", editable = "shuttles/ripestat" },
 ]
 
 [[package]]

@@ -1,0 +1,22 @@
+{
+  "messages": [],
+  "see_also": [],
+  "version": "1.1",
+  "data_call_name": "network-info",
+  "data_call_status": "supported",
+  "cached": false,
+  "query_id": "20260101000000-00000000-0000-0000-0000-000000000000",
+  "process_time": 10,
+  "server_id": "app000",
+  "build_version": "example",
+  "status": "ok",
+  "status_code": 200,
+  "time": "2026-11-18T16:00:00.000000",
+  "data": {
+    "asns": [
+      "64496",
+      "64500"
+    ],
+    "prefix": "2001:db8::/32"
+  }
+}

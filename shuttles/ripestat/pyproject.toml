@@ -1,0 +1,24 @@
+[project]
+name = "nightloom-shuttle-ripestat"
+version = "1.0.0"
+description = "Built-in Nightloom Shuttle: routing data (announced prefixes, origin ASes and AS holders) from the RIPEstat Data API."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+dependencies = [
+    "httpx>=0.28.1",
+    "nightloom-core",
+    "nightloom-sdk",
+    "pydantic>=2.14.3",
+]
+
+[project.entry-points."nightloom.shuttles"]
+ripestat = "nightloom_shuttle_ripestat:RipeStatShuttle"
+
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+nightloom-core = { workspace = true }
+nightloom-sdk = { workspace = true }

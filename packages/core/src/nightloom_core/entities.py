@@ -182,6 +182,13 @@ class NetblockProperties(Properties):
     From RDAP: the network's ``handle``, its ``type`` as the registry names it
     (``DIRECT ALLOCATION``, ``ASSIGNED PA``, ...), ``registered`` and
     ``last_changed``, and the ``parent_handle`` of the network it is part of.
+
+    From routing data (RIPEstat): ``announced`` (whether it is announced in the
+    global routing table as a prefix of its own), ``bgp_first_seen`` and
+    ``bgp_last_seen`` (the earliest start and latest end of its announcement
+    in the period asked about), and ``iana_block`` / ``iana_block_description``
+    (the IANA registry block it falls in, e.g. ``1.0.0.0/8``,
+    ``APNIC (Status: ALLOCATED)``).
     """
 
     name: ShortText | None = None
@@ -192,11 +199,23 @@ class NetblockProperties(Properties):
     registered: AwareDatetime | None = None
     last_changed: AwareDatetime | None = None
     parent_handle: Handle | None = None
+    announced: bool | None = None
+    bgp_first_seen: AwareDatetime | None = None
+    bgp_last_seen: AwareDatetime | None = None
+    iana_block: ShortText | None = None
+    iana_block_description: ShortText | None = None
 
 
 class ASNProperties(Properties):
     """``registry`` is the Regional Internet Registry; ``handle``, ``registered``
-    and ``last_changed`` come from RDAP."""
+    and ``last_changed`` come from RDAP.
+
+    From routing data (RIPEstat): ``as_name`` (the network name in the holder,
+    ``CLOUDFLARENET`` in ``CLOUDFLARENET - Cloudflare, Inc.``), ``announced``
+    (whether it originates any prefix now) and ``iana_block`` /
+    ``iana_block_description`` (the IANA AS number block, e.g. ``13312-15359``,
+    ``Assigned by ARIN``).
+    """
 
     name: ShortText | None = None
     country: CountryCode | None = None
@@ -204,6 +223,10 @@ class ASNProperties(Properties):
     handle: Handle | None = None
     registered: AwareDatetime | None = None
     last_changed: AwareDatetime | None = None
+    as_name: ShortText | None = None
+    announced: bool | None = None
+    iana_block: ShortText | None = None
+    iana_block_description: ShortText | None = None
 
 
 class CertificateProperties(Properties):

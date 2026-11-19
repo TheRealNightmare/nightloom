@@ -1,0 +1,31 @@
+{
+  "messages": [],
+  "see_also": [],
+  "version": "1.3",
+  "data_call_name": "prefix-overview",
+  "data_call_status": "supported",
+  "cached": false,
+  "query_id": "20260101000000-00000000-0000-0000-0000-000000000000",
+  "process_time": 10,
+  "server_id": "app000",
+  "build_version": "example",
+  "status": "ok",
+  "status_code": 200,
+  "time": "2026-11-18T16:00:00.000000",
+  "data": {
+    "is_less_specific": false,
+    "announced": false,
+    "asns": [],
+    "related_prefixes": [],
+    "resource": "2001:db8:ffff::/48",
+    "type": "prefix",
+    "block": {
+      "resource": "2001:db8::/32",
+      "desc": "Documentation",
+      "name": "IANA IPv6 Special Registry"
+    },
+    "actual_num_related": 0,
+    "query_time": "2026-11-18T16:00:00",
+    "num_filtered_out": 0
+  }
+}
