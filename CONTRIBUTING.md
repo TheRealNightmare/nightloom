@@ -237,7 +237,7 @@ The tests live in `apps/api/tests/`, `apps/worker/tests/` (the job runner, again
 | Database | `@pytest.mark.db` (in `apps/api/tests/db/` and `apps/worker/tests/`) | PostgreSQL, Valkey and Neo4j | `make test` |
 | Graph | `@pytest.mark.graph` (in `apps/api/tests/db/` and `apps/worker/tests/`) | Neo4j | `make test` |
 | Integration | `@pytest.mark.integration` (in `apps/api/tests/integration/`) | the whole stack | `make test-integration` (`TEST_DNS=1` adds the DNS job test, below) |
-| Network | `@pytest.mark.network` | the internet (public DNS, crt.sh, RDAP, RIPEstat, InternetDB) | `make test-network`; never in CI |
+| Network | `@pytest.mark.network` | the internet (public DNS, crt.sh, RDAP, RIPEstat, InternetDB, the Wayback Machine) | `make test-network`; never in CI |
 
 `make test` runs the unit, database **and** graph tests with a coverage gate of 90% (over `nightloom_api`, `nightloom_core`, `nightloom_sdk`, `nightloom_worker` and the built-in Shuttles), so start the services first. The database fixtures live in `apps/api/tests/db_fixtures.py`; both the API's and the worker's `conftest.py` import them, and the API tests replace the Celery queue with a recorder, so no test ever needs a running worker. `make deps-up` starts only PostgreSQL, Valkey and Neo4j from the Compose file (`make up` works too):
 
@@ -300,6 +300,7 @@ To propose a new data source without writing it yourself, open a **Shuttle reque
 | `rdap` | [`shuttles/rdap`](shuttles/rdap/) | Domain, IP address, netblock or ASN → registration data (RDAP) from the responsible registry. The example for several input types, a per-process cache shared by jobs (IANA's bootstrap files), `Retry-After`, and keeping person data out of findings in one tested function. |
 | `ripestat` | [`shuttles/ripestat`](shuttles/ripestat/) | IP address, netblock or ASN → announced prefixes, origin ASes and AS holders from the RIPEstat Data API. The example for validating every answer with Pydantic models, counting malformed items in a job note, and a shared SDK helper (`nightloom_sdk.redaction`). |
 | `internetdb` | [`shuttles/internetdb`](shuttles/internetdb/) | Public IPv4 address → open ports as Services, hostnames as Domains, and CPEs, CVE IDs and tags as properties of the address, from Shodan's InternetDB. **Free for non-commercial use only**: building a paid product on its data needs a Shodan license, which the Shuttle declares as its `usage_note`. The example for adding properties to the input entity, rating some findings lower than others (relationships included), skipping inputs with a note and no request, and declaring usage conditions. |
+| `wayback` | [`shuttles/wayback`](shuttles/wayback/) | Domain → archived URLs and the subdomains hosting them, from the Internet Archive's Wayback Machine (CDX API). The example for a slow source with a per-request timeout, and for privacy filtering in one fully tested module: query strings removed (only parameter names kept), email addresses in paths dropped, and a test that scans every finding and note for the secrets in its fixtures. |
 
 ### A minimal Shuttle
 

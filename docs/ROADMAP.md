@@ -31,9 +31,10 @@ Passive infrastructure Shuttles from free public sources, then a graph UI good e
 - [x] 1.2 RDAP Shuttle (`rdap`: domain, IP, netblock and ASN registration data)
 - [x] 1.3 ASN/BGP Shuttle via RIPEstat (`ripestat`: IP → prefix → ASN, AS holders, announced prefixes)
 - [x] 1.4 Shodan InternetDB Shuttle (`internetdb`: open ports, CPEs, CVEs, tags, hostnames; no key; non-commercial use)
-- [ ] 1.5 Wayback Machine CDX Shuttle (historical URLs)
+- [x] 1.5 Wayback Machine CDX Shuttle (`wayback`: historical URLs and subdomains; query strings stripped, only parameter names kept; no key)
 - [ ] 1.6 Reverse DNS Shuttle (PTR records)
 - [ ] 1.7 Graph UX and export (provenance panel, layout and filtering, export)
+- [ ] Release v0.1 (production Compose file with HTTPS, backups, user management UI, tagged release with published images)
 
 ## M2 — Auto-pivot
 
