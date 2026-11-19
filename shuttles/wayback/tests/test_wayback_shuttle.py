@@ -8,6 +8,7 @@ home page's latest capture (``fastLatest``) and its first capture.
 
 import asyncio
 import json
+import logging
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -46,6 +47,7 @@ from nightloom_shuttle_wayback.shuttle import (
     NOTE_LISTING_LIMIT,
     NOTE_MALFORMED,
     NOTE_NO_CAPTURES,
+    NOTE_SECRETS,
     NOTE_SMALLER_LISTING,
     NOTE_STRIPPED,
     NOTE_SUBDOMAINS_CAPPED,
@@ -419,6 +421,77 @@ async def test_email_in_path_is_dropped_plain_and_encoded() -> None:
     assert list(urls(found)) == ["http://example.org/ok"]
     assert NOTE_DROPPED.format(total=3, details="3 email in path") in ctx.notes
     assert "b.example" not in serialized(found, ctx)
+
+
+FAKE_TOKENS = (
+    "SECRET2",
+    "SECRET3",
+    "sk_live_SECRET4",
+    "AKIAFAKEFAKEFAKEFAKE",
+    "AIzaSyFAKE" + "0" * 29,
+    "ghp_" + "FAKE" * 9,
+    "xoxb-0000000000-FAKEFAKE",
+    "SK" + "0123456789abcdef" * 2,
+    "eyJGQUtFIjoiMSJ9.eyJGQUtFIjoiMiJ9.FAKESIGNATURE",
+    "MIIFAKE",
+    "FAKE0000FAKE0000",
+    "FAKEtoken0a1b2c3d4e5f6g7h8i9jKLMNOP",
+    "pass",
+    "a@b.example",
+)
+SLUG = "/blog/how-we-built-our-new-pipeline-2020"  # long, but words: kept
+
+
+async def test_secrets_credentials_and_hidden_queries_never_appear_anywhere(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """No fake token reaches a finding, a note or a log record; drops are counted only."""
+    caplog.set_level(logging.DEBUG)
+    listing = rows(
+        ["20200101000000", "http://example.org/reset%3Ftoken=SECRET2", "200", "text/html"],
+        ["20200101000001", "http://example.org/reset%253Femail=a%2540b.example", "200", "x/y"],
+        ["20200101000002", "http://example.org/doc%23SECRET3", "200", "text/html"],
+        ["20200101000003", "http://example.org/api/v1/keys/sk_live_SECRET4", "200", "text/html"],
+        ["20200101000004", "http://example.org/k/AKIAFAKEFAKEFAKEFAKE", "200", "text/html"],
+        ["20200101000005", f"http://example.org/k/{FAKE_TOKENS[4]}", "200", "text/html"],
+        ["20200101000006", f"http://example.org/k/{FAKE_TOKENS[5]}", "200", "text/html"],
+        ["20200101000007", "http://example.org/k/xoxb-0000000000-FAKEFAKE", "200", "text/html"],
+        ["20200101000008", f"http://example.org/k/{FAKE_TOKENS[7]}", "200", "text/html"],
+        ["20200101000009", f"http://example.org/s/{FAKE_TOKENS[8]}", "200", "text/html"],
+        ["20200101000010", "http://example.org/-----BEGIN%20KEY-----MIIFAKE", "200", "text/html"],
+        ["20200101000011", "http://example.org/token/FAKE0000FAKE0000", "200", "text/html"],
+        ["20200101000012", f"http://example.org/d/{FAKE_TOKENS[11]}", "200", "text/html"],
+        ["20200101000013", "http://user:pass@example.org/", "200", "text/html"],
+        ["20200101000014", f"http://example.org{SLUG}", "200", "text/html"],
+    )
+    found, ctx, _ = await run_shuttle(FakeCdx(listing=listing, first=[], latest=[]))
+    assert set(urls(found)) == {
+        f"http://example.org{SLUG}",
+        "http://example.org/doc",
+        "http://example.org/reset",
+    }
+    assert urls(found)["http://example.org/reset"]["query_params"] == ["token"]
+    assert (
+        NOTE_DROPPED.format(
+            total=12,
+            details="1 credentials in URL, 1 email in path, 10 possible secret in path",
+        )
+        in ctx.notes
+    )
+    assert NOTE_SECRETS.format(count=10) in ctx.notes
+    assert NOTE_SECRETS == (
+        "{count:,} archived URL(s) looked like they contained secrets and were not stored."
+    )
+    text = serialized(found, ctx)
+    logged = "\n".join(
+        f"{record.getMessage()} {record.args!r} {record.exc_text or ''}"
+        for record in caplog.records
+    )
+    for token in FAKE_TOKENS:
+        assert token not in text, token
+        assert token not in logged, token
+    for encoded in ("%3F", "%253F", "%23", "%2540", "BEGIN", "user:"):
+        assert encoded not in text, encoded
 
 
 async def test_query_variants_become_one_url() -> None:

@@ -5,21 +5,30 @@ domain: pages, but also images and scripts, other hosts' URLs that only
 look similar, addresses with session tokens or email addresses in them, and
 junk. Each archived address goes through :func:`classify`, in this order:
 
-1. **Scope.** Its host, normalized with ``nightloom_core``, must be the
+1. **Credentials.** An address with user information before its host
+   (``user@`` or ``user:password@``, also percent-encoded) is dropped.
+2. **Scope.** Its host, normalized with ``nightloom_core``, must be the
    searched domain or a name under it (the crt.sh Shuttle's rule), so a
    lookalike such as ``evilexample.org`` is dropped.
-2. **Static assets.** Images, stylesheets, scripts, fonts, media and
+3. **Hidden queries.** The path is percent-decoded up to twice
+   (:func:`split_encoded_query`). If that reveals a ``?`` or ``#``
+   (``/reset%3Ftoken=...``, ``%23``, ``%253F``), the path is cut before the
+   encoded sequence and what follows is treated as a query string or a
+   fragment. A path still encoded after two rounds is dropped as invalid.
+4. **Static assets.** Images, stylesheets, scripts, fonts, media and
    archives are dropped, by file extension or by the media type the archive
    recorded (one list: :data:`STATIC_ASSETS`).
-3. **Privacy.** The query string and the fragment are removed, and so are
-   path parameters (``;jsessionid=...``): their values can be session
-   tokens, password-reset keys or email addresses. Only the query
-   parameters' *names* are kept (:func:`query_param_names`). An address
-   whose path contains ``@`` (also percent-encoded) usually names an email
-   address and is dropped entirely.
-4. **Normalization.** What is left is normalized as a URL with
-   ``nightloom_core``; an address that does not normalize (embedded
-   credentials included) is dropped.
+5. **Privacy.** The query string and the fragment are removed (the real
+   ones and the hidden ones), and so are path parameters
+   (``;jsessionid=...``): their values can be session tokens,
+   password-reset keys or email addresses. Only the query parameters'
+   *names* are kept (:func:`query_param_names`). An address whose path
+   contains ``@`` (also percent-encoded) usually names an email address and
+   is dropped entirely, and so is one whose path looks like it holds a
+   secret (:func:`has_secret_in_path`: :data:`SECRET_PATTERNS` and a
+   conservative entropy rule).
+6. **Normalization.** What is left is normalized as a URL with
+   ``nightloom_core``; an address that does not normalize is dropped.
 
 Each drop is counted by :class:`DropReason`, never quoted. Kept addresses
 that end up as the same URL (several query-string variants of one page, http
@@ -27,6 +36,7 @@ and https, ``:80``) become one :class:`ArchivedUrl` (:func:`collect`), with
 the earliest capture and the number of addresses merged.
 """
 
+import math
 import re
 from collections import Counter
 from collections.abc import Iterable, Mapping
@@ -98,19 +108,76 @@ _TIMESTAMP = re.compile(r"[0-9]{14}")
 _MIMETYPE = re.compile(r"[a-z0-9][a-z0-9!#$&^_.+-]*/[a-z0-9][a-z0-9!#$&^_.+-]*")
 
 
+# --- secrets in paths ---
+#
+# What looks like a credential in a path, on the percent-decoded path. Every
+# pattern is anchored: a "segment" pattern must match a whole path segment
+# (or the segment without its file extension), a "path" pattern starts at a
+# segment boundary or is a fixed marker. None has nested quantifiers, so each
+# runs in linear time. Matching is deliberately prefix-based: a token in the
+# middle of a segment (``/download-ghp_...``) is not recognized.
+SEGMENT, PATH = "segment", "path"
+# Path segment names that announce a credential in the next segment.
+SECRET_SEGMENT_NAMES = (
+    "token", "access_token", "accesstoken", "auth", "auth_token", "apikey", "api_key", "api-key",
+    "secret", "client_secret", "password", "passwd", "private_key",
+)  # fmt: skip
+SECRET_PATTERNS: tuple[tuple[str, str, re.Pattern[str]], ...] = (
+    ("aws_access_key_id", SEGMENT, re.compile(r"\A(?:AKIA|ASIA)[A-Z0-9]{16}\Z")),
+    ("google_api_key", SEGMENT, re.compile(r"\AAIza[0-9A-Za-z_-]{35}\Z")),
+    (
+        "github_token",
+        SEGMENT,
+        re.compile(r"\A(?:gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,255})\Z"),
+    ),
+    ("slack_token", SEGMENT, re.compile(r"\Axox[abposr]-[A-Za-z0-9-]{10,255}\Z")),
+    ("stripe_key", SEGMENT, re.compile(r"\A(?:sk|rk|pk)_live_[A-Za-z0-9]{1,255}\Z")),
+    ("twilio_key", SEGMENT, re.compile(r"\ASK[0-9a-f]{32}\Z")),
+    (
+        "jwt",
+        SEGMENT,
+        re.compile(r"\AeyJ[A-Za-z0-9_-]{1,4096}\.[A-Za-z0-9_-]{1,4096}\.[A-Za-z0-9_-]{0,4096}\Z"),
+    ),
+    ("private_key", PATH, re.compile(r"-----BEGIN")),
+    (
+        "named_secret",
+        PATH,
+        re.compile(
+            rf"(?:\A|/)(?i:{'|'.join(map(re.escape, SECRET_SEGMENT_NAMES))})"
+            r"/(?P<value>[A-Za-z0-9_-]{16,4096})(?=/|\Z)"
+        ),
+    ),
+)  # fmt: skip
+# The entropy rule: one segment of at least this many characters from the
+# token alphabet, with letters and digits, and at least this much Shannon
+# entropy per character, is taken for a random token.
+ENTROPY_MIN_LENGTH = 32
+ENTROPY_MIN_BITS = 4.0
+_TOKEN_ALPHABET = re.compile(r"[A-Za-z0-9+/=_-]+")
+# Lower-case hex of an MD5, SHA-1 or SHA-256 length: usually a content hash.
+_CONTENT_HASH = re.compile(r"[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64}")
+# A "word slug": parts separated by "-" or "_", each a word (lower case,
+# Capitalized or UPPER) with at most a short number after it, or a number.
+_SLUG_PART = re.compile(r"[0-9]+|(?:[a-z]+|[A-Z][a-z]+|[A-Z]+)[0-9]{0,4}")
+
+
 class DropReason(StrEnum):
     """Why an archived address was not kept."""
 
+    CREDENTIALS_IN_URL = "credentials_in_url"
     OUT_OF_SCOPE = "out_of_scope"
     STATIC_ASSET = "static_asset"
     EMAIL_IN_PATH = "email_in_path"
+    SECRET_IN_PATH = "secret_in_path"  # noqa: S105 - a reason's name, not a secret
     INVALID = "invalid"
 
 
 DROP_LABELS: dict[DropReason, str] = {
+    DropReason.CREDENTIALS_IN_URL: "credentials in URL",
     DropReason.OUT_OF_SCOPE: "outside the domain",
     DropReason.STATIC_ASSET: "static assets",
     DropReason.EMAIL_IN_PATH: "email in path",
+    DropReason.SECRET_IN_PATH: "possible secret in path",
     DropReason.INVALID: "invalid",
 }
 
@@ -241,9 +308,160 @@ def is_static_asset(path: str, mimetype: str | None) -> bool:
     return mimetype in STATIC_MIMETYPES or mimetype.startswith(STATIC_MIMETYPE_PREFIXES)
 
 
+def has_credentials(netloc: str) -> bool:
+    """Whether the authority has user information (``user@``, ``user:pw@``, also encoded)."""
+    return "@" in unquote(unquote(netloc))
+
+
 def has_email_in_path(path: str) -> bool:
     """Whether the path has an ``@``, also percent-encoded (``%40``, or twice: ``%2540``)."""
     return "@" in unquote(unquote(path))
+
+
+# --- percent-encoding ---
+
+_HEX_DIGITS = frozenset(b"0123456789abcdefABCDEF")
+# What a path still holds after two rounds of decoding if it was encoded
+# three times or more: an encoded "?", "#" or "%".
+_STILL_ENCODED = re.compile(r"%(?:3f|23|25)", re.IGNORECASE)
+# Paths are handled as UTF-8 bytes; "surrogatepass" makes any str round-trip.
+_ENCODING, _ERRORS = "utf-8", "surrogatepass"
+
+
+def _percent_decode(data: bytes) -> tuple[bytes, list[int]]:
+    """``data`` with ``%XX`` decoded, and for each byte out the index in ``data`` it came from."""
+    out = bytearray()
+    origin: list[int] = []
+    i = 0
+    while i < len(data):
+        if (
+            data[i] == 0x25  # "%"
+            and i + 2 < len(data)
+            and data[i + 1] in _HEX_DIGITS
+            and data[i + 2] in _HEX_DIGITS
+        ):
+            out.append(int(data[i + 1 : i + 3], 16))
+            origin.append(i)
+            i += 3
+        else:
+            out.append(data[i])
+            origin.append(i)
+            i += 1
+    return bytes(out), origin
+
+
+def _decode_twice(path: str) -> tuple[bytes, list[int]]:
+    """``path`` percent-decoded up to twice (stopping when nothing changes).
+
+    Also returns, for each decoded byte, its index in ``path``'s UTF-8 bytes.
+    """
+    data = path.encode(_ENCODING, _ERRORS)
+    origin = list(range(len(data)))
+    for _ in range(2):
+        decoded, step = _percent_decode(data)
+        if decoded == data:
+            break
+        origin = [origin[j] for j in step]
+        data = decoded
+    return data, origin
+
+
+def decoded_path(path: str) -> str:
+    """``path`` percent-decoded up to twice, for inspection only (never stored)."""
+    return _decode_twice(path)[0].decode(_ENCODING, "replace")
+
+
+def split_encoded_query(path: str) -> tuple[str, frozenset[str]]:
+    """Cut a query string or fragment hidden by percent-encoding out of ``path``.
+
+    ``/reset%3Ftoken=X`` (also ``%3f``, ``%23``, or encoded twice:
+    ``%253F``) decodes to a path with a ``?`` or ``#`` in it. Everything from
+    the first of them is a query string or a fragment: the path kept is the
+    *original* one, cut before the encoded sequence, and of the query only
+    the parameter names are returned. A path without one comes back
+    unchanged, with no names.
+    """
+    data, origin = _decode_twice(path)
+    marks = [i for i in (data.find(b"?"), data.find(b"#")) if i >= 0]
+    if not marks:
+        return path, frozenset()
+    cut = min(marks)
+    kept = path.encode(_ENCODING, _ERRORS)[: origin[cut]].decode(_ENCODING, _ERRORS)
+    names: frozenset[str] = frozenset()
+    if data[cut : cut + 1] == b"?":
+        query = data[cut + 1 :].split(b"#", 1)[0].decode(_ENCODING, "replace")
+        names = query_param_names(query)
+    return kept, names
+
+
+# --- secrets ---
+
+
+def shannon_entropy(text: str) -> float:
+    """Bits per character of ``text``'s own character distribution."""
+    if not text:
+        return 0.0
+    counts = Counter(text)
+    return -sum(n / len(text) * math.log2(n / len(text)) for n in counts.values())
+
+
+def _is_word_slug(text: str) -> bool:
+    """``how-we-built-it-2020``, ``oauth2_callback``, ``Annual-Report``: words, not a token."""
+    return all(_SLUG_PART.fullmatch(part) for part in re.split(r"[-_]", text))
+
+
+def _looks_random(segment: str) -> bool:
+    """The entropy rule (see :data:`ENTROPY_MIN_BITS`), conservative on purpose.
+
+    Long words joined by hyphens and plain lower-case hex hashes (MD5,
+    SHA-1, SHA-256 lengths, common in asset and download names) are kept;
+    so is anything without both letters and digits. A random token that is
+    all letters, or a camel-case name with digits in the middle, can still
+    be misjudged either way.
+    """
+    return (
+        len(segment) >= ENTROPY_MIN_LENGTH
+        and _TOKEN_ALPHABET.fullmatch(segment) is not None
+        and any(c.isdigit() for c in segment)
+        and any(c.isalpha() for c in segment)
+        and not _CONTENT_HASH.fullmatch(segment)
+        and not _is_word_slug(segment)
+        and shannon_entropy(segment) >= ENTROPY_MIN_BITS
+    )
+
+
+def _segments(path: str) -> list[str]:
+    """The decoded path's segments, without path parameters, each also without its extension."""
+    candidates: list[str] = []
+    for segment in path.split("/"):
+        segment = segment.split(";", 1)[0]
+        if not segment:
+            continue
+        candidates.append(segment)
+        stem, dot, extension = segment.rpartition(".")
+        if dot and stem and extension.isalnum() and len(extension) <= 10:
+            candidates.append(stem)
+    return candidates
+
+
+def has_secret_in_path(path: str) -> bool:
+    """Whether the (raw) ``path`` looks like it holds a credential, once decoded.
+
+    Tests :data:`SECRET_PATTERNS` one by one, then the entropy rule. Says
+    only *whether*: what matched is never returned, logged or kept.
+    """
+    decoded = decoded_path(path)
+    segments = _segments(decoded)
+    for _name, scope, pattern in SECRET_PATTERNS:
+        if scope == SEGMENT:
+            if any(pattern.match(segment) for segment in segments):
+                return True
+            continue
+        for match in pattern.finditer(decoded):
+            value = match.groupdict().get("value")
+            if value is None or not _is_word_slug(value):
+                return True
+    return any(_looks_random(segment) for segment in segments)
 
 
 def query_param_names(query: str) -> frozenset[str]:
@@ -275,6 +493,9 @@ def classify(capture: Capture, scope: str) -> Kept | DropReason:
         hostname = parts.hostname
     except ValueError:
         return DropReason.INVALID
+    # Before anything else: the user information is the credential itself.
+    if has_credentials(parts.netloc):
+        return DropReason.CREDENTIALS_IN_URL
     if not parts.scheme or not hostname:
         return DropReason.INVALID
     try:
@@ -284,17 +505,28 @@ def classify(capture: Capture, scope: str) -> Kept | DropReason:
         return DropReason.INVALID if not _looks_like_ip(hostname) else DropReason.OUT_OF_SCOPE
     if not in_scope(host, scope):
         return DropReason.OUT_OF_SCOPE
-    if is_static_asset(_strip_path_parameters(parts.path), capture.mimetype):
+    visible, hidden_params = split_encoded_query(parts.path)
+    path = _strip_path_parameters(visible)
+    if is_static_asset(path, capture.mimetype):
         return DropReason.STATIC_ASSET
-    if has_email_in_path(parts.path):
+    if has_email_in_path(parts.path):  # the whole path, hidden query included
         return DropReason.EMAIL_IN_PATH
-    path = _strip_path_parameters(parts.path)
+    if has_secret_in_path(path):
+        return DropReason.SECRET_IN_PATH
+    if _STILL_ENCODED.search(decoded_path(path)):
+        # Encoded three times or more: no real page, and a "?" may hide inside.
+        return DropReason.INVALID
     stripped = bool(parts.query or parts.fragment or path != parts.path)
     try:
         url = normalize_url(urlunsplit((parts.scheme, parts.netloc, path, "", "")))
     except NormalizationError:
         return DropReason.INVALID
-    return Kept(url=url, host=host, query_params=query_param_names(parts.query), stripped=stripped)
+    return Kept(
+        url=url,
+        host=host,
+        query_params=query_param_names(parts.query) | hidden_params,
+        stripped=stripped,
+    )
 
 
 def _looks_like_ip(hostname: str) -> bool:
@@ -325,7 +557,11 @@ class Collected:
         if isinstance(kept, DropReason):
             if counted:
                 self.dropped[kept] += 1
-            if kept in (DropReason.STATIC_ASSET, DropReason.EMAIL_IN_PATH):
+            if kept in (
+                DropReason.STATIC_ASSET,
+                DropReason.EMAIL_IN_PATH,
+                DropReason.SECRET_IN_PATH,
+            ):
                 self.saw(capture.timestamp)  # still a capture under the domain
             return None
         self.saw(capture.timestamp)
@@ -392,8 +628,12 @@ def select(
 
 __all__ = [
     "DROP_LABELS",
+    "ENTROPY_MIN_BITS",
+    "ENTROPY_MIN_LENGTH",
     "FIELDS",
     "MAX_RAW_URL_LENGTH",
+    "SECRET_PATTERNS",
+    "SECRET_SEGMENT_NAMES",
     "STATIC_ASSETS",
     "STATIC_EXTENSIONS",
     "STATIC_MIMETYPES",
@@ -406,11 +646,16 @@ __all__ = [
     "Selection",
     "classify",
     "collect",
+    "decoded_path",
+    "has_credentials",
     "has_email_in_path",
+    "has_secret_in_path",
     "in_scope",
     "is_static_asset",
     "parse_rows",
     "parse_timestamp",
     "query_param_names",
     "select",
+    "shannon_entropy",
+    "split_encoded_query",
 ]

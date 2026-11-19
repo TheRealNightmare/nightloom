@@ -6,7 +6,11 @@ import pytest
 
 from nightloom_shuttle_wayback.filtering import (
     DROP_LABELS,
+    ENTROPY_MIN_BITS,
+    ENTROPY_MIN_LENGTH,
     FIELDS,
+    SECRET_PATTERNS,
+    SECRET_SEGMENT_NAMES,
     STATIC_ASSETS,
     STATIC_EXTENSIONS,
     ArchivedUrl,
@@ -15,13 +19,18 @@ from nightloom_shuttle_wayback.filtering import (
     Kept,
     classify,
     collect,
+    decoded_path,
+    has_credentials,
     has_email_in_path,
+    has_secret_in_path,
     in_scope,
     is_static_asset,
     parse_rows,
     parse_timestamp,
     query_param_names,
     select,
+    shannon_entropy,
+    split_encoded_query,
 )
 
 SCOPE = "example.org"
@@ -100,7 +109,7 @@ def test_in_scope(name: str, inside: bool) -> None:
         ("http://[::1/", DropReason.INVALID),
         ("dns:example.org", DropReason.INVALID),
         ("gopher://example.org/", DropReason.INVALID),  # only http, https and ftp
-        ("http://user:pw@example.org/", DropReason.INVALID),  # credentials
+        ("http://user:pw@example.org/", DropReason.CREDENTIALS_IN_URL),
     ],
 )
 def test_classify_drops(original: str, reason: DropReason) -> None:
@@ -215,12 +224,217 @@ def test_email_in_path_is_dropped_after_scope_and_assets() -> None:
 
 def test_drop_labels_cover_every_reason_in_rule_order() -> None:
     assert list(DROP_LABELS) == [
+        DropReason.CREDENTIALS_IN_URL,
         DropReason.OUT_OF_SCOPE,
         DropReason.STATIC_ASSET,
         DropReason.EMAIL_IN_PATH,
+        DropReason.SECRET_IN_PATH,
         DropReason.INVALID,
     ]
     assert set(DROP_LABELS) == set(DropReason)
+    assert DROP_LABELS[DropReason.SECRET_IN_PATH] == "possible secret in path"
+    assert DROP_LABELS[DropReason.CREDENTIALS_IN_URL] == "credentials in URL"
+
+
+# --- credentials in the URL ----------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "original",
+    [
+        "http://user:pass@example.org/",
+        "http://user@example.org/",
+        "http://:@example.org/",
+        "https://user:pass@www.example.org:8443/path?q=1",
+        "http://user%3Apass@example.org/",  # encoded ":" in the user information
+        "http://user%40example.org/",  # encoded "@"
+        "http://user%2540example.org/",  # encoded twice
+        "http://example.org@evil.example/",  # credentials win over scope
+        "http://user:pass@192.0.2.1/",
+        "http://user:pass@/",
+    ],
+)
+def test_credentials_in_url_are_dropped(original: str) -> None:
+    assert classify(capture(original), SCOPE) is DropReason.CREDENTIALS_IN_URL
+
+
+def test_has_credentials() -> None:
+    assert has_credentials("user:pass@example.org")
+    assert has_credentials("user%2540example.org")
+    assert not has_credentials("example.org:8080")
+    assert not has_credentials("")
+
+
+# --- queries and fragments hidden by percent-encoding --------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("path", "kept_path", "names"),
+    [
+        ("/reset%3Ftoken=SECRET2", "/reset", {"token"}),
+        ("/reset%3ftoken=SECRET2", "/reset", {"token"}),  # lower-case hex
+        ("/reset%253Ftoken=SECRET2", "/reset", {"token"}),  # encoded twice
+        ("/reset%253ftoken=SECRET2&next=%2F", "/reset", {"token", "next"}),
+        ("/page%23section-SECRET", "/page", set()),  # a fragment: no names
+        ("/page%2523SECRET", "/page", set()),
+        ("/a/b%3Fx=1%26y=2%23frag", "/a/b", {"x", "y"}),
+        ("/a%23frag%3Fx=1", "/a", set()),  # the fragment comes first
+        ("/a%3Fbare-value", "/a", set()),  # a bare item may be a value itself
+        ("/caf%C3%A9%3Fq=1", "/caf%C3%A9", {"q"}),  # cut on the original bytes
+        ("/plain/path", "/plain/path", set()),
+        ("/100%25-cotton", "/100%25-cotton", set()),  # a "%" that hides nothing
+        ("/", "/", set()),
+    ],
+)
+def test_split_encoded_query(path: str, kept_path: str, names: set[str]) -> None:
+    assert split_encoded_query(path) == (kept_path, frozenset(names))
+
+
+@pytest.mark.parametrize(
+    ("original", "url", "names"),
+    [
+        ("http://example.org/reset%3Ftoken=SECRET2", "http://example.org/reset", {"token"}),
+        ("http://example.org/reset%3ftoken=SECRET2", "http://example.org/reset", {"token"}),
+        ("http://example.org/reset%253Ftoken=SECRET2", "http://example.org/reset", {"token"}),
+        ("http://example.org/doc%23SECRET", "http://example.org/doc", set()),
+        # Mixed with a real query string: names from both, values from neither.
+        ("http://example.org/a%3Fx=SECRET?y=SECRET", "http://example.org/a", {"x", "y"}),
+        ("http://example.org/a%253Fx=1?y=2#z", "http://example.org/a", {"x", "y"}),
+        # Path parameters after the cut are gone with it, before it they are stripped.
+        ("http://example.org/a;jsessionid=X%3Fq=1", "http://example.org/a", {"q"}),
+    ],
+)
+def test_hidden_queries_are_cut_and_only_names_kept(
+    original: str, url: str, names: set[str]
+) -> None:
+    result = kept(original)
+    assert (result.url, result.query_params, result.stripped) == (url, frozenset(names), True)
+    assert "SECRET" not in result.url
+
+
+def test_hidden_queries_and_the_other_rules() -> None:
+    # The asset check sees the path without its hidden query.
+    assert classify(capture("http://example.org/app.js%3Fv=3"), SCOPE) is DropReason.STATIC_ASSET
+    # An email address in a hidden query is in the path as archived: dropped.
+    for path in ("/reset%3Femail=a%40b.example", "/reset%3Femail=a%2540b.example"):
+        assert classify(capture(f"http://example.org{path}"), SCOPE) is DropReason.EMAIL_IN_PATH
+    # A secret in a hidden query is cut, not stored: the URL is kept.
+    assert kept("http://example.org/cb%3Fkey=sk_live_SECRET4").url == "http://example.org/cb"
+    # Encoded three times: not decoded further, dropped rather than stored.
+    for path in ("/a%25253Ftoken=SECRET", "/a%2525252F"):
+        assert classify(capture(f"http://example.org{path}"), SCOPE) is DropReason.INVALID
+
+
+# --- secrets in the path -------------------------------------------------------------------
+
+# Fake values only, shaped like the real thing.
+FAKE_SECRETS = {
+    "aws_access_key_id": "AKIAFAKEFAKEFAKEFAKE",
+    "aws_session_key_id": "ASIAFAKEFAKEFAKEFAKE",
+    "google_api_key": "AIzaSyFAKE" + "0" * 29,
+    "github_token": "ghp_" + "FAKE" * 9,
+    "github_oauth": "gho_" + "FAKE" * 9,
+    "github_pat": "github_pat_" + "FAKE_" * 6,
+    "slack_token": "xoxb-0000000000-FAKEFAKE",
+    "stripe_secret": "sk_live_SECRET4",
+    "stripe_restricted": "rk_live_FAKE",
+    "stripe_publishable": "pk_live_FAKE",
+    "twilio_key": "SK" + "0123456789abcdef" * 2,
+    "jwt": "eyJGQUtFIjoiMSJ9.eyJGQUtFIjoiMiJ9.FAKESIGNATURE",
+    "high_entropy": "FAKEtoken0a1b2c3d4e5f6g7h8i9jKLMNOP",
+}
+SECRET_URLS = [
+    *(f"http://example.org/api/v1/keys/{value}" for value in FAKE_SECRETS.values()),
+    "http://example.org/api/v1/keys/sk_live_SECRET4",
+    "http://example.org/k/AKIAFAKEFAKEFAKEFAKE.json",  # with a file extension
+    "http://example.org/k/%41KIAFAKEFAKEFAKEFAKE",  # encoded
+    "http://example.org/k/sk%255Flive%255FSECRET4",  # encoded twice
+    "http://example.org/k/sk_live_SECRET4;v=1",  # with a path parameter
+    "http://example.org/keys/-----BEGIN%20RSA%20PRIVATE%20KEY-----MIIFAKE",
+    "http://example.org/api/token/FAKE0000FAKE0000",
+    "http://example.org/apikey/0123456789abcdef/info",
+    "http://example.org/API_KEY/FAKE0000FAKE0000FAKE",  # names in any case
+    "http://example.org/reset/password/FAKEfake00001111/",
+    "http://example.org/auth/550e8400-e29b-41d4-a716-446655440000",  # a UUID as a token
+    "http://example.org/access_token/FAKEfake0FAKE00x",
+    "http://example.org/secret%2FFAKE0000FAKE0000",  # an encoded "/"
+]
+
+
+@pytest.mark.parametrize("original", SECRET_URLS)
+def test_secrets_in_the_path_are_dropped(original: str) -> None:
+    assert classify(capture(original), SCOPE) is DropReason.SECRET_IN_PATH
+
+
+def test_every_secret_pattern_has_a_case() -> None:
+    names = {name for name, _, _ in SECRET_PATTERNS}
+    assert names == {
+        "aws_access_key_id",
+        "google_api_key",
+        "github_token",
+        "slack_token",
+        "stripe_key",
+        "twilio_key",
+        "jwt",
+        "private_key",
+        "named_secret",
+    }
+    for name, _, pattern in SECRET_PATTERNS:
+        assert pattern.pattern.startswith(("\\A", "(?:\\A|/)", "-----")), name
+    assert {"token", "apikey", "api_key", "secret", "password", "access_token", "auth"} <= set(
+        SECRET_SEGMENT_NAMES
+    )
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/blog/how-we-built-our-new-pipeline-2020",
+        "/the-quick-brown-fox-jumps-over-the-lazy-dog-2021",
+        "/introducing-our-new-kubernetes-platform-for-everyone",
+        "/2021-annual-report-and-financial-statements-final",
+        "/ProductCategoryListingPageWithFilters",
+        "/nightloom_wayback_shuttle_documentation_page",
+        "/downloads/d41d8cd98f00b204e9800998ecf8427e",  # MD5-length hex
+        "/downloads/da39a3ee5e6b4b0d3255bfef95601890afd80709",  # SHA-1
+        "/files/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/readme",
+        "/orders/550e8400-e29b-41d4-a716-446655440000",  # a UUID not after a secret's name
+        "/auth/oauth2-callback-handler",
+        "/password/forgot-your-password-page",
+        "/token/short",
+        "/secret/",
+        "/tokens/FAKE0000FAKE0000",  # not one of the names
+        "/token/FAKE-0000-FAKE-0000-FAKE",  # words and numbers: taken for a slug (a trade-off)
+        "/docs/AKIA",
+        "/docs/sk_test_FAKE",
+        "/ghp_tooshort",
+        "/v1/keys",
+    ],
+)
+def test_ordinary_paths_are_kept(path: str) -> None:
+    assert not has_secret_in_path(path)
+    assert kept(f"http://example.org{path}").url == f"http://example.org{path}"
+
+
+def test_entropy_rule() -> None:
+    assert ENTROPY_MIN_LENGTH == 32 and ENTROPY_MIN_BITS == 4.0
+    assert shannon_entropy("") == 0.0
+    assert shannon_entropy("aaaa") == 0.0
+    assert shannon_entropy("abcd") == pytest.approx(2.0)
+    token = FAKE_SECRETS["high_entropy"]
+    assert shannon_entropy(token) >= ENTROPY_MIN_BITS
+    assert has_secret_in_path(f"/x/{token}")
+    assert has_secret_in_path(f"/x/{token}.txt")
+    assert not has_secret_in_path(f"/x/{token[:31]}")  # too short
+    assert not has_secret_in_path("/x/" + "FAKEfake" * 5)  # no digit
+    assert not has_secret_in_path("/x/" + "0123456789" * 4)  # no letter
+    # Upper-case hex is not the usual content-hash form, but hex never reaches 4.0 bits.
+    assert not has_secret_in_path("/x/D41D8CD98F00B204E9800998ECF8427E")
+
+
+def test_decoded_path() -> None:
+    assert decoded_path("/a%2540b") == "/a@b"
+    assert decoded_path("/a%25252F") == "/a%2F"  # twice at most
 
 
 # --- merging and caps -----------------------------------------------------------------------

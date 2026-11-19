@@ -22,9 +22,10 @@ the domain itself, which is why it is passive. It yields:
 
 What is kept, and in what form, is decided by
 :mod:`nightloom_shuttle_wayback.filtering`: only the domain and names under
-it, no static assets, and never a query string, fragment or email address:
-query values and paths with ``@`` can hold tokens and personal data, so
-only the query parameters' names are stored.
+it, no static assets, and never a query string (also one hidden by
+percent-encoding), fragment, email address, embedded credentials or what
+looks like a secret in the path: query values and such paths can hold
+tokens and personal data, so only the query parameters' names are stored.
 
 Provenance: **B2** (confidence 0.8). The archive faithfully records what it
 captured (usually reliable, probably true), but a page may differ today or
@@ -74,6 +75,7 @@ from nightloom_shuttle_wayback.filtering import (
     ArchivedUrl,
     Capture,
     Collected,
+    DropReason,
     collect,
     parse_rows,
     select,
@@ -103,6 +105,7 @@ USAGE_NOTE = (
 
 NOTE_NO_CAPTURES = "The Wayback Machine has no captures of this domain."
 NOTE_DROPPED = "Dropped {total:,} archived address(es): {details}."
+NOTE_SECRETS = "{count:,} archived URL(s) looked like they contained secrets and were not stored."
 NOTE_STRIPPED = (
     "Removed the query string or fragment from {count:,} archived address(es); "
     "only parameter names were kept."
@@ -154,9 +157,9 @@ class WaybackShuttle(Shuttle):
             "Wayback Machine has captured (no API key), with when they were first captured, "
             "their last HTTP status and a link to the archived copy. Never contacts the domain "
             "itself. Static assets and other domains are left out; query strings are removed "
-            "(only parameter names are kept) and addresses containing an email address are "
-            "dropped. Large domains can take a few minutes; the archive is asked at most once "
-            "a second."
+            "(only parameter names are kept) and addresses containing an email address, "
+            "credentials or what looks like a secret are dropped. Large domains can take a few "
+            "minutes; the archive is asked at most once a second."
         ),
         input_types=frozenset({D}),
         # Domain: the input gets properties, and subdomains that host URLs are added.
@@ -241,6 +244,9 @@ class _Run:
                 if dropped[reason]
             )
             self.ctx.note(NOTE_DROPPED.format(total=dropped.total(), details=details))
+        if dropped[DropReason.SECRET_IN_PATH]:
+            # The count only: nothing about what matched.
+            self.ctx.note(NOTE_SECRETS.format(count=dropped[DropReason.SECRET_IN_PATH]))
         if self.collected.stripped:
             self.ctx.note(NOTE_STRIPPED.format(count=self.collected.stripped))
         if self.malformed:
