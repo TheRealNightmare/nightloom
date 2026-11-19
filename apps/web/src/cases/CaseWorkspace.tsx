@@ -116,7 +116,7 @@ function CaseHeader({ value, onChange }: { value: Case; onChange: (next: Case) =
       )}
       <div className="case-header__meta">
         <StatusBadge status={value.status} />
-        <span className="case-header__basis">
+        <span className="chip case-header__basis">
           <span className="visually-hidden">Legal basis: </span>
           {LEGAL_BASIS_LABELS[value.legal_basis]}
         </span>

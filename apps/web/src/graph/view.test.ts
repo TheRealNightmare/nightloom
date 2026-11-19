@@ -2,14 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import type { EntityType, InvestigationGraph } from "../domain/entities";
 import { sampleGraph } from "../demo/sampleGraph";
-import { buildGraph, EDGE_COLOR } from "./buildGraph";
+import { DEFAULT_GRAPH_PALETTE, GRAPH_PALETTES } from "../theme/graphPalette";
+import { buildGraph } from "./buildGraph";
 import {
-  CANVAS_BACKGROUND,
   computeHighlight,
   connectionsOf,
   countByType,
   edgeView,
-  HIGHLIGHT_EDGE_COLOR,
   INITIAL_VIEW_STATE,
   mixColor,
   neighborhoodOf,
@@ -115,7 +114,7 @@ describe("nodeView", () => {
     const dimmed = nodeView(graph, "a", view, highlight);
     expect(dimmed.labelVisibility).toBe("hidden");
     expect(dimmed.color).toBe(
-      mixColor(graph.getNodeAttribute("a", "color"), CANVAS_BACKGROUND, 0.78),
+      mixColor(graph.getNodeAttribute("a", "color"), DEFAULT_GRAPH_PALETTE.background, 0.78),
     );
   });
 
@@ -160,13 +159,28 @@ describe("edgeView", () => {
     const view = state({ hoveredNode: "i" });
     const highlight = computeHighlight(graph, view);
     expect(edgeView(graph, "e2", view, highlight)).toMatchObject({
-      color: HIGHLIGHT_EDGE_COLOR,
+      color: DEFAULT_GRAPH_PALETTE.selection,
       label: "resolves to",
       labelVisibility: "visible",
     });
     expect(edgeView(graph, "e1", view, highlight)).toEqual({
-      color: mixColor(EDGE_COLOR, CANVAS_BACKGROUND, 0.6),
+      color: mixColor(DEFAULT_GRAPH_PALETTE.edge, DEFAULT_GRAPH_PALETTE.background, 0.6),
       zIndex: 0,
+    });
+  });
+});
+
+describe("the theme's palette", () => {
+  it("dims toward the theme's background and selects in its brass", () => {
+    const light = GRAPH_PALETTES.light;
+    const view = state({ hoveredNode: "i" });
+    const highlight = computeHighlight(graph, view);
+    expect(nodeView(graph, "d", view, highlight, undefined, light).color).toBe(
+      mixColor(graph.getNodeAttribute("d", "color"), light.background, 0.78),
+    );
+    expect(edgeView(graph, "e2", view, highlight, light)).toMatchObject({
+      color: light.selection,
+      labelColor: light.label,
     });
   });
 });

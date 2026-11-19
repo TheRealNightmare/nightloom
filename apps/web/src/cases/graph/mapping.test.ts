@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildGraph } from "../../graph/buildGraph";
-import { ENTITY_TYPE_INFO } from "../../domain/entities";
+import { DEFAULT_GRAPH_PALETTE } from "../../theme/graphPalette";
 import { makeEntity, makeProvenance, makeRelationship } from "../../test/caseFixtures";
 import {
   toEntityNode,
@@ -65,7 +65,7 @@ describe("API → graph attributes", () => {
     expect(graph.getNodeAttributes("asn:64496")).toMatchObject({
       label: "AS64496",
       entityType: "asn",
-      color: ENTITY_TYPE_INFO.asn.color,
+      color: DEFAULT_GRAPH_PALETTE.types.asn,
     });
     expect(graph.getEdgeAttribute(announced.id, "label")).toBe("announced by");
   });

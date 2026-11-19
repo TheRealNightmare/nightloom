@@ -13,6 +13,13 @@ import { LEGAL_BASIS_LABELS, STATUS_LABELS } from "./labels";
 import { RelativeTime } from "./RelativeTime";
 
 export const CASE_PAGE_SIZE = 25;
+export const CASES_SUBTITLE = "Every investigation starts with a stated purpose and a legal basis.";
+
+/** The status filter's choices: all, then each status. */
+const STATUS_FILTERS: readonly { value: CaseStatus | ""; label: string }[] = [
+  { value: "", label: "All" },
+  ...CASE_STATUSES.map((value) => ({ value, label: STATUS_LABELS[value] })),
+];
 export const SEARCH_DEBOUNCE_MS = 300;
 
 interface Listing {
@@ -43,7 +50,7 @@ export function CaseListPage() {
   };
   const [loadingMore, setLoadingMore] = useState(false);
   const searchId = useId();
-  const statusId = useId();
+  const statusName = useId();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -93,7 +100,10 @@ export function CaseListPage() {
   return (
     <main className="page">
       <div className="page__header">
-        <h1 className="page__title">Cases</h1>
+        <div>
+          <h1 className="page__title page__title--hero">Cases</h1>
+          <p className="page__subtitle">{CASES_SUBTITLE}</p>
+        </div>
         {mayCreate && (
           <Link to="/cases/new" className="button button--primary">
             New case
@@ -121,26 +131,26 @@ export function CaseListPage() {
             }}
           />
         </div>
-        <div className="field field--inline">
-          <label className="field__label" htmlFor={statusId}>
-            Status
-          </label>
-          <select
-            id={statusId}
-            className="field__input"
-            value={status}
-            onChange={(event) => {
-              setStatus(event.target.value as CaseStatus | "");
-            }}
-          >
-            <option value="">All</option>
-            {CASE_STATUSES.map((value) => (
-              <option key={value} value={value}>
-                {STATUS_LABELS[value]}
-              </option>
+        <fieldset className="segmented-field">
+          <legend className="field__label">Status</legend>
+          <div className="segmented">
+            {STATUS_FILTERS.map(({ value, label }) => (
+              <label key={value} className="segmented__option">
+                <input
+                  type="radio"
+                  name={statusName}
+                  className="segmented__input"
+                  value={value}
+                  checked={status === value}
+                  onChange={() => {
+                    setStatus(value);
+                  }}
+                />
+                {label}
+              </label>
             ))}
-          </select>
-        </div>
+          </div>
+        </fieldset>
       </div>
 
       {listing === null && errorMessage === null && <Loading label="Loading cases…" />}
@@ -164,15 +174,18 @@ export function CaseListPage() {
                 <Link to={`/cases/${item.id}`} className="case-row__title">
                   {item.title}
                 </Link>
-                <span className="case-row__basis">{LEGAL_BASIS_LABELS[item.legal_basis]}</span>
+                <div className="case-row__chips">
+                  <StatusBadge status={item.status} />
+                  <span className="chip case-row__basis">
+                    <span className="visually-hidden">Legal basis: </span>
+                    {LEGAL_BASIS_LABELS[item.legal_basis]}
+                  </span>
+                  <CaseRoleBadge role={item.my_role} />
+                </div>
               </div>
-              <div className="case-row__meta">
-                <StatusBadge status={item.status} />
-                <CaseRoleBadge role={item.my_role} />
-                <span className="case-row__time">
-                  Updated <RelativeTime iso={item.updated_at} />
-                </span>
-              </div>
+              <span className="case-row__time">
+                Updated <RelativeTime iso={item.updated_at} />
+              </span>
             </li>
           ))}
         </ul>

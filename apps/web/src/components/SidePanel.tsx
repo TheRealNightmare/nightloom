@@ -93,7 +93,7 @@ export function Confidence({ value }: { value: number }) {
 
 function ProvenanceList({ provenance }: { provenance: Provenance }) {
   return (
-    <dl className="facts">
+    <dl className="facts facts--mono">
       <div className="facts__row">
         <dt>Source</dt>
         <dd>
@@ -156,7 +156,12 @@ export function SidePanel({
       ) : (
         <article aria-labelledby="entity-title">
           <div className="panel__header">
-            <TypeChip type={selected.type} />
+            <p
+              className="eyebrow eyebrow--type"
+              style={{ "--swatch": ENTITY_TYPE_INFO[selected.type].color } as CSSProperties}
+            >
+              {ENTITY_TYPE_INFO[selected.type].label}
+            </p>
             <button type="button" className="link-button" onClick={onClear}>
               Close
             </button>

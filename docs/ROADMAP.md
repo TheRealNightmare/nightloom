@@ -39,6 +39,17 @@ Passive infrastructure Shuttles from free public sources, then a graph UI good e
   - [x] R2 User management UI (Users page with temporary passwords shown once, forced password change at first sign-in, password reset, Audit log page with filters, details and chain verification)
   - [x] R3 Release automation (one version everywhere with `make bump-version` and a CI check, CHANGELOG, tag-triggered release workflow publishing multi-architecture images to GHCR with SBOM and provenance attestations, production pulling the images by `NIGHTLOOM_VERSION`; see [RELEASING.md](RELEASING.md))
 
+## UI redesign (Loom & thread)
+
+A new look for the web UI, in steps that each keep every screen working.
+
+- [x] U1 Design tokens, light and dark theme, self-hosted fonts, every existing screen restyled
+- [ ] U2 The 2D graph in the new look (knots and threads)
+- [ ] U3 2D graph interactions
+- [ ] U4 Saved views
+- [ ] U5 3D graph view
+- [ ] U6 The 3D loom on the sign-in page, and polish
+
 ## Next: Milestone 2
 
 ## M2 — Auto-pivot

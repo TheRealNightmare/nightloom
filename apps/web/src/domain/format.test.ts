@@ -26,10 +26,12 @@ describe("formatConfidence", () => {
 });
 
 describe("entity types", () => {
-  it("describes every type with a distinct color", () => {
+  it("gives every type its own color token", () => {
     const colors = ENTITY_TYPES.map((type) => ENTITY_TYPE_INFO[type].color);
     expect(new Set(colors).size).toBe(ENTITY_TYPES.length);
-    for (const color of colors) expect(color).toMatch(/^#[0-9a-f]{6}$/);
+    for (const type of ENTITY_TYPES) {
+      expect(ENTITY_TYPE_INFO[type].color).toBe(`var(--type-${type.replaceAll("_", "-")})`);
+    }
   });
 
   it("recognizes valid type names", () => {

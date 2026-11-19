@@ -1,5 +1,5 @@
 /**
- * Running Shuttles from the case Graph tab: the Run Shuttle section of the
+ * Running Shuttles from the case Graph tab: the "Run a Shuttle" section of the
  * side panel and the Jobs panel (live status, cancel, history, results).
  */
 import { act, screen, waitFor, within } from "@testing-library/react";
@@ -99,11 +99,11 @@ async function poll() {
   await act(() => vi.advanceTimersByTimeAsync(JOB_POLL_MS));
 }
 
-describe("Run Shuttle section", () => {
+describe("Run a Shuttle section", () => {
   it("lists the Shuttles for the entity's type with badges and links", async () => {
     await openGraph();
     await select(apex.key);
-    const section = within(details()).getByRole("region", { name: "Run Shuttle" });
+    const section = within(details()).getByRole("region", { name: "Run a Shuttle" });
     const card = await within(section).findByRole("listitem", { name: "DNS records" });
     expect(within(card).getByText(DNS_SHUTTLE.description)).toBeVisible();
     expect(within(card).getByText("Passive")).toBeVisible();
@@ -183,7 +183,7 @@ describe("Run Shuttle section", () => {
   it("is hidden from viewers and in closed cases", async () => {
     await openGraph({ role: "viewer" });
     await select(apex.key);
-    expect(within(details()).queryByRole("region", { name: "Run Shuttle" })).toBeNull();
+    expect(within(details()).queryByRole("region", { name: "Run a Shuttle" })).toBeNull();
     // Viewers still see the job history.
     await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
     expect(await within(jobsPanel()).findByText(NO_JOBS_MESSAGE)).toBeVisible();
@@ -357,6 +357,40 @@ describe("jobs", () => {
     await openGraph({ role: "viewer", jobs: [running] });
     await userEvent.click(screen.getByRole("button", { name: /Jobs/ }));
     expect(within(jobRow()).queryByRole("button", { name: "Cancel" })).toBeNull();
+  });
+
+  it("shows the running job over the graph, with its timer and Cancel", async () => {
+    const cancelling = { ...running, cancel_requested: true };
+    api.on("GET", `${path}/jobs/${running.id}`, () => json(cancelling));
+    api.on("POST", `${path}/jobs/${running.id}/cancel`, () => json(cancelling));
+    await openGraph({ jobs: [running, succeeded] });
+    const chip = await screen.findByRole("button", { name: "Running: dns on example.org" });
+    expect(chip).toBeVisible();
+    expect(chip.parentElement).toHaveTextContent(/\d+ (s|min)/);
+
+    // The label opens the Jobs panel; Cancel names what it cancels.
+    await userEvent.click(chip);
+    expect(jobsPanel()).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Cancel dns on example.org" }));
+    expect(api.callsTo("POST", `${path}/jobs/${running.id}/cancel`)).toHaveLength(1);
+    expect(await screen.findByRole("button", { name: "Cancel dns on example.org" })).toBeDisabled();
+  });
+
+  it("shows a refused cancel on the running-job chip", async () => {
+    api.on("POST", `${path}/jobs/${running.id}/cancel`, () =>
+      json({ detail: "This job has already finished." }, 409),
+    );
+    await openGraph({ jobs: [running] });
+    await userEvent.click(await screen.findByRole("button", { name: "Cancel dns on example.org" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("This job has already finished.");
+  });
+
+  it("shows no running-job chip without an active job, and no Cancel for viewers", async () => {
+    await openGraph({ role: "viewer", jobs: [running] });
+    expect(
+      await screen.findByRole("button", { name: "Running: dns on example.org" }),
+    ).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Cancel dns on example.org" })).toBeNull();
   });
 
   it("pages through the history and can be hidden", async () => {

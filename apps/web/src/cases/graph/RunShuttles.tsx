@@ -69,20 +69,22 @@ function ShuttleCard({
   return (
     <li className="shuttle-card" aria-labelledby={`${id}-title`}>
       <div className="shuttle-card__head">
-        <strong id={`${id}-title`}>{shuttle.title}</strong>
-        <span className="shuttle-card__badges">
-          <span className="mode-badge" data-mode={shuttle.mode}>
-            {shuttle.mode === "passive" ? "Passive" : "Active"}
-          </span>
-          {shuttle.network && (
-            <span className="mode-badge" data-network="true" title="Makes network requests">
-              Network
-            </span>
-          )}
-          <SensitivityBadge sensitivity={shuttle.sensitivity} />
-        </span>
+        <strong id={`${id}-title`} className="shuttle-card__name">
+          {shuttle.title}
+        </strong>
       </div>
       <p className="shuttle-card__description">{shuttle.description}</p>
+      <p className="shuttle-card__badges">
+        <span className="mode-badge" data-mode={shuttle.mode}>
+          {shuttle.mode === "passive" ? "Passive" : "Active"}
+        </span>
+        {shuttle.network && (
+          <span className="mode-badge" data-network="true" title="Makes network requests">
+            Network
+          </span>
+        )}
+        <SensitivityBadge sensitivity={shuttle.sensitivity} />
+      </p>
       {shuttle.usage_note && (
         <p className="shuttle-card__usage">
           <InfoIcon />
@@ -114,7 +116,7 @@ function ShuttleCard({
       <div className="button-row">
         <button
           type="button"
-          className="button button--primary"
+          className="button"
           disabled={blocked !== null || busy}
           aria-describedby={blocked !== null ? `${id}-blocked` : undefined}
           onClick={run}
@@ -167,7 +169,7 @@ export function RunShuttles({ entity, allowPersonEntities, onRun }: RunShuttlesP
   return (
     <section className="run-shuttles" aria-labelledby="run-shuttles-title">
       <h3 id="run-shuttles-title" className="panel__section">
-        Run Shuttle
+        Run a Shuttle
       </h3>
       {shown.kind === "loading" && <p className="table__muted">Loading Shuttles…</p>}
       {shown.kind === "error" && (

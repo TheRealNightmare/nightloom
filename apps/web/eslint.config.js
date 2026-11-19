@@ -40,6 +40,11 @@ export default defineConfig([
     extends: [js.configs.recommended],
   },
   {
+    // Served as-is and run in the page (public/theme-init.js).
+    files: ["public/**/*.js"],
+    languageOptions: { globals: globals.browser, sourceType: "script" },
+  },
+  {
     files: ["src/**/*.test.{ts,tsx}", "src/test/**"],
     rules: {
       // Test doubles are often partial objects or no-op functions.

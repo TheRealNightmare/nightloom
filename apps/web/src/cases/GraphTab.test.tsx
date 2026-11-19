@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resetSchemaCache, type ApiEntity, type ApiGraph } from "../api/graph";
-import { ENTITY_TYPE_INFO } from "../domain/entities";
+import { DEFAULT_GRAPH_PALETTE } from "../theme/graphPalette";
 import type { NightloomGraph } from "../graph/buildGraph";
 import {
   CASE_ID,
@@ -117,7 +117,7 @@ describe("showing the case graph", () => {
     const graph = (await sigma()).graph as unknown as NightloomGraph;
     expect(graph.order).toBe(3);
     expect(graph.size).toBe(2);
-    expect(graph.getNodeAttribute(ip.key, "color")).toBe(ENTITY_TYPE_INFO.ip_address.color);
+    expect(graph.getNodeAttribute(ip.key, "color")).toBe(DEFAULT_GRAPH_PALETTE.types.ip_address);
     expect(graph.getNodeAttribute(apex.key, "label")).toBe("example.org");
     expect(graph.getEdgeAttribute(subdomain.id, "label")).toBe("has subdomain");
     // The legend uses the same colors and labels.

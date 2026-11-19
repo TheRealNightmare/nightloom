@@ -10,9 +10,11 @@ Nightloom is an open-source, self-hosted OSINT tool that collects **public** inf
 
 > **Status: 0.1.0, the first release.** Cases, the investigation graph, eight passive Shuttles, user management, the audit log and production deployment work today; auto-pivot and the other [planned features](#planned-features) do not exist yet. See the [changelog](CHANGELOG.md) and the [roadmap](docs/ROADMAP.md).
 
-## Preview
+## The interface
 
-The web UI has sign-in, **investigation cases** (purpose, legal basis, members, activity) with an interactive graph that Shuttles fill with public data, user management and the audit log for admins, and a separate **demo graph** with fictional `example.org` data, clearly labelled "Demo data". A screenshot will be added here once the UI settles.
+The web UI has sign-in, **investigation cases** (purpose, legal basis, members, activity) with an interactive graph that Shuttles fill with public data, user management and the audit log for admins, and a separate **demo graph** with fictional `example.org` data, clearly labelled "Demo data".
+
+Its look is called *Loom & thread*: calm and crafted, ink and paper with a brass thread. Entities are knots and relationships are threads. Depth comes from fine hairlines and surface steps rather than shadows or glows; headings are set in Fraunces, the interface in Source Sans 3 and keys, IDs and timestamps in JetBrains Mono, all served by Nightloom itself. There is a light and a dark theme: the system setting is followed until you pick one with the toggle in the top bar. Screenshots will follow with the next interface updates.
 
 ## Quick deploy
 

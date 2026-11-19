@@ -53,6 +53,9 @@ export default defineConfig({
     // Playwright's end-to-end specs live in e2e/ and run with `pnpm e2e`.
     include: ["src/**/*.test.{ts,tsx}"],
     setupFiles: ["./src/test/setup.ts"],
+    // Without this, Vitest turns stylesheets into empty modules, `?raw` ones
+    // included. src/theme/tokens.ts and the token tests read their text.
+    css: { include: [/src\/styles\/.+\.css/] },
     // Above Testing Library's 4 s async limit (src/test/setup.ts), so a slow
     // findBy* fails with its own message rather than a test timeout.
     testTimeout: 15_000,

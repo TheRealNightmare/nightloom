@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Link, NavLink } from "react-router";
 
 import type { ReadinessView } from "../api/useReadiness";
+import { ThemeToggle } from "../theme/ThemeToggle";
 import { LogoMark } from "./LogoMark";
 import { StatusIndicator } from "./StatusIndicator";
 
@@ -28,7 +29,6 @@ export function TopBar({
         <Link to="/cases" className="brand" aria-label="Nightloom — cases">
           <LogoMark />
           <span className="brand__name">Nightloom</span>
-          <span className="brand__tagline">Every thread, woven into the full picture.</span>
         </Link>
         <nav className="topnav" aria-label="Main">
           <NavLink to="/cases" className="topnav__link">
@@ -59,6 +59,7 @@ export function TopBar({
           </span>
         )}
         <StatusIndicator readiness={readiness} onRecheck={onRecheck} />
+        <ThemeToggle />
         {account}
       </div>
     </header>

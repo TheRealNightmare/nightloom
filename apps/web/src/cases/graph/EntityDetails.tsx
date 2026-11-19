@@ -18,7 +18,7 @@ export function SensitivityBadge({ sensitivity }: { sensitivity: Sensitivity }) 
 export function AdmiraltyRating({ schema, rating }: { schema: Schema; rating: string }) {
   const id = useId();
   const meaning = describeAdmiralty(schema, rating);
-  if (meaning === null) return <code>{rating}</code>;
+  if (meaning === null) return <span className="admiralty__code">{rating}</span>;
   return (
     <span className="admiralty">
       <button type="button" className="admiralty__code" aria-describedby={id}>
@@ -33,6 +33,56 @@ export function AdmiraltyRating({ schema, rating }: { schema: Schema; rating: st
 }
 
 type CopyState = "idle" | "copied" | "failed";
+
+function CopyIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <rect
+        x="5.25"
+        y="5.25"
+        width="8"
+        height="8"
+        rx="1.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
+      <path
+        d="M10.75 3.25v-.5a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path
+        d="M3 8.5l3 3 7-7"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
 
 export function CopyButton({ text, label }: { text: string; label: string }) {
   const [state, setState] = useState<CopyState>("idle");
@@ -59,18 +109,22 @@ export function CopyButton({ text, label }: { text: string; label: string }) {
   };
 
   return (
-    <button
-      type="button"
-      className="link-button copy-button"
-      aria-label={label}
-      onClick={() => {
-        void copy();
-      }}
-    >
-      <span aria-live="polite">
-        {state === "copied" ? "Copied" : state === "failed" ? "Copy failed" : "Copy"}
+    <span className="copy-button">
+      <button
+        type="button"
+        className="icon-button"
+        aria-label={label}
+        title={label}
+        onClick={() => {
+          void copy();
+        }}
+      >
+        {state === "copied" ? <CheckIcon /> : <CopyIcon />}
+      </button>
+      <span className="copy-button__status" aria-live="polite">
+        {state === "copied" ? "Copied" : state === "failed" ? "Copy failed" : ""}
       </span>
-    </button>
+    </span>
   );
 }
 
@@ -114,7 +168,7 @@ export interface EntityDetailsProps {
   revision: number;
   canEdit: boolean;
   onDelete: (entity: EntityNode) => void;
-  /** Shown after the provenance (the Run Shuttle section for editors). */
+  /** Shown after the provenance (the "Run a Shuttle" section for editors). */
   children?: ReactNode;
 }
 
@@ -156,7 +210,7 @@ export function EntityDetails({
 
       <section>
         <h3 className="panel__section">Provenance</h3>
-        <dl className="facts">
+        <dl className="facts facts--mono">
           <div className="facts__row">
             <dt>First seen</dt>
             <dd>
