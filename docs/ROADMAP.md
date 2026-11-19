@@ -4,7 +4,7 @@ Milestones are ordered but not dated. Checked items are done; everything else is
 
 ## M0 — Foundation
 
-Complete, apart from the user management UI (users are managed through the API and `make create-admin` for now).
+Complete.
 
 - [x] Repository foundation (docs, license, templates, repo hygiene)
 - [x] API skeleton (FastAPI)
@@ -34,16 +34,19 @@ Passive infrastructure Shuttles from free public sources, then a graph UI good e
 - [x] 1.5 Wayback Machine CDX Shuttle (`wayback`: historical URLs and subdomains; query strings stripped, only parameter names kept; no key)
 - [x] 1.6 Reverse DNS Shuttle (`reverse-dns`: PTR names for an address or a netblock of up to 256 addresses, forward-confirmed; same resolver policy as `dns`)
 - [x] 1.7 Graph UX and export (filters kept in the URL, collapsed groups of leaves, JSON/GraphML/CSV export with person data redacted by default)
-- [ ] Release v0.1
+- [x] Release v0.1 ([0.1.0](../CHANGELOG.md#010---2026-11-19))
   - [x] R1 Production deployment (`deploy/compose.prod.yaml` with HTTPS through Caddy or Cloudflare Tunnel, real client IPs through the edge, `make secrets`, `make backup` / `make restore`, small-host variant; see [DEPLOYMENT.md](DEPLOYMENT.md))
   - [x] R2 User management UI (Users page with temporary passwords shown once, forced password change at first sign-in, password reset, Audit log page with filters, details and chain verification)
-  - [ ] R3 Release automation (tagged release with published images)
+  - [x] R3 Release automation (one version everywhere with `make bump-version` and a CI check, CHANGELOG, tag-triggered release workflow publishing multi-architecture images to GHCR with SBOM and provenance attestations, production pulling the images by `NIGHTLOOM_VERSION`; see [RELEASING.md](RELEASING.md))
+
+## Next: Milestone 2
 
 ## M2 — Auto-pivot
 
 - [ ] Auto-pivot with depth, budget, type allowlist and passive-only mode
 - [ ] Scan profiles
 - [ ] Result cache
+- [ ] Ownership verification before active Shuttles may run against a target
 
 ## M3 — Web recon and monitoring
 

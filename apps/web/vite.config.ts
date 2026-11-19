@@ -1,6 +1,14 @@
 /// <reference types="vitest/config" />
+import { readFileSync } from "node:fs";
+
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+
+// Shown in the account menu (src/version.ts). Read from package.json, which
+// scripts/bump-version.py keeps equal to every Python package's version.
+const { version } = JSON.parse(readFileSync(new URL("package.json", import.meta.url), "utf8")) as {
+  version: string;
+};
 
 // The API dev server (`make api`) or the Compose stack (`make up`) listens here.
 // Override when API_HOST_PORT is changed in .env.
@@ -8,6 +16,9 @@ const apiProxyTarget = process.env.NIGHTLOOM_API_PROXY_TARGET ?? "http://127.0.0
 
 export default defineConfig({
   plugins: [react()],
+  define: {
+    __NIGHTLOOM_VERSION__: JSON.stringify(version),
+  },
   server: {
     host: "127.0.0.1",
     port: 5173,

@@ -99,6 +99,9 @@ files = [
     "shuttles/registrable-domain/tests",
     "shuttles/wayback/src",
     "shuttles/wayback/tests",
+    "scripts/check-versions.py",
+    "scripts/bump-version.py",
+    "scripts/changelog-section.py",
     "scripts/tests",
 ]
 # Only re-exports the API's database fixtures; a second module named

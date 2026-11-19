@@ -1,6 +1,6 @@
 [project]
 name = "nightloom-core"
-version = "0.1.0.dev0"
+version = "0.1.0"
 description = "Nightloom's shared entity model: entity types, canonical keys, relationships and provenance."
 readme = "README.md"
 requires-python = ">=3.12"

@@ -7,6 +7,7 @@ import { ETHICS_URL } from "../components/LoginScreen";
 import { clearCookies, FakeApi, json, noContent, READY_BODY, TEST_USER } from "../test/fakeApi";
 import { FakeSigma } from "../test/sigmaMock";
 import { renderApp } from "../test/renderApp";
+import { APP_VERSION } from "../version";
 import { SESSION_ENDED_NOTICE, useAuth } from "./context";
 
 vi.mock("sigma", () => import("../test/sigmaMock"));
@@ -240,6 +241,15 @@ describe("signed in", () => {
     expect(screen.getByText("analyst@example.org")).toBeVisible();
     expect(screen.getByRole("menu")).toBeVisible();
     expect(screen.getByRole("menuitem", { name: "Change password" })).toHaveFocus();
+  });
+
+  it("shows the Nightloom version in the menu footer", async () => {
+    await renderSignedIn();
+    await userEvent.click(userMenuButton());
+    expect(APP_VERSION).toMatch(/^\d+\.\d+\.\d+(-rc\.\d+)?$/);
+    expect(screen.getByText(`Nightloom ${APP_VERSION}`)).toBeVisible();
+    // A footer, not one of the menu's items.
+    expect(within(screen.getByRole("menu")).queryByText(/Nightloom/)).not.toBeInTheDocument();
   });
 
   it("signs out with the CSRF header", async () => {

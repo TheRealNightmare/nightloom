@@ -2061,7 +2061,7 @@ wheels = [
 
 [[package]]
 name = "nightloom-api"
-version = "0.1.0.dev0"
+version = "0.1.0"
 source = { editable = "apps/api" }
 dependencies = [
     { name = "aioboto3" },
@@ -2102,7 +2102,7 @@ requires-dist = [
 
 [[package]]
 name = "nightloom-core"
-version = "0.1.0.dev0"
+version = "0.1.0"
 source = { editable = "packages/core" }
 dependencies = [
     { name = "idna" },
@@ -2121,7 +2121,7 @@ requires-dist = [
 
 [[package]]
 name = "nightloom-sdk"
-version = "0.1.0.dev0"
+version = "0.1.0"
 source = { editable = "packages/sdk" }
 dependencies = [
     { name = "httpcore" },
@@ -2140,7 +2140,7 @@ requires-dist = [
 
 [[package]]
 name = "nightloom-shuttle-crtsh"
-version = "1.0.0"
+version = "0.1.0"
 source = { editable = "shuttles/crtsh" }
 dependencies = [
     { name = "cryptography" },
@@ -2161,7 +2161,7 @@ requires-dist = [
 
 [[package]]
 name = "nightloom-shuttle-dns"
-version = "1.1.0"
+version = "0.1.0"
 source = { editable = "shuttles/dns" }
 dependencies = [
     { name = "dnspython" },
@@ -2178,7 +2178,7 @@ requires-dist = [
 
 [[package]]
 name = "nightloom-shuttle-internetdb"
-version = "1.0.0"
+version = "0.1.0"
 source = { editable = "shuttles/internetdb" }
 dependencies = [
     { name = "httpx" },
@@ -2197,7 +2197,7 @@ requires-dist = [
 
 [[package]]
 name = "nightloom-shuttle-rdap"
-version = "1.0.0"
+version = "0.1.0"
 source = { editable = "shuttles/rdap" }
 dependencies = [
     { name = "httpx" },
@@ -2214,7 +2214,7 @@ requires-dist = [
 
 [[package]]
 name = "nightloom-shuttle-registrable-domain"
-version = "1.0.0"
+version = "0.1.0"
 source = { editable = "shuttles/registrable-domain" }
 dependencies = [
     { name = "nightloom-core" },
@@ -2229,7 +2229,7 @@ requires-dist = [
 
 [[package]]
 name = "nightloom-shuttle-ripestat"
-version = "1.0.0"
+version = "0.1.0"
 source = { editable = "shuttles/ripestat" }
 dependencies = [
     { name = "httpx" },
@@ -2248,7 +2248,7 @@ requires-dist = [
 
 [[package]]
 name = "nightloom-shuttle-wayback"
-version = "1.0.0"
+version = "0.1.0"
 source = { editable = "shuttles/wayback" }
 dependencies = [
     { name = "httpx" },
@@ -2265,7 +2265,7 @@ requires-dist = [
 
 [[package]]
 name = "nightloom-worker"
-version = "0.1.0.dev0"
+version = "0.1.0"
 source = { editable = "apps/worker" }
 dependencies = [
     { name = "celery", extra = ["redis"] },

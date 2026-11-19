@@ -4,6 +4,7 @@ Runs the real script on a copy of the repository's .env.example in a
 temporary directory; needs bash and openssl (or python3).
 """
 
+import json
 import re
 import shutil
 import stat
@@ -20,6 +21,7 @@ SCRIPT = ROOT / "scripts" / "generate-env.sh"
 EXAMPLE = ROOT / ".env.example"
 HEX_SECRET = re.compile(r"^[0-9a-f]{64}$")
 BASH = shutil.which("bash") or "/bin/bash"
+CURRENT_VERSION = json.loads((ROOT / "apps" / "web" / "package.json").read_text())["version"]
 
 
 def run(tmp_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -93,6 +95,8 @@ def test_creates_a_production_env_with_random_consistent_secrets(workdir: Path) 
     assert env["NIGHTLOOM_DOMAIN"] == "nightloom.example.org"
     assert env["NIGHTLOOM_ACME_EMAIL"] == "ops@example.org"
     assert "NIGHTLOOM_SMALL_HOST" not in env
+    # The release images to pull: this checkout's version.
+    assert env["NIGHTLOOM_VERSION"] == CURRENT_VERSION
 
     # The API accepts the result in production (no placeholder left).
     settings = Settings(
@@ -177,9 +181,19 @@ def test_cloudflared_edge_and_small_host(workdir: Path) -> None:
     assert "TUNNEL_TOKEN" in result.stdout
 
 
+def test_version_option_selects_another_release(workdir: Path) -> None:
+    result = run(workdir, "--version", "v1.2.3-rc.4")
+
+    assert result.returncode == 0, result.stderr
+    assert read_env(workdir / ".env")["NIGHTLOOM_VERSION"] == "1.2.3-rc.4"
+    assert "NIGHTLOOM_VERSION=1.2.3-rc.4" in result.stdout
+
+
 @pytest.mark.parametrize(
     "args",
     [
+        ("--version", "latest"),
+        ("--version", "1.2"),
         ("--edge", "nginx"),
         ("--domain", "bad domain; rm -rf /"),
         ("--acme-email", "not an email"),

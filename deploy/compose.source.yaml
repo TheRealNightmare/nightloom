@@ -1,0 +1,30 @@
+# The production stack built from this source checkout instead of the
+# published release images. Layered on top of compose.yaml and
+# compose.prod.yaml:
+#
+#   make up FROM_SOURCE=1
+#
+# CI uses it to test the production configuration of the code under test,
+# before any image is published. On a server, prefer the release images
+# (docs/DEPLOYMENT.md); use this only to run an unreleased commit.
+
+services:
+  migrate:
+    image: nightloom-api:dev
+    pull_policy: never
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    image: nightloom-api:dev
+
+  worker:
+    image: nightloom-api:dev
+    pull_policy: never
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+    image: nightloom-web:dev
