@@ -146,6 +146,12 @@ services:
       NIGHTLOOM_NEO4J_URI: ${NIGHTLOOM_NEO4J_URI:?set NIGHTLOOM_NEO4J_URI in .env}
       NIGHTLOOM_NEO4J_USER: ${NIGHTLOOM_NEO4J_USER:?set NIGHTLOOM_NEO4J_USER in .env}
       NIGHTLOOM_NEO4J_PASSWORD: ${NIGHTLOOM_NEO4J_PASSWORD:?set NIGHTLOOM_NEO4J_PASSWORD in .env}
+      # Not used by the migrations, but with NIGHTLOOM_ENV=production the
+      # settings refuse to load while any secret is still the built-in
+      # change-me default.
+      NIGHTLOOM_VALKEY_URL: ${NIGHTLOOM_VALKEY_URL:?set NIGHTLOOM_VALKEY_URL in .env}
+      NIGHTLOOM_S3_ACCESS_KEY: ${NIGHTLOOM_S3_ACCESS_KEY}
+      NIGHTLOOM_S3_SECRET_KEY: ${NIGHTLOOM_S3_SECRET_KEY}
     # The image's HEALTHCHECK probes the HTTP server, which this container never runs.
     healthcheck:
       disable: true
@@ -285,6 +291,30 @@ services:
       timeout: 5s
       retries: 5
       start_period: 5s
+
+  # Tool container for the evidence bucket (rclone), used by `make backup`
+  # and `make restore` to copy the bucket over the S3 API. Never started by
+  # `up` (profile `tools`); run it with `docker compose ... run --rm s3-tools`.
+  # The remote is called `store`, e.g. `s3-tools lsf store:nightloom-evidence`.
+  s3-tools:
+    image: rclone/rclone:1.75.2
+    profiles: [tools]
+    restart: "no"
+    environment:
+      RCLONE_CONFIG_STORE_TYPE: s3
+      RCLONE_CONFIG_STORE_PROVIDER: SeaweedFS
+      RCLONE_CONFIG_STORE_ENDPOINT: ${NIGHTLOOM_S3_ENDPOINT:?set NIGHTLOOM_S3_ENDPOINT in .env}
+      RCLONE_CONFIG_STORE_ACCESS_KEY_ID: ${NIGHTLOOM_S3_ACCESS_KEY}
+      RCLONE_CONFIG_STORE_SECRET_ACCESS_KEY: ${NIGHTLOOM_S3_SECRET_KEY}
+      RCLONE_CONFIG_STORE_REGION: ${NIGHTLOOM_S3_REGION:-us-east-1}
+      RCLONE_CONFIG_STORE_FORCE_PATH_STYLE: "true"
+      # The bucket always exists (SeaweedFS creates it); never try to.
+      RCLONE_S3_NO_CHECK_BUCKET: "true"
+      # Configuration comes only from the variables above.
+      RCLONE_CONFIG: /dev/null
+    depends_on:
+      seaweedfs:
+        condition: service_healthy
 
 networks:
   default:

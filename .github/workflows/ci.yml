@@ -236,6 +236,11 @@ jobs:
           docker compose -f deploy/compose.yaml -f deploy/compose.test.yaml \
             --env-file .env.example config -q
 
+      # Production: every variant (each edge, small host) is valid and
+      # publishes nothing but the edge's ports 80/443.
+      - name: Check the production Compose files
+        run: deploy/tests/check-prod-ports.sh .env.example
+
       - uses: docker/setup-buildx-action@v4
 
       - name: Build API image
@@ -369,6 +374,12 @@ jobs:
           fi
           echo "/ returned $code $type."
 
+      # Which client address nginx trusts for each NIGHTLOOM_EDGE (none,
+      # caddy, cloudflared; unknown values must not start), with containers
+      # at fixed addresses standing in for the edge proxies.
+      - name: nginx real-IP handling per edge
+        run: deploy/tests/nginx-real-ip.sh nightloom-web:ci
+
       - name: Container logs
         if: failure()
         run: |
@@ -475,6 +486,59 @@ jobs:
       - name: Stop the stack
         if: always()
         run: make down TEST_DNS=1
+
+  # The production stack (deploy/compose.prod.yaml) with the HTTPS edge:
+  # Caddy with its internal CA for nightloom.localhost on 127.0.0.1:8443
+  # (deploy/compose.edge-test.yaml), secrets from `make secrets`. Checks the
+  # real client IP through Caddy and nginx, then a full backup -> wipe ->
+  # restore round trip.
+  deploy:
+    name: Production deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # CI-ONLY throwaway admin for the disposable stack of this job.
+      NIGHTLOOM_TEST_ADMIN_EMAIL: backup-admin@example.org
+      NIGHTLOOM_TEST_ADMIN_PASSWORD: ci-only-throwaway-backup-password
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - run: uv sync --locked
+
+      - name: Generate a production .env
+        run: make secrets ARGS="--domain nightloom.localhost --acme-email admin@example.org"
+
+      - name: Start the production stack with the test edge (waits until healthy)
+        run: make up EDGE_TEST=1
+
+      - name: Client IP, cookies and headers through Caddy
+        run: make test-edge EDGE_TEST=1
+
+      - name: Backup, wipe, restore and verify
+        run: make test-backup-restore EDGE_TEST=1
+        env:
+          NIGHTLOOM_TEST_DESTRUCTIVE: "1"
+          NIGHTLOOM_TEST_BASE_URL: https://127.0.0.1:8443
+
+      - name: Dump stack logs
+        if: failure()
+        run: |
+          make ps EDGE_TEST=1
+          docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml \
+            -f deploy/compose.edge-test.yaml --env-file .env logs --no-color --timestamps
+
+      - name: Stop the stack
+        if: always()
+        run: |
+          docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml \
+            -f deploy/compose.edge-test.yaml --env-file .env down -v --remove-orphans
 
   dco:
     name: DCO sign-off

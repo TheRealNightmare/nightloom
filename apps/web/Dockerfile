@@ -36,11 +36,20 @@ RUN pnpm -C apps/web build
 FROM ${NGINX_IMAGE}
 
 # The entrypoint renders templates into /etc/nginx/conf.d at start-up and
-# fills NGINX_LOCAL_RESOLVERS from /etc/resolv.conf.
+# fills NGINX_LOCAL_RESOLVERS from /etc/resolv.conf. NIGHTLOOM_EDGE selects
+# which proxy in front of nginx is trusted for the client's address (none,
+# caddy or cloudflared; see nginx/edge/); the edge addresses match
+# deploy/compose.prod.yaml.
 ENV NIGHTLOOM_API_UPSTREAM=http://api:8000 \
-    NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
+    NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1 \
+    NIGHTLOOM_EDGE=none \
+    NIGHTLOOM_CADDY_IP=172.30.0.11 \
+    NIGHTLOOM_CLOUDFLARED_IP=172.30.0.12
 
 COPY apps/web/nginx/default.conf.template /etc/nginx/templates/default.conf.template
+# Rendered into /etc/nginx/conf.d/edge/, which nginx.conf's conf.d/*.conf
+# glob does not include; default.conf includes the selected one.
+COPY apps/web/nginx/edge/ /etc/nginx/templates/edge/
 COPY apps/web/nginx/security-headers.conf /etc/nginx/snippets/security-headers.conf
 COPY --from=build /app/apps/web/dist /usr/share/nginx/html
 

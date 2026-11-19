@@ -6,7 +6,21 @@ ENV_FILE := $(if $(wildcard .env),.env,.env.example)
 # TEST_DNS=1 adds deploy/compose.test.yaml: a test-only local DNS server that
 # the worker's DNS Shuttle asks instead of the public resolvers (CI uses it so
 # DNS jobs never touch the internet). Pass it to up, test-integration and down.
-COMPOSE_FILES := -f deploy/compose.yaml $(if $(TEST_DNS),-f deploy/compose.test.yaml)
+#
+# Production (docs/DEPLOYMENT.md): when the env file says
+# NIGHTLOOM_ENV=production (`make secrets` writes that), every target also
+# uses deploy/compose.prod.yaml, and deploy/compose.small.yaml when it says
+# NIGHTLOOM_SMALL_HOST=true. Override with PROD=0 / PROD=1, SMALL=0 / SMALL=1.
+# EDGE_TEST=1 adds deploy/compose.edge-test.yaml (tests of the HTTPS edge
+# only: Caddy on 127.0.0.1:8443 with its internal CA, PostgreSQL published).
+env_flag = $(shell grep -qsE '^[[:space:]]*$(1)=[[:space:]]*"?$(2)"?[[:space:]]*$$' $(ENV_FILE) && echo 1 || echo 0)
+PROD ?= $(call env_flag,NIGHTLOOM_ENV,production)
+SMALL ?= $(call env_flag,NIGHTLOOM_SMALL_HOST,(true|1))
+COMPOSE_FILES := -f deploy/compose.yaml \
+	$(if $(filter 1,$(PROD)),-f deploy/compose.prod.yaml) \
+	$(if $(filter 1,$(SMALL)),-f deploy/compose.small.yaml) \
+	$(if $(EDGE_TEST),-f deploy/compose.edge-test.yaml) \
+	$(if $(TEST_DNS),-f deploy/compose.test.yaml)
 COMPOSE := docker compose $(COMPOSE_FILES) --env-file $(ENV_FILE)
 SERVICE ?=
 
@@ -55,6 +69,7 @@ CORE_COMPAT_RUN = uv run --python $(1) --no-project --with ./packages/core \
 	check check-all api \
 	worker shuttles \
 	up deps-up down logs ps reset compose-config migrate revision create-admin \
+	secrets backup restore test-edge test-nginx-edge test-backup-restore \
 	web-install web-dev web-lint web-fmt web-typecheck web-test web-build check-web e2e
 
 help: ## Show this help
@@ -110,12 +125,16 @@ worker: ## Run a Shuttle worker locally against the stack's services (needs `mak
 shuttles: ## List the installed Shuttles (the registry CLI)
 	uv run python -m nightloom_sdk.registry list
 
-up: ## Start the local stack (creates .env from .env.example if missing)
-	@if [ ! -f .env ]; then \
-		cp .env.example .env; \
-		echo "Created .env from .env.example. Change the change-me-... passwords in it."; \
+# `up` always uses .env (creating it first), unless ENV_FILE is given on the
+# command line (make up ENV_FILE=.env.staging).
+UP_ENV_FILE := $(if $(filter command line,$(origin ENV_FILE)),$(ENV_FILE),.env)
+
+up: ## Start the stack (creates .env from .env.example if missing; production with a production .env)
+	@if [ ! -f $(UP_ENV_FILE) ]; then \
+		cp .env.example $(UP_ENV_FILE); \
+		echo "Created $(UP_ENV_FILE) from .env.example. Change the change-me-... passwords in it."; \
 	fi
-	docker compose $(COMPOSE_FILES) --env-file .env up -d --build --wait
+	docker compose $(COMPOSE_FILES) --env-file $(UP_ENV_FILE) up -d --build --wait
 
 deps-up: ## Start only PostgreSQL, Valkey and Neo4j (enough for `make test`)
 	$(COMPOSE) up -d --wait postgres valkey neo4j
@@ -206,6 +225,40 @@ e2e: ## Run the browser end-to-end tests (needs `make up` and NIGHTLOOM_E2E_EMAI
 	fi; \
 	NIGHTLOOM_E2E_BASE_URL="$$web_url" $(WEB) e2e
 
-compose-config: ## Validate deploy/compose.yaml
+compose-config: ## Validate the Compose files in use (the production ones too when .env says so)
 	$(COMPOSE) config --quiet
-	@echo "deploy/compose.yaml is valid (env file: $(ENV_FILE))."
+	@echo "Compose configuration is valid ($(strip $(COMPOSE_FILES)); env file: $(ENV_FILE))."
+
+# --- Production ------------------------------------------------------------------
+# See docs/DEPLOYMENT.md. The scripts take the Compose command from
+# NIGHTLOOM_COMPOSE, so they use the same files as every other target.
+
+secrets: ## Create .env for production with random secrets (never overwrites; ARGS="--help" for options)
+	@scripts/generate-env.sh $(ARGS)
+
+backup: ## Back up PostgreSQL, Neo4j and the evidence bucket into backups/ (stops the API and worker briefly)
+	@NIGHTLOOM_COMPOSE="$(COMPOSE)" ENV_FILE="$(ENV_FILE)" scripts/backup.sh
+
+restore: ## Restore a backup: make restore BACKUP=backups/nightloom-<timestamp>.tar.gz (asks first)
+	@if [ -z "$(BACKUP)" ]; then echo 'Usage: make restore BACKUP=backups/nightloom-<timestamp>.tar.gz'; exit 1; fi
+	@NIGHTLOOM_COMPOSE="$(COMPOSE)" ENV_FILE="$(ENV_FILE)" scripts/restore.sh "$(BACKUP)"
+
+test-nginx-edge: ## Check nginx's client-IP handling for every NIGHTLOOM_EDGE (IMAGE=nightloom-web:dev)
+	deploy/tests/nginx-real-ip.sh $(or $(IMAGE),nightloom-web:dev)
+
+# Caddy's internal root certificate (public, not a secret) is copied out of
+# the container so the test verifies the TLS connection for real.
+test-edge: ## Test the HTTPS edge through Caddy (needs a production .env and `make up EDGE_TEST=1`)
+	@ca=$$(mktemp) && \
+	$(COMPOSE) cp caddy:/data/caddy/pki/authorities/local/root.crt "$$ca" >/dev/null 2>&1 && \
+	gateway=$$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}' \
+		"$$($(COMPOSE) ps -q caddy)") && \
+	$(STACK_ENV) \
+	NIGHTLOOM_TEST_EDGE_URL="https://127.0.0.1:$${EDGE_HTTPS_HOST_PORT:-8443}" \
+	NIGHTLOOM_TEST_EDGE_HOST="$${NIGHTLOOM_DOMAIN}" \
+	NIGHTLOOM_TEST_EDGE_CA="$$ca" \
+	NIGHTLOOM_TEST_EDGE_CLIENT_IP="$$gateway" \
+	uv run pytest -m integration --no-cov apps/api/tests/integration/test_edge.py
+
+test-backup-restore: ## DESTRUCTIVE: seed, back up, delete ALL volumes, restore, verify (CI; NIGHTLOOM_TEST_DESTRUCTIVE=1)
+	@NIGHTLOOM_COMPOSE="$(COMPOSE)" ENV_FILE="$(ENV_FILE)" scripts/test-backup-restore.sh

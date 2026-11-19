@@ -1,0 +1,8 @@
+# NIGHTLOOM_EDGE=none (default; local development): no proxy in front of
+# nginx is trusted. $remote_addr is the peer nginx sees, and an
+# X-Forwarded-For sent by the client is only passed on behind it, where the
+# API ignores it (it takes the address nginx appends).
+
+map $scheme $nightloom_forwarded_proto {
+    default $scheme;
+}

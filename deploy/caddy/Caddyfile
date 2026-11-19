@@ -1,0 +1,82 @@
+# Nightloom edge: HTTPS in front of the `web` container (nginx), which serves
+# the UI and proxies /api/ to the API. Used by deploy/compose.prod.yaml with
+# the `https` profile. Values come from .env:
+#
+#   NIGHTLOOM_DOMAIN      the public name, e.g. nightloom.example.org; its DNS
+#                         A/AAAA record must point at this host (ports 80 and
+#                         443 open) for the certificate to be issued
+#   NIGHTLOOM_ACME_EMAIL  contact for the certificate authority (expiry and
+#                         problem notices)
+#   NIGHTLOOM_HSTS        Strict-Transport-Security value (default one year,
+#                         this host only, no preload)
+#   NIGHTLOOM_CADDY_TLS   acme (default: Let's Encrypt, ZeroSSL as fallback)
+#                         or internal (Caddy's own CA, for tests only; names
+#                         ending in .localhost always use it)
+#
+# Caddy redirects HTTP to HTTPS and renews certificates by itself. The
+# security headers (CSP, X-Frame-Options, ...) are set by nginx and the API;
+# only HSTS, which belongs to the HTTPS edge, is added here.
+{
+	email {$NIGHTLOOM_ACME_EMAIL}
+	# No admin API: the configuration only changes with a container restart.
+	admin off
+	# Caddy is the first hop, so it trusts no X-Forwarded-For from clients:
+	# it sets X-Forwarded-For to the address it sees, which nginx trusts from
+	# Caddy's fixed address only (apps/web/nginx/edge/caddy.conf.template).
+	# No `trusted_proxies` here, ever, unless another proxy sits in front.
+}
+
+(tls-acme) {
+	# Automatic HTTPS with the global email above.
+}
+
+(tls-internal) {
+	tls internal
+}
+
+# Container healthcheck, reachable only inside the container.
+:8099 {
+	bind 127.0.0.1
+	respond /healthz "ok" 200
+	respond 404
+}
+
+{$NIGHTLOOM_DOMAIN} {
+	import tls-{$NIGHTLOOM_CADDY_TLS:acme}
+
+	# Same limit as nginx's default (client_max_body_size 1m); a larger
+	# body is refused with 413 before it is read.
+	request_body {
+		max_size 1MiB
+	}
+
+	header {
+		Strict-Transport-Security "{$NIGHTLOOM_HSTS:max-age=31536000}"
+		# Do not advertise the software (nginx already hides its version).
+		-Server
+		-Via
+	}
+
+	reverse_proxy web:8080
+
+	# Access log on stdout (rotated by Docker), without query strings: they
+	# may carry search terms or entity values. Cookie and Authorization
+	# headers are never logged by Caddy.
+	log {
+		output stdout
+		format filter {
+			wrap json
+			fields {
+				request>uri regexp "\?.*$" ""
+				request>headers>Referer delete
+			}
+		}
+	}
+}
+
+# Plain HTTP: only the redirect to HTTPS (what Caddy would do by itself, minus
+# the Server header). ACME HTTP challenges are still answered on this port.
+http://{$NIGHTLOOM_DOMAIN} {
+	header -Server
+	redir https://{host}{uri} 308
+}
