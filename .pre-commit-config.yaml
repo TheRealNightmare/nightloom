@@ -7,8 +7,16 @@ repos:
         # Two trailing spaces are a Markdown line break (see .editorconfig).
         args: [--markdown-linebreak-ext=md]
       - id: check-yaml
-        # pnpm writes the lockfile as two YAML documents.
-        exclude: ^pnpm-lock\.yaml$
+        # pnpm writes the lockfile as two YAML documents. The Compose files
+        # are checked below.
+        exclude: ^(pnpm-lock\.yaml|deploy/compose(\.[a-z-]+)?\.yaml)$
+      - id: check-yaml
+        name: check yaml (Compose files, syntax only)
+        # Compose overrides use the !reset and !override tags, which a plain
+        # YAML loader cannot construct. `docker compose config` (CI) checks
+        # their meaning.
+        args: [--unsafe]
+        files: ^deploy/compose(\.[a-z-]+)?\.yaml$
       - id: check-toml
       - id: check-added-large-files
       - id: check-merge-conflict

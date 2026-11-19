@@ -191,6 +191,8 @@ Every port is published on `127.0.0.1` only:
 | PostgreSQL | `127.0.0.1:5432` |
 | Valkey | `127.0.0.1:6379` |
 
+This is the development stack. Production (HTTPS, no published database ports, secrets, backups) is described in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
 If one of these ports is already taken on your machine (for example by a local PostgreSQL), set the matching `*_HOST_PORT` variable in `.env`, e.g. `POSTGRES_HOST_PORT=5433`. Containers still reach each other on the default ports.
 
 ### First admin
@@ -276,8 +278,9 @@ Every pull request and every push to `main` runs the [CI workflow](.github/workf
 | `core-compat` | `make test-core-compat` for one Python each (3.12.0, latest 3.12, 3.13): the `packages/core` tests, so canonical keys stay identical across interpreters |
 | `test` | `make test` (unit, database and graph tests of the API, worker, core, SDK and built-in Shuttles, at least 90% coverage) against PostgreSQL, Valkey and Neo4j service containers; the coverage report is uploaded as an artifact |
 | `web` | `pnpm install --frozen-lockfile`, then `make web-lint`, `web-typecheck`, `web-test` (at least 80% coverage; the report is uploaded as an artifact) and `web-build` |
-| `docker` | `deploy/compose.yaml` (alone and with `deploy/compose.test.yaml`) is valid; the API image builds and, started on its own, answers `/api/v1/health` with 200 and `/api/v1/ready` with 503; it ships Celery and the built-in Shuttles (`crtsh`, `dns`, `internetdb`, `rdap`, `registrable-domain`, `reverse-dns`, `ripestat`, `wayback`; the worker uses the same image), their configuration check passes with the defaults and refuses a private DNS resolver; the web image builds and serves `/` as HTML |
+| `docker` | `deploy/compose.yaml` (alone and with `deploy/compose.test.yaml`) is valid; every production variant (`deploy/tests/check-prod-ports.sh`: each edge profile, small host) is valid and publishes only the edge's ports; the API image builds and, started on its own, answers `/api/v1/health` with 200 and `/api/v1/ready` with 503; it ships Celery and the built-in Shuttles (`crtsh`, `dns`, `internetdb`, `rdap`, `registrable-domain`, `reverse-dns`, `ripestat`, `wayback`; the worker uses the same image), their configuration check passes with the defaults and refuses a private DNS resolver; the web image builds and serves `/` as HTML, and its nginx trusts the client address only from the configured edge (`deploy/tests/nginx-real-ip.sh`) |
 | `integration` | Starts the full stack with `make up TEST_DNS=1` (adds the test-only CoreDNS server), runs `make test-integration TEST_DNS=1` (including a `registrable-domain` job and a `dns` job against the test zone, end to end through the API, Valkey, the worker and Neo4j), checks `/api/v1/health` through the web container's proxy, then installs Playwright's Chromium and runs `make e2e` with throwaway CI-only credentials (the DNS Shuttle test uses the test zone); dumps the container logs and uploads the Playwright report on failure |
+| `deploy` | The production stack ([`deploy/compose.prod.yaml`](deploy/compose.prod.yaml)) with secrets from `make secrets` and the HTTPS edge using Caddy's internal CA (`make up EDGE_TEST=1`): `make test-edge` (the real client IP through Caddy and nginx despite spoofed headers, `Secure` cookies, HSTS, body limit, HTTP redirect), then `make test-backup-restore` (seed a case, entities, audit events and an object, back up, delete every volume, restore, verify) |
 | `dco` | Pull requests only: every non-merge commit has a `Signed-off-by:` trailer (see [DCO](#developer-certificate-of-origin-dco)) |
 
 The Python jobs install dependencies with `uv sync --locked` and the web job with `pnpm install --frozen-lockfile`, so CI fails if `uv.lock` or `pnpm-lock.yaml` is out of date. Commit the updated lockfile whenever you change dependencies.

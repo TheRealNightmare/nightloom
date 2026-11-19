@@ -27,6 +27,10 @@ The maintainers will acknowledge your report, investigate, and coordinate a fix 
 
 How authentication works (server-side sessions, CSRF protection, password hashing, roles and sign-in rate limits) is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#authentication). Reading it first makes a report easier to write and to triage.
 
+## Deploying securely
+
+Run production instances as described in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): `make secrets` for the secrets, HTTPS through Caddy or Cloudflare Tunnel, no database or API ports published, nightly backups copied off the machine, and the production checklist at the end of that guide. Never use the test-only Compose files (`deploy/compose.test.yaml`, `deploy/compose.edge-test.yaml`) on a server.
+
 ## Scope
 
 In scope: vulnerabilities in Nightloom's own code and default configuration — for example authentication or authorization bypass, exposure of users' stored API keys, injection (including Cypher injection), or a guardrail from [ETHICS.md](ETHICS.md) that can be bypassed.

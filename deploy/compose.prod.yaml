@@ -1,0 +1,199 @@
+# Nightloom production overrides, layered on top of compose.yaml.
+#
+#   make secrets      # once: creates .env with strong random secrets
+#   docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml --env-file .env up -d
+#
+# (`make up` does the same when .env has NIGHTLOOM_ENV=production.) See
+# docs/DEPLOYMENT.md for the whole procedure.
+#
+# What changes compared with the development stack:
+#   - production mode (the API refuses placeholder secrets) and Secure cookies;
+#   - no service publishes a port except the edge: PostgreSQL, Neo4j, Valkey,
+#     SeaweedFS, the API and nginx are reachable only on the Compose network;
+#   - one edge in front of nginx, chosen with a Compose profile
+#     (COMPOSE_PROFILES in .env, or --profile on the command line):
+#       https   Caddy with automatic HTTPS (Let's Encrypt), ports 80 and 443
+#       tunnel  cloudflared (Cloudflare Tunnel), no published ports at all
+#     and NIGHTLOOM_EDGE (caddy | cloudflared) tells nginx which one it may
+#     trust for the client's address. The two must match;
+#   - log rotation and memory limits sized for a 16 GB host (compose.small.yaml
+#     lowers them for an 8 GB host such as a Raspberry Pi 4B).
+
+# json-file logs, rotated: at most 5 x 10 MB per container.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "5"
+
+services:
+  postgres:
+    ports: !reset []
+    logging: *logging
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+
+  neo4j:
+    ports: !reset []
+    logging: *logging
+    environment:
+      # Heap + page cache + ~1 GB for the JVM and the OS buffers stay under
+      # the container limit.
+      NEO4J_server_memory_heap_initial__size: 2g
+      NEO4J_server_memory_heap_max__size: 2g
+      NEO4J_server_memory_pagecache_size: 1g
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+
+  valkey:
+    ports: !reset []
+    logging: *logging
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  seaweedfs:
+    ports: !reset []
+    logging: *logging
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  migrate:
+    logging: *logging
+    environment:
+      NIGHTLOOM_ENV: production
+      NIGHTLOOM_COOKIE_SECURE: "true"
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  api:
+    ports: !reset []
+    logging: *logging
+    environment:
+      NIGHTLOOM_ENV: production
+      NIGHTLOOM_COOKIE_SECURE: "true"
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  worker:
+    logging: *logging
+    environment:
+      NIGHTLOOM_ENV: production
+      NIGHTLOOM_COOKIE_SECURE: "true"
+    deploy:
+      resources:
+        limits:
+          # NIGHTLOOM_WORKER_CONCURRENCY (default 4) processes of at most
+          # 512 MB each, plus the parent process.
+          memory: 3g
+
+  web:
+    ports: !reset []
+    logging: *logging
+    environment:
+      # Which edge proxy nginx trusts for the client's address (see
+      # apps/web/nginx/edge/). Must match the active profile.
+      NIGHTLOOM_EDGE: ${NIGHTLOOM_EDGE:?set NIGHTLOOM_EDGE in .env (caddy or cloudflared)}
+      NIGHTLOOM_CADDY_IP: ${NIGHTLOOM_CADDY_IP:-172.30.0.11}
+      NIGHTLOOM_CLOUDFLARED_IP: ${NIGHTLOOM_CLOUDFLARED_IP:-172.30.0.12}
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  # Edge option a: Caddy terminates HTTPS with automatic certificates for
+  # NIGHTLOOM_DOMAIN and proxies everything to nginx. Configuration in
+  # deploy/caddy/Caddyfile.
+  caddy:
+    image: caddy:2.11.9-alpine
+    profiles: [https]
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
+    environment:
+      # Empty defaults so `docker compose config` works with the tunnel
+      # profile too; Caddy refuses to start without a domain.
+      NIGHTLOOM_DOMAIN: ${NIGHTLOOM_DOMAIN:-}
+      NIGHTLOOM_ACME_EMAIL: ${NIGHTLOOM_ACME_EMAIL:-}
+      NIGHTLOOM_HSTS: ${NIGHTLOOM_HSTS:-max-age=31536000}
+      NIGHTLOOM_CADDY_TLS: ${NIGHTLOOM_CADDY_TLS:-acme}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates and ACME account keys: keep this volume across upgrades
+      # (Let's Encrypt rate-limits re-issuing).
+      - caddy_data:/data
+      - caddy_config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    networks:
+      default:
+        # Fixed and outside NIGHTLOOM_NETWORK_IP_RANGE, so nginx can trust
+        # exactly this address for X-Forwarded-For.
+        ipv4_address: ${NIGHTLOOM_CADDY_IP:-172.30.0.11}
+    healthcheck:
+      # A listener on 127.0.0.1:8099 inside the container (see the Caddyfile).
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8099/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging: *logging
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  # Edge option b: cloudflared opens an outbound tunnel to Cloudflare, which
+  # serves the public hostname; nothing listens on the host. Create the
+  # tunnel in the Cloudflare dashboard with the service http://web:8080 and
+  # put its token in TUNNEL_TOKEN (docs/DEPLOYMENT.md).
+  cloudflared:
+    image: cloudflare/cloudflared:2026.11.1
+    profiles: [tunnel]
+    restart: unless-stopped
+    # Updates come from a new pinned image, never from cloudflared itself.
+    # Metrics (and /ready for the healthcheck) only inside the container.
+    command: ["tunnel", "--no-autoupdate", "--metrics", "127.0.0.1:2000", "run"]
+    depends_on:
+      web:
+        condition: service_healthy
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    networks:
+      default:
+        # Fixed and outside NIGHTLOOM_NETWORK_IP_RANGE, so nginx can trust
+        # exactly this address for CF-Connecting-IP.
+        ipv4_address: ${NIGHTLOOM_CLOUDFLARED_IP:-172.30.0.12}
+    healthcheck:
+      # Ready once at least one connection to Cloudflare's edge is up.
+      test: ["CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:2000", "ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging: *logging
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  s3-tools:
+    logging: *logging
+
+volumes:
+  caddy_data:
+  caddy_config:

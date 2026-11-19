@@ -47,3 +47,6 @@ desktop.ini
 data/
 .docker-data/
 *.log
+
+# --- Backups (make backup) ---
+/backups/

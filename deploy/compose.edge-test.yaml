@@ -1,0 +1,25 @@
+# TEST ONLY: the production stack with the `https` edge, made testable on one
+# machine. Layered on top of compose.yaml and compose.prod.yaml:
+#
+#   make up EDGE_TEST=1      # with a production .env (make secrets) and
+#                            # NIGHTLOOM_DOMAIN=nightloom.localhost
+#   make test-edge EDGE_TEST=1
+#
+# - Caddy issues its certificate from its own internal CA (no Let's Encrypt,
+#   no public DNS) and listens on 127.0.0.1:8443 (HTTPS) and 127.0.0.1:8081
+#   (HTTP) instead of 0.0.0.0:443 and :80.
+# - PostgreSQL is published on 127.0.0.1 again so the test can read the
+#   client IP the API stored with a session.
+# Never use this file on a server.
+
+services:
+  caddy:
+    environment:
+      NIGHTLOOM_CADDY_TLS: internal
+    ports: !override
+      - "127.0.0.1:${EDGE_HTTP_HOST_PORT:-8081}:80"
+      - "127.0.0.1:${EDGE_HTTPS_HOST_PORT:-8443}:443"
+
+  postgres:
+    ports: !override
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"

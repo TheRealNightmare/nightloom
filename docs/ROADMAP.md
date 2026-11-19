@@ -34,7 +34,10 @@ Passive infrastructure Shuttles from free public sources, then a graph UI good e
 - [x] 1.5 Wayback Machine CDX Shuttle (`wayback`: historical URLs and subdomains; query strings stripped, only parameter names kept; no key)
 - [x] 1.6 Reverse DNS Shuttle (`reverse-dns`: PTR names for an address or a netblock of up to 256 addresses, forward-confirmed; same resolver policy as `dns`)
 - [x] 1.7 Graph UX and export (filters kept in the URL, collapsed groups of leaves, JSON/GraphML/CSV export with person data redacted by default)
-- [ ] Release v0.1 (production Compose file with HTTPS, backups, user management UI, tagged release with published images)
+- [ ] Release v0.1
+  - [x] R1 Production deployment (`deploy/compose.prod.yaml` with HTTPS through Caddy or Cloudflare Tunnel, real client IPs through the edge, `make secrets`, `make backup` / `make restore`, small-host variant; see [DEPLOYMENT.md](DEPLOYMENT.md))
+  - [ ] R2 User management UI
+  - [ ] R3 Release automation (tagged release with published images)
 
 ## M2 — Auto-pivot
 

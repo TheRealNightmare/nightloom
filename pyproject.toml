@@ -41,6 +41,7 @@ src = [
     "packages/sdk/tests",
     "shuttles/*/src",
     "shuttles/*/tests",
+    "scripts/tests",
 ]
 
 [tool.ruff.lint]
@@ -98,6 +99,7 @@ files = [
     "shuttles/registrable-domain/tests",
     "shuttles/wayback/src",
     "shuttles/wayback/tests",
+    "scripts/tests",
 ]
 # Only re-exports the API's database fixtures; a second module named
 # `conftest` would clash with apps/api/tests/conftest.py.
@@ -143,6 +145,7 @@ testpaths = [
     "packages/core/tests",
     "packages/sdk/tests",
     "shuttles",
+    "scripts/tests",
 ]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

@@ -1,0 +1,90 @@
+# Small-host overrides (8 GB RAM, e.g. a Raspberry Pi 4B with a 64-bit OS),
+# layered on top of compose.yaml and compose.prod.yaml:
+#
+#   docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml \
+#     -f deploy/compose.small.yaml --env-file .env up -d
+#
+# (`make up` adds this file when .env has NIGHTLOOM_SMALL_HOST=true.)
+# Lower Neo4j memory and a single worker process: Shuttle jobs run one at a
+# time, and very large graphs get slower. The limits add up to about 5 GB,
+# leaving room for the OS and the page cache. Every image used publishes
+# linux/arm64; a 32-bit OS (armv7) is not supported (Neo4j has no 32-bit
+# image). See docs/DEPLOYMENT.md#small-hosts-and-raspberry-pi.
+
+services:
+  postgres:
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  neo4j:
+    environment:
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 768m
+      NEO4J_server_memory_pagecache_size: 256m
+    deploy:
+      resources:
+        limits:
+          memory: 1536m
+
+  valkey:
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  seaweedfs:
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  migrate:
+    deploy:
+      resources:
+        limits:
+          memory: 768m
+
+  api:
+    deploy:
+      resources:
+        limits:
+          memory: 768m
+
+  worker:
+    # One job at a time, whatever NIGHTLOOM_WORKER_CONCURRENCY says.
+    command:
+      - celery
+      - --app=nightloom_worker.celery_app
+      - worker
+      - --queues=shuttles
+      - --hostname=worker@%h
+      - --concurrency=1
+      - --max-tasks-per-child=100
+      - --max-memory-per-child=524288
+      - --loglevel=${NIGHTLOOM_LOG_LEVEL:-INFO}
+      - --without-gossip
+      - --without-mingle
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  web:
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+
+  caddy:
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+
+  cloudflared:
+    deploy:
+      resources:
+        limits:
+          memory: 128m
