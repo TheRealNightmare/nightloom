@@ -1,6 +1,6 @@
 [project]
 name = "nightloom-worker"
-version = "0.1.0.dev0"
+version = "0.1.0"
 description = "Nightloom background worker (Celery): runs Shuttle jobs."
 readme = "README.md"
 requires-python = ">=3.12"

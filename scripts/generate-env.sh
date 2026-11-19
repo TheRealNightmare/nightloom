@@ -3,7 +3,7 @@
 #
 #   scripts/generate-env.sh [--edge caddy|cloudflared] [--domain NAME]
 #                           [--acme-email ADDRESS] [--small] [--force]
-#                           [--example PATH] [--output PATH]
+#                           [--version X.Y.Z] [--example PATH] [--output PATH]
 #
 # - Refuses to touch an existing .env; --force first copies it to
 #   .env.backup-<UTC timestamp> (mode 600) and prints a warning.
@@ -14,6 +14,10 @@
 # - Sets NIGHTLOOM_ENV=production, NIGHTLOOM_COOKIE_SECURE=true and the edge
 #   (NIGHTLOOM_EDGE and the matching COMPOSE_PROFILES), plus the domain, ACME
 #   email and small-host switch when given.
+# - Sets NIGHTLOOM_VERSION, the release whose images production pulls, to
+#   this checkout's version (apps/web/package.json, which
+#   scripts/check-versions.py keeps equal to every other manifest), or to
+#   --version.
 # - Writes the file with mode 600 and prints the names of the values it
 #   generated, never the values.
 set -euo pipefail
@@ -26,6 +30,7 @@ domain=""
 acme_email=""
 small=false
 force=false
+version=""
 
 usage() {
   sed -n '2,8p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
@@ -38,6 +43,7 @@ while (($# > 0)); do
     --acme-email) acme_email=${2:?--acme-email needs a value}; shift 2 ;;
     --small) small=true; shift ;;
     --force) force=true; shift ;;
+    --version) version=${2:?--version needs a value}; shift 2 ;;
     --example) example=${2:?--example needs a path}; shift 2 ;;
     --output) output=${2:?--output needs a path}; shift 2 ;;
     -h | --help) usage; exit 0 ;;
@@ -57,6 +63,14 @@ if [[ -n "$domain" && ! "$domain" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]
 fi
 if [[ -n "$acme_email" && ! "$acme_email" =~ ^[^[:space:]\"\'\#\$\`\\]+@[A-Za-z0-9.-]+$ ]]; then
   echo "--acme-email must be an email address." >&2
+  exit 2
+fi
+if [[ -z "$version" ]]; then
+  version=$(sed -n 's/^  "version": "\([^"]*\)",$/\1/p' "$root/apps/web/package.json" | head -n 1)
+fi
+version=${version#v}
+if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
+  echo "--version must be a release version such as 0.1.0 (got '$version')." >&2
   exit 2
 fi
 if [[ ! -f "$example" ]]; then
@@ -98,6 +112,7 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     "# COMPOSE_PROFILES="*) line="COMPOSE_PROFILES=$profile" ;;
     "# NIGHTLOOM_DOMAIN="*) [[ -n "$domain" ]] && line="NIGHTLOOM_DOMAIN=$domain" ;;
     "# NIGHTLOOM_ACME_EMAIL="*) [[ -n "$acme_email" ]] && line="NIGHTLOOM_ACME_EMAIL=$acme_email" ;;
+    "# NIGHTLOOM_VERSION="*) line="NIGHTLOOM_VERSION=$version" ;;
     "# NIGHTLOOM_SMALL_HOST="*) [[ "$small" == true ]] && line="NIGHTLOOM_SMALL_HOST=true" ;;
   esac
   # Replace each placeholder in an assignment (comments are left alone).
@@ -130,7 +145,7 @@ if ((${#generated_names[@]} > 0)); then
   echo "Generated random values for:"
   printf '  %s\n' "${generated_names[@]}"
 fi
-echo "Also set: NIGHTLOOM_ENV=production, NIGHTLOOM_COOKIE_SECURE=true, NIGHTLOOM_EDGE=$edge, COMPOSE_PROFILES=$profile."
+echo "Also set: NIGHTLOOM_ENV=production, NIGHTLOOM_COOKIE_SECURE=true, NIGHTLOOM_EDGE=$edge, COMPOSE_PROFILES=$profile, NIGHTLOOM_VERSION=$version."
 if [[ "$edge" == caddy && (-z "$domain" || -z "$acme_email") ]]; then
   echo "Next: set NIGHTLOOM_DOMAIN and NIGHTLOOM_ACME_EMAIL in $output (or rerun with --domain/--acme-email and --force)."
 fi

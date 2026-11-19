@@ -3,6 +3,7 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import type { User } from "../api/client";
 import { useAuth } from "../auth/context";
 import { ROLE_LABELS } from "../auth/messages";
+import { APP_VERSION } from "../version";
 import { ChangePasswordDialog } from "./ChangePasswordDialog";
 
 export interface UserMenuProps {
@@ -11,8 +12,8 @@ export interface UserMenuProps {
 
 /**
  * Top-bar account menu (menu button pattern): the user's name and role,
- * "Change password" and "Sign out". Escape closes it and returns focus to
- * the button.
+ * "Change password" and "Sign out", and the Nightloom version in its footer.
+ * Escape closes it and returns focus to the button.
  */
 export function UserMenu({ user }: UserMenuProps) {
   const { logout } = useAuth();
@@ -158,6 +159,7 @@ export function UserMenu({ user }: UserMenuProps) {
               </button>
             </li>
           </ul>
+          <p className="user-menu__version">Nightloom {APP_VERSION}</p>
         </div>
       )}
       {dialogOpen && (

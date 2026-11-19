@@ -17,7 +17,17 @@
 #     and NIGHTLOOM_EDGE (caddy | cloudflared) tells nginx which one it may
 #     trust for the client's address. The two must match;
 #   - log rotation and memory limits sized for a 16 GB host (compose.small.yaml
-#     lowers them for an 8 GB host such as a Raspberry Pi 4B).
+#     lowers them for an 8 GB host such as a Raspberry Pi 4B);
+#   - the Nightloom images are the published release images from GHCR
+#     (linux/amd64 and linux/arm64), selected by NIGHTLOOM_VERSION in .env;
+#     nothing is built on the server. `make deploy-pull` downloads them. To run
+#     production from a source checkout instead (CI does), add
+#     compose.source.yaml (`make ... FROM_SOURCE=1`).
+
+# The release images (.github/workflows/release.yml). api, worker and migrate
+# share the backend image.
+x-backend-image: &backend-image
+  image: ghcr.io/therealnightmare/nightloom-backend:${NIGHTLOOM_VERSION:?set NIGHTLOOM_VERSION in .env (the release to run, e.g. 0.1.0)}
 
 # json-file logs, rotated: at most 5 x 10 MB per container.
 x-logging: &logging
@@ -66,6 +76,8 @@ services:
           memory: 1g
 
   migrate:
+    <<: *backend-image
+    pull_policy: missing
     logging: *logging
     environment:
       NIGHTLOOM_ENV: production
@@ -76,6 +88,8 @@ services:
           memory: 1g
 
   api:
+    <<: *backend-image
+    build: !reset null
     ports: !reset []
     logging: *logging
     environment:
@@ -87,6 +101,8 @@ services:
           memory: 1g
 
   worker:
+    <<: *backend-image
+    pull_policy: missing
     logging: *logging
     environment:
       NIGHTLOOM_ENV: production
@@ -99,6 +115,8 @@ services:
           memory: 3g
 
   web:
+    image: ghcr.io/therealnightmare/nightloom-web:${NIGHTLOOM_VERSION:?set NIGHTLOOM_VERSION in .env (the release to run, e.g. 0.1.0)}
+    build: !reset null
     ports: !reset []
     logging: *logging
     environment:

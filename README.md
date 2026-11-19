@@ -1,5 +1,6 @@
 # Nightloom
 
+[![Latest release](https://img.shields.io/github/v/release/TheRealNightmare/nightloom?sort=semver)](https://github.com/TheRealNightmare/nightloom/releases/latest)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![CI](https://github.com/TheRealNightmare/nightloom/actions/workflows/ci.yml/badge.svg)](https://github.com/TheRealNightmare/nightloom/actions/workflows/ci.yml)
 
@@ -7,15 +8,28 @@
 
 Nightloom is an open-source, self-hosted OSINT tool that collects **public** information and maps it as an interactive investigation graph. Start from a domain, IP address, organization or other entity, let Nightloom pivot through public data sources, and explore how everything connects — with provenance, evidence and an audit trail for every finding.
 
-> 🚧 **Status: early development.** Nothing below is implemented yet. This README describes what is **planned**. See the [roadmap](docs/ROADMAP.md) for progress.
+> **Status: 0.1.0, the first release.** Cases, the investigation graph, eight passive Shuttles, user management, the audit log and production deployment work today; auto-pivot and the other [planned features](#planned-features) do not exist yet. See the [changelog](CHANGELOG.md) and the [roadmap](docs/ROADMAP.md).
 
 ## Preview
 
-The web UI has sign-in, **investigation cases** (purpose, legal basis, members, activity) and a separate **demo graph** with fictional `example.org` data, clearly labelled "Demo data". Cases have no collected data yet: data collection (Shuttles) is the next milestone. A screenshot will be added here once the UI settles.
+The web UI has sign-in, **investigation cases** (purpose, legal basis, members, activity) with an interactive graph that Shuttles fill with public data, user management and the audit log for admins, and a separate **demo graph** with fictional `example.org` data, clearly labelled "Demo data". A screenshot will be added here once the UI settles.
+
+## Quick deploy
+
+Each release publishes multi-architecture images (`linux/amd64`, `linux/arm64`) to GitHub Container Registry, `ghcr.io/therealnightmare/nightloom-backend` and `ghcr.io/therealnightmare/nightloom-web`, so a server only downloads them. On a Linux server with Docker and a DNS name pointing at it:
+
+```sh
+git clone --branch v0.1.0 https://github.com/TheRealNightmare/nightloom.git && cd nightloom
+make secrets ARGS="--domain nightloom.example.org --acme-email you@example.org"
+make deploy-pull && make up
+make create-admin email=you@example.org name="Your Name"
+```
+
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) covers the requirements, HTTPS with Caddy or Cloudflare Tunnel, backups, upgrades and Raspberry Pi hosts. Releases are listed on the [releases page](https://github.com/TheRealNightmare/nightloom/releases) and in the [changelog](CHANGELOG.md).
 
 ## Quick start (developers)
 
-So far there is an API with authentication and user management, the local infrastructure and the web UI skeleton. With [uv](https://docs.astral.sh/uv/), [Node.js](https://nodejs.org/) 26 LTS (with [Corepack](https://github.com/nodejs/corepack) for pnpm) and `make` installed:
+With [uv](https://docs.astral.sh/uv/), [Node.js](https://nodejs.org/) 26 LTS (with [Corepack](https://github.com/nodejs/corepack) for pnpm) and `make` installed:
 
 ```sh
 make install       # install the Python dependencies
@@ -38,7 +52,7 @@ Then open <http://127.0.0.1:8080> and sign in with the admin you just created.
 
 To run Nightloom on a server with HTTPS, generated secrets and backups, follow [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
-There is no public sign-up: the first admin is created from the command line, and admins add everyone else (through the API for now; the user management screens are not built yet).
+There is no public sign-up: the first admin is created from the command line, and admins add everyone else on the *Users* page.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md#development-setup) for the full development setup and [Running the stack](CONTRIBUTING.md#running-the-stack).
 
@@ -112,6 +126,8 @@ docs/         Documentation
 ## Documentation
 
 - [Deployment](docs/DEPLOYMENT.md)
+- [Changelog](CHANGELOG.md)
+- [Releasing](docs/RELEASING.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Roadmap](docs/ROADMAP.md)
 - [Ethics and acceptable use](ETHICS.md)

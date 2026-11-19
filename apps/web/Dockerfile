@@ -10,7 +10,10 @@ ARG NODE_IMAGE=node:26.13.1-alpine3.24
 ARG NGINX_IMAGE=nginxinc/nginx-unprivileged:1.30.6-alpine3.24
 
 # --- build: install the locked dependencies and build the static site -------
-FROM ${NODE_IMAGE} AS build
+# Runs on the build machine's own platform: the output is static files, the
+# same for every target, so a multi-architecture build (linux/arm64 on an
+# amd64 machine) does not run Node.js under emulation.
+FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS build
 
 # Node 25+ no longer bundles Corepack; install the pinned version, which then
 # provides the pnpm version pinned in package.json ("packageManager").

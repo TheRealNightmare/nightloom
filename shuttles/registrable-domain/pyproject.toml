@@ -1,6 +1,6 @@
 [project]
 name = "nightloom-shuttle-registrable-domain"
-version = "1.0.0"
+version = "0.1.0"
 description = "Built-in Nightloom Shuttle: a domain's registrable domain, from the bundled Public Suffix List (no network)."
 readme = "README.md"
 requires-python = ">=3.12"

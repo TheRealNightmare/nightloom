@@ -1,6 +1,6 @@
 [project]
 name = "nightloom-shuttle-wayback"
-version = "1.0.0"
+version = "0.1.0"
 description = "Built-in Nightloom Shuttle: a domain's archived URLs and subdomains from the Internet Archive's Wayback Machine (CDX API)."
 readme = "README.md"
 requires-python = ">=3.12"

@@ -1,6 +1,6 @@
 [project]
 name = "nightloom-shuttle-dns"
-version = "1.1.0"
+version = "0.1.0"
 description = "Built-in Nightloom Shuttles: a domain's public DNS records (A, AAAA, CNAME, MX, NS, TXT, SOA, CAA, DMARC) and reverse DNS (PTR) for addresses and small netblocks, through public resolvers only."
 readme = "README.md"
 requires-python = ">=3.12"

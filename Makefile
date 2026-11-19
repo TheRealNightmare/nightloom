@@ -13,15 +13,23 @@ ENV_FILE := $(if $(wildcard .env),.env,.env.example)
 # NIGHTLOOM_SMALL_HOST=true. Override with PROD=0 / PROD=1, SMALL=0 / SMALL=1.
 # EDGE_TEST=1 adds deploy/compose.edge-test.yaml (tests of the HTTPS edge
 # only: Caddy on 127.0.0.1:8443 with its internal CA, PostgreSQL published).
+#
+# Production runs the published release images named by NIGHTLOOM_VERSION in
+# the env file and never builds them. FROM_SOURCE=1 adds
+# deploy/compose.source.yaml, which builds them from this checkout instead
+# (CI tests the production configuration that way).
 env_flag = $(shell grep -qsE '^[[:space:]]*$(1)=[[:space:]]*"?$(2)"?[[:space:]]*$$' $(ENV_FILE) && echo 1 || echo 0)
 PROD ?= $(call env_flag,NIGHTLOOM_ENV,production)
 SMALL ?= $(call env_flag,NIGHTLOOM_SMALL_HOST,(true|1))
 COMPOSE_FILES := -f deploy/compose.yaml \
 	$(if $(filter 1,$(PROD)),-f deploy/compose.prod.yaml) \
 	$(if $(filter 1,$(SMALL)),-f deploy/compose.small.yaml) \
+	$(if $(filter 1,$(PROD)),$(if $(FROM_SOURCE),-f deploy/compose.source.yaml)) \
 	$(if $(EDGE_TEST),-f deploy/compose.edge-test.yaml) \
 	$(if $(TEST_DNS),-f deploy/compose.test.yaml)
 COMPOSE := docker compose $(COMPOSE_FILES) --env-file $(ENV_FILE)
+# 1 when the stack runs the published images (production, not FROM_SOURCE).
+PUBLISHED_IMAGES := $(if $(filter 1,$(PROD)),$(if $(FROM_SOURCE),0,1),0)
 SERVICE ?=
 
 # Shell prefix for host-side tools that talk to the running stack (integration
@@ -66,10 +74,10 @@ CORE_COMPAT_RUN = uv run --python $(1) --no-project --with ./packages/core \
 	-W ignore::pytest.PytestConfigWarning
 
 .PHONY: help install lint fmt typecheck test test-unit test-core-compat test-integration test-network \
-	check check-all api \
+	check check-all check-versions bump-version api \
 	worker shuttles \
 	up deps-up down logs ps reset compose-config migrate revision create-admin \
-	secrets backup restore test-edge test-nginx-edge test-backup-restore \
+	secrets deploy-pull backup restore test-edge test-nginx-edge test-backup-restore \
 	web-install web-dev web-lint web-fmt web-typecheck web-test web-build check-web e2e
 
 help: ## Show this help
@@ -110,7 +118,16 @@ test-network: ## Run the opt-in tests that use the real internet (public DNS res
 
 check: lint typecheck test ## Run lint, typecheck and tests (Python)
 
-check-all: check check-web ## Run every check: Python and web
+check-all: check-versions check check-web ## Run every check: versions, Python and web
+
+check-versions: ## Check that every package has the same version (scripts/check-versions.py)
+	@python3 scripts/check-versions.py
+
+# docs/RELEASING.md. Edits every manifest and refreshes uv.lock and
+# pnpm-lock.yaml; CHANGELOG.md is updated by hand.
+bump-version: ## Set the version everywhere: make bump-version V=0.2.0 (or V=0.2.0-rc.1)
+	@if [ -z "$(V)" ]; then echo 'Usage: make bump-version V=X.Y.Z (or X.Y.Z-rc.N)'; exit 1; fi
+	@python3 scripts/bump-version.py "$(V)"
 
 api: ## Run the API dev server on http://127.0.0.1:8000
 	uv run python -m nightloom_api
@@ -155,7 +172,7 @@ reset: ## Stop the stack and DELETE all its data volumes (asks first)
 	$(COMPOSE) down -v --remove-orphans
 
 migrate: ## Apply the database migrations and the Neo4j schema (one-shot migrate service)
-	$(COMPOSE) build api
+	$(if $(filter 1,$(PUBLISHED_IMAGES)),$(COMPOSE) pull migrate,$(COMPOSE) build api)
 	$(COMPOSE) run --rm migrate
 
 revision: ## Autogenerate a migration against the running stack: make revision m="add cases"
@@ -235,6 +252,14 @@ compose-config: ## Validate the Compose files in use (the production ones too wh
 
 secrets: ## Create .env for production with random secrets (never overwrites; ARGS="--help" for options)
 	@scripts/generate-env.sh $(ARGS)
+
+deploy-pull: ## Production: download the images of NIGHTLOOM_VERSION (and the pinned third-party ones)
+	@if [ "$(PUBLISHED_IMAGES)" != 1 ]; then \
+		echo 'deploy-pull is for production with the release images (NIGHTLOOM_ENV=production, no FROM_SOURCE).'; \
+		exit 1; \
+	fi
+	$(COMPOSE) pull
+	@echo "Pulled the images for Nightloom $$(. ./$(ENV_FILE) && echo "$${NIGHTLOOM_VERSION}"). Start them with 'make up'."
 
 backup: ## Back up PostgreSQL, Neo4j and the evidence bucket into backups/ (stops the API and worker briefly)
 	@NIGHTLOOM_COMPOSE="$(COMPOSE)" ENV_FILE="$(ENV_FILE)" scripts/backup.sh

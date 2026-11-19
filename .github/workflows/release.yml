@@ -1,0 +1,256 @@
+name: Release
+
+# Cuts a release from a version tag (docs/RELEASING.md):
+#   verify   the tag matches every manifest's version, is on main, and
+#            CHANGELOG.md has a section for it;
+#   images   builds and pushes the multi-architecture images to GHCR, with an
+#            SBOM, max-mode provenance and a GitHub build provenance
+#            attestation per image;
+#   release  creates the GitHub Release from the CHANGELOG section, with the
+#            image tags and digests.
+# Only GITHUB_TOKEN is used.
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
+
+permissions: {}
+
+# One release run per tag; never cancel a release half-way.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # GHCR names must be lower-case.
+  IMAGE_NAMESPACE: ghcr.io/therealnightmare
+
+jobs:
+  verify:
+    name: Verify the tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The whole history, for the is-on-main check.
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The runner's Python 3 is enough: the scripts use the standard library only.
+      - name: Versions match the tag
+        run: python3 scripts/check-versions.py --tag "$TAG"
+        env:
+          TAG: ${{ github.ref_name }}
+
+      - name: The tagged commit is on main
+        run: |
+          set -euo pipefail
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error title=Release::$GITHUB_SHA ($TAG) is not on main. Tag a commit that has been merged to main."
+            exit 1
+          fi
+          echo "$TAG ($GITHUB_SHA) is on main."
+        env:
+          TAG: ${{ github.ref_name }}
+
+      - name: CHANGELOG.md has a section for the version
+        id: version
+        run: |
+          set -euo pipefail
+          version=${TAG#v}
+          if ! python3 scripts/changelog-section.py "$version" > /dev/null; then
+            echo "::error title=Release::CHANGELOG.md has no '## [$version]' section."
+            exit 1
+          fi
+          prerelease=false
+          [[ "$version" == *-rc.* ]] && prerelease=true
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          echo "Releasing $version (pre-release: $prerelease)."
+        env:
+          TAG: ${{ github.ref_name }}
+
+  images:
+    name: Image ${{ matrix.image }}
+    needs: verify
+    runs-on: ubuntu-latest
+    # arm64 is built under QEMU emulation.
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - image: backend
+            dockerfile: apps/api/Dockerfile
+            title: Nightloom backend
+            description: >-
+              Nightloom API, Shuttle worker and database migrations (FastAPI,
+              Celery and the built-in Shuttles).
+          - image: web
+            dockerfile: apps/web/Dockerfile
+            title: Nightloom web
+            description: >-
+              Nightloom web UI: the single-page app served by unprivileged
+              nginx, which also proxies /api/ to the backend.
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # X.Y.Z always; X.Y and latest only for a final release, never an -rc.
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE_NAMESPACE }}/nightloom-${{ matrix.image }}
+          flavor: latest=false
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ needs.verify.outputs.prerelease == 'false' }}
+            type=raw,value=latest,enable=${{ needs.verify.outputs.prerelease == 'false' }}
+          labels: |
+            org.opencontainers.image.title=${{ matrix.title }}
+            org.opencontainers.image.description=${{ matrix.description }}
+            org.opencontainers.image.licenses=Apache-2.0
+          annotations: |
+            org.opencontainers.image.title=${{ matrix.title }}
+            org.opencontainers.image.description=${{ matrix.description }}
+            org.opencontainers.image.licenses=Apache-2.0
+        env:
+          # Annotations on the per-platform manifests and on the index (what
+          # GHCR shows for a multi-architecture image).
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
+
+      - id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          sbom: true
+          provenance: mode=max
+          cache-from: type=gha,scope=release-${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=release-${{ matrix.image }}
+
+      # A storage record would also need the artifact-metadata permission;
+      # the attestation itself is stored on GitHub and pushed to GHCR.
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.IMAGE_NAMESPACE }}/nightloom-${{ matrix.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+
+  release:
+    name: GitHub Release
+    needs: [verify, images]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      # Reads the pushed images' digests (the packages are private until
+      # someone makes them public; docs/RELEASING.md).
+      packages: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Write the release notes
+        run: |
+          set -euo pipefail
+          tags=("$VERSION")
+          if [[ "$PRERELEASE" != true ]]; then
+            tags+=("${VERSION%.*}" latest)
+          fi
+          tag_list=""
+          for tag in "${tags[@]}"; do
+            tag_list+="${tag_list:+, }\`$tag\`"
+          done
+          {
+            python3 scripts/changelog-section.py "$VERSION"
+            echo
+            echo "### Images"
+            echo
+            echo "Multi-architecture (\`linux/amd64\`, \`linux/arm64\`), with SBOM and build provenance attestations."
+            echo
+            echo "| Image | Tags | Digest |"
+            echo "| --- | --- | --- |"
+            for image in backend web; do
+              name="$IMAGE_NAMESPACE/nightloom-$image"
+              digest=$(docker buildx imagetools inspect "$name:$VERSION" --format '{{json .Manifest}}' | jq -r .digest)
+              if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+                echo "::error title=Release::No digest for $name:$VERSION." >&2
+                exit 1
+              fi
+              echo "| \`$name\` | $tag_list | \`$digest\` |"
+            done
+            echo
+            echo '```sh'
+            for image in backend web; do
+              echo "docker pull $IMAGE_NAMESPACE/nightloom-$image:$VERSION"
+            done
+            echo "gh attestation verify oci://$IMAGE_NAMESPACE/nightloom-backend:$VERSION --repo $GITHUB_REPOSITORY"
+            echo '```'
+            echo
+            echo "Deploy or upgrade with [docs/DEPLOYMENT.md]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$TAG/docs/DEPLOYMENT.md) (set \`NIGHTLOOM_VERSION=$VERSION\`)."
+          } > "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/notes.md"
+        env:
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.verify.outputs.version }}
+          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+
+      # A rerun updates the existing release instead of failing.
+      - name: Create the GitHub Release
+        run: |
+          set -euo pipefail
+          flags=()
+          [[ "$PRERELEASE" == true ]] && flags+=(--prerelease)
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release edit "$TAG" --title "Nightloom $VERSION" \
+              --notes-file "$RUNNER_TEMP/notes.md" "${flags[@]}"
+          else
+            gh release create "$TAG" --verify-tag --title "Nightloom $VERSION" \
+              --notes-file "$RUNNER_TEMP/notes.md" "${flags[@]}"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.verify.outputs.version }}
+          PRERELEASE: ${{ needs.verify.outputs.prerelease }}

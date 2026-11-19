@@ -5,7 +5,8 @@ This guide runs Nightloom on your own server with HTTPS, secrets generated for y
 - the API runs with `NIGHTLOOM_ENV=production`: it refuses to start with placeholder secrets, and its cookies are `Secure`;
 - **only the edge proxy is reachable from outside.** PostgreSQL, Neo4j, Valkey, SeaweedFS, the API and nginx publish no ports;
 - the edge is either **Caddy** (automatic HTTPS certificates, ports 80 and 443) or **Cloudflare Tunnel** (no open ports at all);
-- every container has a restart policy, rotated logs (5 × 10 MB) and a memory limit.
+- every container has a restart policy, rotated logs (5 × 10 MB) and a memory limit;
+- Nightloom itself runs from the **published release images** on GitHub Container Registry, `ghcr.io/therealnightmare/nightloom-backend` (API, worker and migrations) and `ghcr.io/therealnightmare/nightloom-web`, for `linux/amd64` and `linux/arm64`. `NIGHTLOOM_VERSION` in `.env` chooses the release. Nothing is built on the server.
 
 Read [ETHICS.md](../ETHICS.md) before you deploy. Everyone you give an account to must follow it.
 
@@ -27,25 +28,27 @@ The limits are ceilings, not reservations. An idle stack uses much less.
 
 1. **DNS.** Create an `A` record (and an `AAAA` record if the server has IPv6) for the name you will use, for example `nightloom.example.org`, pointing at the server. Wait until `dig +short nightloom.example.org` returns the server's address.
 2. **Firewall.** Allow inbound TCP 80 and 443, plus UDP 443 for HTTP/3. Port 80 must stay open: Let's Encrypt uses it to issue certificates, and Caddy uses it to redirect to HTTPS.
-3. **Get the code and create the secrets:**
+3. **Get the release and create the secrets.** Check out the release you want to run (see [Releases](https://github.com/TheRealNightmare/nightloom/releases)), so the Compose files match its images:
 
    ```sh
-   git clone https://github.com/TheRealNightmare/nightloom.git
+   git clone --branch v0.1.0 https://github.com/TheRealNightmare/nightloom.git
    cd nightloom
    make secrets ARGS="--domain nightloom.example.org --acme-email you@example.org"
    ```
 
-   See [Secrets](#secrets) for what this does.
-4. **Start the stack.** This builds the images on the server, which takes a few minutes the first time:
+   See [Secrets](#secrets) for what this does. It also sets `NIGHTLOOM_VERSION=0.1.0`, the checkout's version.
+4. **Download the images and start the stack:**
 
    ```sh
+   make deploy-pull   # pulls the release images and the pinned third-party ones
    make up
    ```
 
-   `make up` sees `NIGHTLOOM_ENV=production` in `.env` and adds `deploy/compose.prod.yaml` by itself. It also picks up the edge profile from `COMPOSE_PROFILES`. Without `make`, the equivalent command is:
+   `make up` sees `NIGHTLOOM_ENV=production` in `.env` and adds `deploy/compose.prod.yaml` by itself. It also picks up the edge profile from `COMPOSE_PROFILES`. Without `make`, the equivalent commands are:
 
    ```sh
-   docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml --env-file .env up -d --build
+   docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml --env-file .env pull
+   docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml --env-file .env up -d
    ```
 
    Caddy requests the certificate when it starts. `make logs SERVICE=caddy` shows the progress. If issuance fails, the cause is almost always DNS or a closed port 80.
@@ -88,13 +91,13 @@ Cloudflare terminates TLS, so Cloudflare can see the traffic between your users 
 
 ```sh
 make secrets                  # Caddy edge; add --domain/--acme-email, or edit .env afterwards
-make secrets ARGS="--help"    # all options: --edge, --domain, --acme-email, --small, --force
+make secrets ARGS="--help"    # all options: --edge, --domain, --acme-email, --small, --version, --force
 ```
 
 [`scripts/generate-env.sh`](../scripts/generate-env.sh) creates `.env` from [`.env.example`](../.env.example):
 
 - every `change-me-...` value gets a random 256-bit hex value. Hex is safe inside URLs, so `NIGHTLOOM_DATABASE_URL`, `NIGHTLOOM_VALKEY_URL` and `NIGHTLOOM_NEO4J_PASSWORD` repeat the generated passwords exactly;
-- it sets `NIGHTLOOM_ENV=production`, `NIGHTLOOM_COOKIE_SECURE=true`, the edge (`NIGHTLOOM_EDGE` and `COMPOSE_PROFILES`) and, if you pass them, the domain, the ACME email and the small-host switch;
+- it sets `NIGHTLOOM_ENV=production`, `NIGHTLOOM_COOKIE_SECURE=true`, the edge (`NIGHTLOOM_EDGE` and `COMPOSE_PROFILES`), `NIGHTLOOM_VERSION` (the checkout's version, or `--version X.Y.Z`) and, if you pass them, the domain, the ACME email and the small-host switch;
 - the file gets mode `600`. The script prints the **names** of the generated values, never the values.
 
 It never overwrites an existing `.env`. PostgreSQL, Neo4j and Valkey take their passwords from the first start, so new secrets would lock the stack out of its own data. `--force` exists for a fresh install only: it copies the old file to `.env.backup-<timestamp>` first and prints a warning.
@@ -163,17 +166,35 @@ make restore BACKUP=backups/nightloom-20261119T031500Z.tar.gz
 4. **replaces** the data: it drops and recreates the PostgreSQL database and restores the dump, loads the Neo4j dump into the stopped database, and syncs the bucket to the backup's copy. Objects that are not in the backup are deleted;
 5. starts everything, applies the migrations (as `make migrate` does, so a backup from an older version is brought up to date) and checks that `GET /api/v1/ready` answers 200.
 
-**Restoring on a new server:** install the requirements, clone the same Nightloom version (the `git_commit` in `manifest.json`) or a newer one, put the old `.env` back (`chmod 600 .env`), then run `make restore BACKUP=...`. The stack does not need to be running first. A backup cannot be restored into an *older* Nightloom version.
+**Restoring on a new server:** install the requirements, clone the same Nightloom version (the `version` and `git_commit` in `manifest.json`) or a newer one, put the old `.env` back (`chmod 600 .env`) with `NIGHTLOOM_VERSION` set to that version, run `make deploy-pull`, then `make restore BACKUP=...`. The stack does not need to be running first. A backup cannot be restored into an *older* Nightloom version.
 
 ## Upgrades
 
+Read the [release notes](https://github.com/TheRealNightmare/nightloom/releases) of every version between yours and the new one first: a new major version of PostgreSQL or Neo4j needs a backup and restore, and the notes will say so. Then, for example to 0.2.0:
+
 ```sh
-make backup              # always back up first
-git pull                 # or: git fetch --tags && git checkout <release tag>
-make up                  # rebuilds the images and recreates what changed
+make backup                                   # always back up first
+git fetch --tags && git checkout v0.2.0       # the Compose files of the new release
+sed -i 's/^NIGHTLOOM_VERSION=.*/NIGHTLOOM_VERSION=0.2.0/' .env
+make deploy-pull                              # download the new images
+make up                                       # docker compose ... up -d: recreates what changed
 ```
 
-The one-shot `migrate` service applies database migrations and the Neo4j schema before `api` and `worker` start, so no separate step is needed. Read the release notes before upgrading: a new major version of PostgreSQL or Neo4j needs a backup and restore, and the notes will say so. Pinned third-party images (Caddy, cloudflared, the databases) only change with a Nightloom update.
+The one-shot `migrate` service applies the database migrations and the Neo4j schema before `api` and `worker` start, so no separate step is needed. Then check that the API is ready and runs the new version:
+
+```sh
+make ps                                       # every service healthy, migrate "exited (0)"
+docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml --env-file .env \
+  exec api python -c "import urllib.request as u; print(u.urlopen('http://127.0.0.1:8000/api/v1/ready').read().decode()); print(u.urlopen('http://127.0.0.1:8000/api/v1/health').read().decode())"
+```
+
+`/api/v1/ready` must answer `200` and `/api/v1/health` show the new `version`; the account menu in the web UI shows it too. To go back, restore the backup you made with the old version's checkout and `NIGHTLOOM_VERSION`. Pinned third-party images (Caddy, cloudflared, the databases) only change with a Nightloom release.
+
+**From a version before 0.1.0** (built on the server): add `NIGHTLOOM_VERSION=0.1.0` to `.env`, then follow the steps above. The old locally built `nightloom-api:dev` and `nightloom-web:dev` images are no longer used; `docker image rm nightloom-api:dev nightloom-web:dev` frees their space.
+
+### Running an unreleased version
+
+The production stack can also build the images from the checkout, for example to try a fix before it is released. Add `FROM_SOURCE=1` to every `make` command (`make up FROM_SOURCE=1`, `make backup FROM_SOURCE=1`, ...); it adds [`deploy/compose.source.yaml`](../deploy/compose.source.yaml). CI tests the production configuration this way. Go back to a release as soon as there is one.
 
 ## Small hosts and Raspberry Pi
 
@@ -181,8 +202,8 @@ A **Raspberry Pi 4B with 8 GB** runs Nightloom for a small team, with these sett
 
 - a **64-bit** OS (Raspberry Pi OS 64-bit, Debian or Ubuntu for arm64). Neo4j and Node.js publish no 32-bit ARM images, so a 32-bit OS cannot run the stack;
 - an **SSD over USB 3**, not the SD card, for Docker's data (`/var/lib/docker`). Databases wear out SD cards quickly and are slow on them;
-- the small-host overrides ([`deploy/compose.small.yaml`](../deploy/compose.small.yaml): lower Neo4j memory, one worker process, lower limits). Use `make secrets ARGS="--small ..."`, or set `NIGHTLOOM_SMALL_HOST=true` in `.env`, and `make` adds the file. The raw command is `docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.small.yaml --env-file .env up -d --build`;
-- the first build of the images takes much longer than on a PC (the web build is the slowest part). Later builds reuse Docker's cache;
+- the small-host overrides ([`deploy/compose.small.yaml`](../deploy/compose.small.yaml): lower Neo4j memory, one worker process, lower limits). Use `make secrets ARGS="--small ..."`, or set `NIGHTLOOM_SMALL_HOST=true` in `.env`, and `make` adds the file. The raw command is `docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.small.yaml --env-file .env up -d`;
+- the release images include `linux/arm64`, so nothing is compiled on the Pi; `make deploy-pull` downloads them;
 - Cloudflare Tunnel is often the easier edge on a home network (no port forwarding).
 
 Every image the stack uses publishes `linux/arm64`:
@@ -196,7 +217,9 @@ Every image the stack uses publishes `linux/arm64`:
 | `caddy:2.11.9-alpine` | HTTPS edge (`https` profile) | yes |
 | `cloudflare/cloudflared:2026.11.1` | tunnel edge (`tunnel` profile) | yes (amd64 and arm64 only) |
 | `rclone/rclone:1.75.2` | bucket copy for backup and restore | yes |
-| `python:3.12.16-slim`, `node:26.13.1-alpine3.24`, `nginxinc/nginx-unprivileged:1.30.6-alpine3.24` | base images of the API and web builds | yes (Node.js: no 32-bit ARM) |
+| `ghcr.io/therealnightmare/nightloom-backend:<version>` | API, worker and migrations | yes (amd64 and arm64 only) |
+| `ghcr.io/therealnightmare/nightloom-web:<version>` | web UI (nginx) | yes (amd64 and arm64 only) |
+| `python:3.12.16-slim`, `node:26.13.1-alpine3.24`, `nginxinc/nginx-unprivileged:1.30.6-alpine3.24` | base images of the Nightloom images (only pulled when building from source) | yes (Node.js: no 32-bit ARM) |
 
 ## Day-to-day operation
 
@@ -213,6 +236,7 @@ The services restart automatically after a crash or a reboot (`restart: unless-s
 
 - [ ] **Firewall:** inbound SSH (preferably limited to your addresses) and, with Caddy, TCP 80/443 and UDP 443. Nothing else. With Cloudflare Tunnel, no inbound ports at all except SSH. Docker publishes ports past `ufw`/`firewalld` rules. In production only Caddy publishes any, and only the ones it needs.
 - [ ] **Secrets:** `.env` was made by `make secrets`, has mode `600` and has a copy in a safe place. `NIGHTLOOM_ENV=production` is set.
+- [ ] **Release:** the checkout is a release tag and `NIGHTLOOM_VERSION` in `.env` is that release. The Nightloom images can be checked with `gh attestation verify oci://ghcr.io/therealnightmare/nightloom-backend:<version> --repo TheRealNightmare/nightloom` (and the same for `nightloom-web`).
 - [ ] **HTTPS works:** the browser shows a valid certificate, `http://` redirects to `https://`, and the response has `Strict-Transport-Security` (Caddy) or HSTS is enabled in Cloudflare (tunnel).
 - [ ] **OS and Docker updates:** automatic security updates are on (for example `unattended-upgrades` on Debian and Ubuntu), and Docker Engine is kept current.
 - [ ] **Backups:** a nightly `make backup` cron job runs, the archives are **copied off the machine** (encrypted), and a test restore has succeeded at least once.
