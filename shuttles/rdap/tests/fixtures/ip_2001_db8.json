@@ -1,0 +1,143 @@
+{
+  "objectClassName": "ip network",
+  "handle": "2001:db8::/32",
+  "startAddress": "2001:db8::",
+  "endAddress": "2001:db8:ffff:ffff:ffff:ffff:ffff:ffff",
+  "ipVersion": "v6",
+  "name": "EXAMPLE-V6",
+  "type": "ALLOCATED-BY-RIR",
+  "country": "NL",
+  "parentHandle": "2001::/16",
+  "entities": [
+    {
+      "objectClassName": "entity",
+      "handle": "EXH-1",
+      "roles": [
+        "registrant"
+      ],
+      "vcardArray": [
+        "vcard",
+        [
+          [
+            "version",
+            {},
+            "text",
+            "4.0"
+          ],
+          [
+            "fn",
+            {},
+            "text",
+            "Example Hosting LLC"
+          ],
+          [
+            "kind",
+            {},
+            "text",
+            "org"
+          ],
+          [
+            "adr",
+            {
+              "label": "3 Sample Avenue\nExample City\nZZ"
+            },
+            "text",
+            [
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              ""
+            ]
+          ],
+          [
+            "tel",
+            {},
+            "uri",
+            "tel:+1-555-555-0177"
+          ]
+        ]
+      ],
+      "entities": [
+        {
+          "objectClassName": "entity",
+          "roles": [
+            "abuse"
+          ],
+          "vcardArray": [
+            "vcard",
+            [
+              [
+                "version",
+                {},
+                "text",
+                "4.0"
+              ],
+              [
+                "fn",
+                {},
+                "text",
+                "Abuse"
+              ],
+              [
+                "kind",
+                {},
+                "text",
+                "group"
+              ],
+              [
+                "email",
+                {},
+                "text",
+                "abuse@example-hosting.example"
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "objectClassName": "entity",
+      "roles": [
+        "technical"
+      ],
+      "vcardArray": [
+        "vcard",
+        [
+          [
+            "version",
+            {},
+            "text",
+            "4.0"
+          ],
+          [
+            "fn",
+            {},
+            "text",
+            "Chris Example"
+          ],
+          [
+            "kind",
+            {},
+            "text",
+            "individual"
+          ],
+          [
+            "email",
+            {},
+            "text",
+            "chris@example-hosting.example"
+          ]
+        ]
+      ]
+    }
+  ],
+  "events": [
+    {
+      "eventAction": "registration",
+      "eventDate": "2012-03-01T00:00:00Z"
+    }
+  ]
+}

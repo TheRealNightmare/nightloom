@@ -52,7 +52,8 @@ ALLOWED: dict[RelationType, frozenset[Pair]] = {
     RelationType.HAS_MX: _pairs([E.DOMAIN], [E.DOMAIN]),
     RelationType.HAS_NS: _pairs([E.DOMAIN], [E.DOMAIN]),
     RelationType.ALIAS_OF: _pairs([E.DOMAIN], [E.DOMAIN]),
-    RelationType.WITHIN: _pairs([E.IP_ADDRESS], [E.NETBLOCK]),
+    # An address in a network, or a network inside a larger one.
+    RelationType.WITHIN: _pairs([E.IP_ADDRESS, E.NETBLOCK], [E.NETBLOCK]),
     RelationType.ANNOUNCED_BY: _pairs([E.NETBLOCK], [E.ASN]),
     RelationType.COVERS: _pairs([E.CERTIFICATE], [E.DOMAIN]),
     RelationType.PRESENTS: _pairs([E.SERVICE], [E.CERTIFICATE]),

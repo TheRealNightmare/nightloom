@@ -1,0 +1,204 @@
+{
+  "objectClassName": "domain",
+  "rdapConformance": [
+    "rdap_level_0",
+    "redacted"
+  ],
+  "ldhName": "example.net",
+  "status": [
+    "active"
+  ],
+  "port43": "whois.registrar.example",
+  "entities": [
+    {
+      "objectClassName": "entity",
+      "roles": [
+        "registrar"
+      ],
+      "publicIds": [
+        {
+          "type": "IANA Registrar ID",
+          "identifier": "1111"
+        }
+      ],
+      "vcardArray": [
+        "vcard",
+        [
+          [
+            "version",
+            {},
+            "text",
+            "4.0"
+          ],
+          [
+            "fn",
+            {},
+            "text",
+            "Example Registrar (as it calls itself)"
+          ]
+        ]
+      ]
+    },
+    {
+      "objectClassName": "entity",
+      "handle": "C-REGISTRANT-1",
+      "roles": [
+        "registrant"
+      ],
+      "vcardArray": [
+        "vcard",
+        [
+          [
+            "version",
+            {},
+            "text",
+            "4.0"
+          ],
+          [
+            "fn",
+            {},
+            "text",
+            "Example Network Operations Ltd"
+          ],
+          [
+            "kind",
+            {},
+            "text",
+            "org"
+          ],
+          [
+            "org",
+            {},
+            "text",
+            "Example Network Operations Ltd"
+          ],
+          [
+            "adr",
+            {
+              "cc": "GB"
+            },
+            "text",
+            [
+              "",
+              "",
+              "1 Fictional Street",
+              "Exampletown",
+              "",
+              "ZZ1 1ZZ",
+              "United Kingdom"
+            ]
+          ],
+          [
+            "tel",
+            {
+              "type": "voice"
+            },
+            "uri",
+            "tel:+44.5555550123"
+          ],
+          [
+            "email",
+            {},
+            "text",
+            "noc@example.net"
+          ]
+        ]
+      ]
+    },
+    {
+      "objectClassName": "entity",
+      "roles": [
+        "administrative"
+      ],
+      "vcardArray": [
+        "vcard",
+        [
+          [
+            "version",
+            {},
+            "text",
+            "4.0"
+          ],
+          [
+            "fn",
+            {},
+            "text",
+            "Jane Example"
+          ],
+          [
+            "kind",
+            {},
+            "text",
+            "individual"
+          ],
+          [
+            "email",
+            {},
+            "text",
+            "jane.example@example.net"
+          ],
+          [
+            "tel",
+            {},
+            "uri",
+            "tel:+44.5555550199"
+          ]
+        ]
+      ]
+    },
+    {
+      "objectClassName": "entity",
+      "roles": [
+        "technical"
+      ],
+      "vcardArray": [
+        "vcard",
+        [
+          [
+            "version",
+            {},
+            "text",
+            "4.0"
+          ],
+          [
+            "fn",
+            {},
+            "text",
+            "REDACTED FOR PRIVACY"
+          ],
+          [
+            "kind",
+            {},
+            "text",
+            "org"
+          ],
+          [
+            "email",
+            {},
+            "text",
+            "redacted-tech@registrar.example"
+          ]
+        ]
+      ]
+    }
+  ],
+  "events": [
+    {
+      "eventAction": "registration",
+      "eventDate": "1999-03-15T05:00:00Z"
+    },
+    {
+      "eventAction": "expiration",
+      "eventDate": "2028-03-15T04:00:00Z"
+    }
+  ],
+  "secureDNS": {
+    "delegationSigned": true
+  },
+  "nameservers": [
+    {
+      "objectClassName": "nameserver",
+      "ldhName": "ns9.registrar.example"
+    }
+  ]
+}

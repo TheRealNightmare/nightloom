@@ -1,0 +1,33 @@
+{
+  "version": "1.0",
+  "publication": "2026-11-01T00:00:00Z",
+  "description": "Fictional RDAP bootstrap file for Nightloom's tests",
+  "services": [
+    [
+      [
+        "192.0.0.0/8"
+      ],
+      [
+        "https://rdap.lacnic.net/rdap/"
+      ]
+    ],
+    [
+      [
+        "192.0.2.0/24",
+        "198.51.100.0/24"
+      ],
+      [
+        "http://rdap.arin.net/registry/",
+        "https://rdap.arin.net/registry/"
+      ]
+    ],
+    [
+      [
+        "not-a-network"
+      ],
+      [
+        "https://rdap.arin.net/registry/"
+      ]
+    ]
+  ]
+}

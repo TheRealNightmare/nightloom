@@ -90,7 +90,7 @@ test-core-compat: ## Run the packages/core tests on every Python in CORE_COMPAT_
 test-integration: ## Run integration tests against the running stack (needs `make up`; TEST_DNS=1 adds the DNS job test)
 	@$(STACK_ENV) $(if $(TEST_DNS),NIGHTLOOM_TEST_DNS=1) uv run pytest -m integration --no-cov
 
-test-network: ## Run the opt-in tests that use the real internet (the DNS Shuttle against public resolvers)
+test-network: ## Run the opt-in tests that use the real internet (public DNS resolvers, crt.sh, RDAP servers)
 	uv run pytest -m network --no-cov
 
 check: lint typecheck test ## Run lint, typecheck and tests (Python)

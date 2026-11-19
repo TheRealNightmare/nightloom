@@ -1,0 +1,44 @@
+{
+  "version": "1.0",
+  "publication": "2026-11-01T00:00:00Z",
+  "description": "Fictional RDAP bootstrap file for Nightloom's tests",
+  "services": [
+    [
+      [
+        "org"
+      ],
+      [
+        "http://rdap.org-registry.example/rdap/",
+        "https://rdap.org-registry.example/rdap/"
+      ]
+    ],
+    [
+      [
+        "net",
+        "com"
+      ],
+      [
+        "https://rdap.net-registry.example/v1"
+      ]
+    ],
+    [
+      [
+        "co.example"
+      ],
+      [
+        "https://rdap.co-registry.example/"
+      ]
+    ],
+    [
+      "malformed entry"
+    ],
+    [
+      [
+        "ftp-only"
+      ],
+      [
+        "ftp://rdap.example.net/"
+      ]
+    ]
+  ]
+}

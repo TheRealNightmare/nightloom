@@ -182,7 +182,10 @@
     {
       "type": "WITHIN",
       "note_required": false,
-      "pairs": [["ip_address", "netblock"]]
+      "pairs": [
+        ["ip_address", "netblock"],
+        ["netblock", "netblock"]
+      ]
     },
     {
       "type": "ANNOUNCED_BY",

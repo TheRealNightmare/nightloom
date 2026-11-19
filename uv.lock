@@ -14,6 +14,7 @@ members = [
     "nightloom-sdk",
     "nightloom-shuttle-crtsh",
     "nightloom-shuttle-dns",
+    "nightloom-shuttle-rdap",
     "nightloom-shuttle-registrable-domain",
     "nightloom-worker",
 ]
@@ -2062,6 +2063,23 @@ requires-dist = [
 ]
 
 [[package]]
+name = "nightloom-shuttle-rdap"
+version = "1.0.0"
+source = { editable = "shuttles/rdap" }
+dependencies = [
+    { name = "httpx" },
+    { name = "nightloom-core" },
+    { name = "nightloom-sdk" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "nightloom-core", editable = "packages/core" },
+    { name = "nightloom-sdk", editable = "packages/sdk" },
+]
+
+[[package]]
 name = "nightloom-shuttle-registrable-domain"
 version = "1.0.0"
 source = { editable = "shuttles/registrable-domain" }
@@ -2087,6 +2105,7 @@ dependencies = [
     { name = "nightloom-sdk" },
     { name = "nightloom-shuttle-crtsh" },
     { name = "nightloom-shuttle-dns" },
+    { name = "nightloom-shuttle-rdap" },
     { name = "nightloom-shuttle-registrable-domain" },
 ]
 
@@ -2098,6 +2117,7 @@ requires-dist = [
     { name = "nightloom-sdk", editable = "packages/sdk" },
     { name = "nightloom-shuttle-crtsh", editable = "shuttles/crtsh" },
     { name = "nightloom-shuttle-dns", editable = "shuttles/dns" },
+    { name = "nightloom-shuttle-rdap", editable = "shuttles/rdap" },
     { name = "nightloom-shuttle-registrable-domain", editable = "shuttles/registrable-domain" },
 ]
 

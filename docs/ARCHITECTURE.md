@@ -271,10 +271,10 @@ Each type is a Pydantic model (`nightloom_core.entities`) with a canonical `valu
 
 | Type (`type`) | Neo4j label | Sensitivity | Properties |
 | --- | --- | --- | --- |
-| `domain` | `Domain` | infrastructure | DNS facts, written by the [DNS Shuttle](#the-dns-shuttle): `dns_txt`, `dns_spf`, `dns_dmarc`, `dns_mx`, `dns_caa` (lists of at most 50 records of at most 1,000 characters), `dns_soa_primary_ns`, `dns_soa_responsible`, `dns_soa_serial`, `dns_soa_refresh`, `dns_soa_retry`, `dns_soa_expire`, `dns_soa_minimum` |
+| `domain` | `Domain` | infrastructure | DNS facts, written by the [DNS Shuttle](#the-dns-shuttle): `dns_txt`, `dns_spf`, `dns_dmarc`, `dns_mx`, `dns_caa` (lists of at most 50 records of at most 1,000 characters), `dns_soa_primary_ns`, `dns_soa_responsible`, `dns_soa_serial`, `dns_soa_refresh`, `dns_soa_retry`, `dns_soa_expire`, `dns_soa_minimum`; registration data, written by the [RDAP Shuttle](#the-rdap-shuttle): `registered`, `expires`, `last_changed` (ISO 8601 date-times), `status` (at most 30 EPP statuses), `dnssec_signed`, `registrar`, `registrar_iana_id`, `rdap_server` |
 | `ip_address` | `IPAddress` | infrastructure | `scope` (`public` or `private`: not globally routable) |
-| `netblock` | `Netblock` | infrastructure | `name`, `country`, `registry` |
-| `asn` | `ASN` | infrastructure | `name`, `country`, `registry` |
+| `netblock` | `Netblock` | infrastructure | `name`, `country`, `registry` (the Regional Internet Registry); from RDAP also `handle`, `type` (as the registry names it, e.g. `DIRECT ALLOCATION`), `registered`, `last_changed`, `parent_handle` |
+| `asn` | `ASN` | infrastructure | `name`, `country`, `registry`; from RDAP also `handle`, `registered`, `last_changed` |
 | `certificate` | `Certificate` | infrastructure | `subject`, `subject_cn`, `issuer`, `serial_number`, `not_before`, `not_after`, `self_signed`, `san_count` (entries in the subjectAltName extension), `crtsh_id` (written by the [crt.sh Shuttle](#the-crtsh-shuttle)) |
 | `url` | `URL` | infrastructure | `status_code`, `title`, `content_type` |
 | `service` | `Service` | infrastructure | `product`, `version`, `banner` |
@@ -322,7 +322,7 @@ Relationship types (`nightloom_core.relationships`) have an explicit allow-list 
 | `HAS_SUBDOMAIN`, `HAS_MX`, `HAS_NS` | Domain → Domain |
 | `ALIAS_OF` | Domain → Domain: the source name is a CNAME alias of the target name |
 | `RESOLVES_TO` | Domain → IPAddress |
-| `WITHIN` | IPAddress → Netblock |
+| `WITHIN` | IPAddress → Netblock, or Netblock → Netblock (a network inside a larger one) |
 | `ANNOUNCED_BY` | Netblock → ASN |
 | `COVERS` | Certificate → Domain |
 | `PRESENTS` | Service → Certificate |
@@ -427,7 +427,7 @@ Every Shuttle subclasses `Shuttle` and declares a frozen `ShuttleMeta`, validate
 
 Values are **raw**: Shuttles never normalize. The worker normalizes everything with `nightloom_core`, so a key is computed in exactly one way.
 
-During a run, a Shuttle that cannot finish for a known reason raises `ShuttleFailedError(FailureReason.…)`: `source_unavailable` (the source did not answer after the Shuttle's retries), `source_invalid_response` (an answer it could not read) or `result_too_large` (too large even after narrowing). Like a refusal, the job fails with the reason's fixed message from the SDK and the reason code is recorded in `job.finish`; findings stored before it are kept. Any other exception ends the job with the generic `The Shuttle failed.` message.
+During a run, a Shuttle that cannot finish for a known reason raises `ShuttleFailedError(FailureReason.…)`: `source_unavailable` (the source did not answer after the Shuttle's retries), `source_invalid_response` (an answer it could not read), `result_too_large` (too large even after narrowing) or `not_covered` (the source has no service for this input, such as no RDAP server for a TLD). Like a refusal, the job fails with the reason's fixed message from the SDK and the reason code is recorded in `job.finish`; findings stored before it are kept. Any other exception ends the job with the generic `The Shuttle failed.` message.
 
 ### Context
 
@@ -500,6 +500,28 @@ Findings are rated **B2** (a recursive resolver's answer: usually reliable, prob
 **An unwell crt.sh.** crt.sh is free and busy, and often answers 502/503 or times out. A search that fails that way (or with 429, 500, 504 or a network error; read timeout 60 s) is retried up to 3 times after 2, 5 and 10 seconds of backoff; then the job fails with `source_unavailable`. A 4xx or a body that is not a JSON list fails at once with `source_invalid_response`. The rate limit is **one request every 3 seconds** per host (retries included). The timeout is 300 seconds; no search starts after 180 seconds and no download after 250, so a slow run ends with a clear error or a note (*Reached the time limit after N of 50 certificate downloads*) rather than the generic timeout.
 
 crt.sh (run by Sectigo) publishes no terms of use; see the Shuttle's [README](../shuttles/crtsh/README.md#using-crtsh-politely) for how it is used politely. Names are rated **B2** (confidence 0.8: logged certificates are reliable, but a certified name need not resolve today); certificates, downloaded and fingerprinted locally, **B1** (0.95). The tests never call crt.sh: they use a fake crt.sh behind the SDK's guarded client and certificates generated with `cryptography`; one opt-in `network` test (`make test-network`) asks the real crt.sh about `example.org`.
+
+### The RDAP Shuttle
+
+[`shuttles/rdap`](../shuttles/rdap/) (`rdap`, passive, `network=True`, sensitivity **organization** because it adds Organizations; no person-related types) looks up public registration data with [RDAP](https://about.rdap.org/) (RFC 9082/9083), the JSON successor of WHOIS, for a Domain, IPAddress, Netblock or ASN.
+
+| Input | Becomes |
+| --- | --- |
+| Domain | properties on the **registrable** Domain (`registered`, `expires`, `last_changed`, `status`, `dnssec_signed`, `registrar`, `registrar_iana_id`, `rdap_server`); the registrar as an Organization with `REGISTERED_BY` (note `role: registrar`); the registrant as an Organization with `REGISTERED_BY` (`role: registrant`) only when its vCard says `kind: org` and its name is not redacted; name servers as Domains with `HAS_NS` |
+| IPAddress, Netblock | the registered network as Netblocks (`handle`, `name`, `type`, `country`, `registry`, `registered`, `last_changed`, `parent_handle`) with `WITHIN` from the input address, or from the input netblock when it lies inside the registered network (the input gets the properties when it *is* the registered network); its owner (the contact with role `registrant` and `kind: org`) as an Organization with `OWNS` to each Netblock |
+| ASN | `handle`, `name`, `country`, `registry`, `registered`, `last_changed` on the ASN; its owner as an Organization with `OWNS` |
+
+**Bootstrap.** The server responsible comes from IANA's RDAP bootstrap registries (RFC 9224: `dns.json`, `ipv4.json`, `ipv6.json`, `asn.json` at `https://data.iana.org/rdap/`), fetched through `ctx.http` and cached in the worker process for 24 hours, per file, with a lock per file and event loop so concurrent jobs fetch once (the worker runs each job in its own event loop; the cache is shared by all of them). A failed refresh falls back to the stale copy. Lookups take the most specific entry (longest domain suffix, longest IP prefix, smallest AS number range) and prefer an `https` URL. An input no server is listed for fails with `not_covered`.
+
+**Registrable-domain lookup.** Registries hold registrations, not subdomains, so a Domain is looked up as its registrable domain (`nightloom_core.normalize.registrable_domain`, the bundled Public Suffix List), and a job note says when the input was a subdomain; the properties and relationships attach to the registrable domain. Public suffixes and internal-only names are refused (`not_registrable`) before anything is sent. When the registry's answer links (`rel: related`, RDAP media type) to the registrar's RDAP server, as thin registries such as .com and .net do, the Shuttle follows **one** such link and merges the answers: the registry wins on every field both have, and what only the registrar says is a second observation of the same Domain (or Organization, or name servers) rated lower. A registrar server that fails only costs a note.
+
+**Networks.** A network's extent comes from the `cidr0` extension when present, else from `startAddress`–`endAddress` converted to the minimal CIDR list (`ipaddress.summarize_address_range`), at most 16 blocks, with a note beyond that.
+
+**Privacy rules.** RDAP answers name people. One function, `nightloom_shuttle_rdap.privacy.extract_contacts`, is the only code that reads contacts (`entities` and their jCards), and it keeps only an organization's display name (`fn`) for the roles `registrar` (unless `kind: individual`) and `registrant` (only `kind: org`), plus the registrar's IANA ID. It never keeps names of individuals, email addresses (abuse and role mailboxes included), phone numbers, postal addresses or any other vCard field, skips names containing a redaction marker (one case-insensitive list, `REDACTION_MARKERS`: `REDACTED`, `Data Protected`, `Privacy`, `Not Disclosed`, `GDPR`, `Withheld`, …) or looking like an email address, URL or number, and ignores nested contacts and every other role. Skipped contacts are counted by reason (`not_an_organization`, `redacted`, `no_name`, `unused_role`) in a job note, never quoted. The tests scan every finding and note for the contact data in their fixtures.
+
+**HTTP.** `Accept: application/rdap+json`; rate limit one request per second per server; a 404 (no such object) ends the job successfully with a note; a 429 waits for `Retry-After` (5 seconds without one) at most twice and never longer than 30 seconds; 5xx and network errors are retried twice after 2 and 5 seconds, then `source_unavailable`; any other status or an answer that is not an RDAP object of the expected class is `source_invalid_response`. Timeout 120 seconds; no request starts after 100.
+
+**Admiralty.** The registry's answer is the authoritative record, but it may be redacted or out of date: **A2** (completely reliable, probably true; confidence 0.9). What only the registrar's answer adds is **B2** (0.8): registrars are usually reliable, but their copy is not the registry's record. The RIRs are the registries for addresses and AS numbers, so their answers are A2 too.
 
 ### Jobs and the worker
 

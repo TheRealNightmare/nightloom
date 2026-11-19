@@ -59,8 +59,14 @@ describe("2,000 entities", { timeout: 30_000 }, () => {
     });
     await run.done;
     expect(slices.length).toBeGreaterThan(3);
-    // The budget is 12 ms; one iteration can overrun it a little on a slow machine.
-    expect(Math.max(...slices)).toBeLessThan(250);
+    // The budget is 12 ms; one iteration can overrun it a little on a slow
+    // machine. The median, not the maximum: on a busy machine the scheduler
+    // can pause any one slice for hundreds of milliseconds, which says nothing
+    // about the layout. That every slice stops at its budget is checked with a
+    // fake clock in layout.test.ts.
+    const sorted = [...slices].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)] ?? Infinity;
+    expect(median).toBeLessThan(250 * TIME_FACTOR);
   });
 
   it("adds one entity without moving the others", async () => {

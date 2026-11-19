@@ -1,0 +1,155 @@
+{
+  "objectClassName": "domain",
+  "rdapConformance": [
+    "rdap_level_0",
+    "icann_rdap_technical_implementation_guide_1"
+  ],
+  "handle": "1234567_DOMAIN_NET-VRSN",
+  "ldhName": "EXAMPLE.NET",
+  "links": [
+    {
+      "value": "https://rdap.net-registry.example/v1/domain/EXAMPLE.NET",
+      "rel": "self",
+      "href": "https://rdap.net-registry.example/v1/domain/EXAMPLE.NET",
+      "type": "application/rdap+json"
+    },
+    {
+      "value": "https://rdap.registrar.example/rdap/domain/EXAMPLE.NET",
+      "rel": "related",
+      "href": "https://rdap.registrar.example/rdap/domain/EXAMPLE.NET",
+      "type": "application/rdap+json"
+    },
+    {
+      "value": "https://rdap.registrar.example/other",
+      "rel": "related",
+      "href": "https://rdap.other-registrar.example/rdap/domain/EXAMPLE.NET",
+      "type": "application/rdap+json"
+    }
+  ],
+  "status": [
+    "client delete prohibited",
+    "client transfer prohibited",
+    "client update prohibited"
+  ],
+  "entities": [
+    {
+      "objectClassName": "entity",
+      "handle": "9999",
+      "roles": [
+        "registrar"
+      ],
+      "publicIds": [
+        {
+          "type": "IANA Registrar ID",
+          "identifier": "9999"
+        }
+      ],
+      "vcardArray": [
+        "vcard",
+        [
+          [
+            "version",
+            {},
+            "text",
+            "4.0"
+          ],
+          [
+            "fn",
+            {},
+            "text",
+            "Example Registrar, Inc."
+          ]
+        ]
+      ],
+      "entities": [
+        {
+          "objectClassName": "entity",
+          "roles": [
+            "abuse"
+          ],
+          "vcardArray": [
+            "vcard",
+            [
+              [
+                "version",
+                {},
+                "text",
+                "4.0"
+              ],
+              [
+                "fn",
+                {},
+                "text",
+                "Abuse Desk Example"
+              ],
+              [
+                "tel",
+                {
+                  "type": "voice"
+                },
+                "uri",
+                "tel:+1.5555550100"
+              ],
+              [
+                "email",
+                {},
+                "text",
+                "abuse@registrar.example"
+              ]
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "events": [
+    {
+      "eventAction": "registration",
+      "eventDate": "1999-03-15T05:00:00Z"
+    },
+    {
+      "eventAction": "expiration",
+      "eventDate": "2027-03-15T04:00:00Z"
+    },
+    {
+      "eventAction": "last changed",
+      "eventDate": "2026-02-10T16:21:33Z"
+    },
+    {
+      "eventAction": "last update of RDAP database",
+      "eventDate": "2026-11-18T08:00:00Z"
+    }
+  ],
+  "secureDNS": {
+    "delegationSigned": false
+  },
+  "nameservers": [
+    {
+      "objectClassName": "nameserver",
+      "ldhName": "NS1.EXAMPLE.NET"
+    },
+    {
+      "objectClassName": "nameserver",
+      "ldhName": "NS2.EXAMPLE.NET."
+    },
+    {
+      "objectClassName": "nameserver",
+      "ldhName": "ns1.example.net"
+    }
+  ],
+  "notices": [
+    {
+      "title": "Terms of Use",
+      "description": [
+        "Fictional data for tests."
+      ],
+      "links": [
+        {
+          "href": "https://rdap.example.net/terms",
+          "rel": "terms-of-service",
+          "type": "text/html"
+        }
+      ]
+    }
+  ]
+}
