@@ -1,0 +1,41 @@
+{
+  "messages": [
+    [
+      "warning",
+      "Given resource is not announced but result has been aligned to first-level less-specific (192.0.2.0/24)."
+    ]
+  ],
+  "see_also": [],
+  "version": "1.3",
+  "data_call_name": "prefix-overview",
+  "data_call_status": "supported",
+  "cached": false,
+  "query_id": "20260101000000-00000000-0000-0000-0000-000000000000",
+  "process_time": 10,
+  "server_id": "app000",
+  "build_version": "example",
+  "status": "ok",
+  "status_code": 200,
+  "time": "2026-11-18T16:00:00.000000",
+  "data": {
+    "is_less_specific": true,
+    "announced": true,
+    "asns": [
+      {
+        "asn": 64496,
+        "holder": "EXAMPLE-NET - Example Networks B.V."
+      }
+    ],
+    "related_prefixes": [],
+    "resource": "192.0.2.0/24",
+    "type": "prefix",
+    "block": {
+      "resource": "192.0.2.0/24",
+      "desc": "Documentation (TEST-NET-1)",
+      "name": "IANA IPv4 Special Purpose Address Registry"
+    },
+    "actual_num_related": 0,
+    "query_time": "2026-11-18T16:00:00",
+    "num_filtered_out": 0
+  }
+}

@@ -57,6 +57,7 @@ known-first-party = [
     "nightloom_shuttle_crtsh",
     "nightloom_shuttle_dns",
     "nightloom_shuttle_rdap",
+    "nightloom_shuttle_ripestat",
     "nightloom_shuttle_registrable_domain",
     "nightloom_worker",
 ]
@@ -86,6 +87,8 @@ files = [
     "shuttles/dns/tests",
     "shuttles/rdap/src",
     "shuttles/rdap/tests",
+    "shuttles/ripestat/src",
+    "shuttles/ripestat/tests",
     "shuttles/registrable-domain/src",
     "shuttles/registrable-domain/tests",
 ]
@@ -102,6 +105,7 @@ mypy_path = [
     "shuttles/crtsh/src",
     "shuttles/dns/src",
     "shuttles/rdap/src",
+    "shuttles/ripestat/src",
     "shuttles/registrable-domain/src",
 ]
 
@@ -134,7 +138,7 @@ markers = [
     "db: needs PostgreSQL and Valkey (`make deps-up`); part of `make test`",
     "graph: needs Neo4j (`make deps-up`); part of `make test`",
     "integration: needs the running stack (`make up`); run with `make test-integration`",
-    "network: queries the real internet (public DNS, crt.sh, RDAP); opt-in with `make test-network`",
+    "network: queries the real internet (public DNS, crt.sh, RDAP, RIPEstat); opt-in with `make test-network`",
 ]
 addopts = [
     "--import-mode=importlib",
@@ -151,6 +155,7 @@ addopts = [
     "--cov=nightloom_shuttle_crtsh",
     "--cov=nightloom_shuttle_dns",
     "--cov=nightloom_shuttle_rdap",
+    "--cov=nightloom_shuttle_ripestat",
     "--cov=nightloom_shuttle_registrable_domain",
     "--cov-report=term-missing",
     "--cov-fail-under=90",

@@ -14,6 +14,7 @@ dependencies = [
     "nightloom-shuttle-crtsh",
     "nightloom-shuttle-dns",
     "nightloom-shuttle-rdap",
+    "nightloom-shuttle-ripestat",
     "nightloom-shuttle-registrable-domain",
 ]
 
@@ -28,4 +29,5 @@ nightloom-sdk = { workspace = true }
 nightloom-shuttle-crtsh = { workspace = true }
 nightloom-shuttle-dns = { workspace = true }
 nightloom-shuttle-rdap = { workspace = true }
+nightloom-shuttle-ripestat = { workspace = true }
 nightloom-shuttle-registrable-domain = { workspace = true }

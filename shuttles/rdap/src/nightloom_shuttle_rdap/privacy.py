@@ -13,8 +13,9 @@ else in a contact is never read into a finding, a note or a log:
   vCard says ``kind: individual``;
 - no email addresses, phone numbers, postal addresses or any other vCard
   field, including abuse and role mailboxes;
-- no value that looks redacted (:data:`REDACTION_MARKERS`, case-insensitive),
-  or that looks like an address or a number rather than a name.
+- no value that looks redacted (:data:`REDACTION_MARKERS`, case-insensitive,
+  shared with other Shuttles in :mod:`nightloom_sdk.redaction`), or that
+  looks like an address or a number rather than a name.
 
 What was skipped is counted by :class:`SkipReason`, never kept.
 """
@@ -26,29 +27,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
-# Text that registries and registrars put where a contact was withheld (GDPR
-# redaction, privacy and proxy services). A display name containing any of
-# them, ignoring case, is skipped. Keep this the one list.
-REDACTION_MARKERS: tuple[str, ...] = (
-    "redacted",
-    "redaction",
-    "data protected",
-    "privacy",
-    # Not "private": that is part of many real company names ("... Private Limited").
-    "proxy",
-    "not disclosed",
-    "non-disclosed",
-    "non-public",
-    "gdpr",
-    "withheld",
-    "statutory masking",
-    "masked",
-    "not available",
-    "on behalf of",
-    "whoisguard",
-    "identity protect",
-    "contact the registrar",
-)
+from nightloom_sdk.redaction import REDACTION_MARKERS, is_redacted
 
 # The roles whose organization this Shuttle uses (RFC 9083, section 10.2.4).
 REGISTRAR = "registrar"
@@ -89,12 +68,6 @@ class Contacts:
     organizations: dict[str, str] = field(default_factory=dict)
     registrar_iana_id: int | None = None
     skipped: Counter[SkipReason] = field(default_factory=Counter)
-
-
-def is_redacted(value: str) -> bool:
-    """Whether ``value`` contains a redaction marker (case-insensitive)."""
-    folded = value.casefold()
-    return any(marker in folded for marker in REDACTION_MARKERS)
 
 
 def _roles(entity: Mapping[str, Any]) -> set[str]:
