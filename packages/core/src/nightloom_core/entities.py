@@ -123,8 +123,15 @@ NameText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1,
 Uint32 = Annotated[int, Field(ge=0, le=2**32 - 1)]
 
 
+# Registration data (RDAP): status values and handles are short tokens.
+RDAP_MAX_STATUSES = 30
+RdapStatuses = Annotated[list[ShortText], Field(max_length=RDAP_MAX_STATUSES)]
+Handle = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+UrlText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2048)]
+
+
 class DomainProperties(Properties):
-    """What public DNS says about the name. Every field is optional.
+    """What public DNS and the registration data say about the name. Every field is optional.
 
     ``dns_txt`` holds the TXT records (each joined from its strings);
     ``dns_spf`` and ``dns_dmarc`` repeat the SPF (``v=spf1``) and DMARC
@@ -132,6 +139,12 @@ class DomainProperties(Properties):
     ``"<preference> <exchange>"``; ``dns_caa`` is ``"<flags> <tag> <value>"``;
     the ``dns_soa_*`` fields are the zone's SOA record when the name is a
     zone apex.
+
+    From RDAP (registrable domains only): ``registered``, ``expires`` and
+    ``last_changed`` (the registration's events), ``status`` (EPP statuses
+    such as ``client transfer prohibited``), ``dnssec_signed``, the
+    ``registrar``'s name and ``registrar_iana_id``, and the ``rdap_server``
+    that answered.
     """
 
     dns_txt: DnsRecords | None = None
@@ -146,6 +159,14 @@ class DomainProperties(Properties):
     dns_soa_retry: Uint32 | None = None
     dns_soa_expire: Uint32 | None = None
     dns_soa_minimum: Uint32 | None = None
+    registered: AwareDatetime | None = None
+    expires: AwareDatetime | None = None
+    last_changed: AwareDatetime | None = None
+    status: RdapStatuses | None = None
+    dnssec_signed: bool | None = None
+    registrar: ShortText | None = None
+    registrar_iana_id: int | None = Field(default=None, ge=1, le=2**31 - 1)
+    rdap_server: UrlText | None = None
 
 
 class IPAddressProperties(Properties):
@@ -156,15 +177,33 @@ class IPAddressProperties(Properties):
 
 
 class NetblockProperties(Properties):
+    """``registry`` is the Regional Internet Registry (``ARIN``, ``RIPE NCC``, ...).
+
+    From RDAP: the network's ``handle``, its ``type`` as the registry names it
+    (``DIRECT ALLOCATION``, ``ASSIGNED PA``, ...), ``registered`` and
+    ``last_changed``, and the ``parent_handle`` of the network it is part of.
+    """
+
     name: ShortText | None = None
     country: CountryCode | None = None
     registry: ShortText | None = None
+    handle: Handle | None = None
+    type: ShortText | None = None
+    registered: AwareDatetime | None = None
+    last_changed: AwareDatetime | None = None
+    parent_handle: Handle | None = None
 
 
 class ASNProperties(Properties):
+    """``registry`` is the Regional Internet Registry; ``handle``, ``registered``
+    and ``last_changed`` come from RDAP."""
+
     name: ShortText | None = None
     country: CountryCode | None = None
     registry: ShortText | None = None
+    handle: Handle | None = None
+    registered: AwareDatetime | None = None
+    last_changed: AwareDatetime | None = None
 
 
 class CertificateProperties(Properties):

@@ -1,0 +1,145 @@
+{
+  "objectClassName": "autnum",
+  "handle": "AS64496",
+  "startAutnum": 64496,
+  "endAutnum": 64496,
+  "name": "EXAMPLE-AS",
+  "type": "DIRECT ALLOCATION",
+  "country": "US",
+  "entities": [
+    {
+      "objectClassName": "entity",
+      "handle": "EXH-1",
+      "roles": [
+        "registrant"
+      ],
+      "vcardArray": [
+        "vcard",
+        [
+          [
+            "version",
+            {},
+            "text",
+            "4.0"
+          ],
+          [
+            "fn",
+            {},
+            "text",
+            "Example Hosting LLC"
+          ],
+          [
+            "kind",
+            {},
+            "text",
+            "org"
+          ],
+          [
+            "adr",
+            {
+              "label": "3 Sample Avenue\nExample City\nZZ"
+            },
+            "text",
+            [
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              ""
+            ]
+          ],
+          [
+            "tel",
+            {},
+            "uri",
+            "tel:+1-555-555-0177"
+          ]
+        ]
+      ],
+      "entities": [
+        {
+          "objectClassName": "entity",
+          "roles": [
+            "abuse"
+          ],
+          "vcardArray": [
+            "vcard",
+            [
+              [
+                "version",
+                {},
+                "text",
+                "4.0"
+              ],
+              [
+                "fn",
+                {},
+                "text",
+                "Abuse"
+              ],
+              [
+                "kind",
+                {},
+                "text",
+                "group"
+              ],
+              [
+                "email",
+                {},
+                "text",
+                "abuse@example-hosting.example"
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "objectClassName": "entity",
+      "roles": [
+        "technical"
+      ],
+      "vcardArray": [
+        "vcard",
+        [
+          [
+            "version",
+            {},
+            "text",
+            "4.0"
+          ],
+          [
+            "fn",
+            {},
+            "text",
+            "Chris Example"
+          ],
+          [
+            "kind",
+            {},
+            "text",
+            "individual"
+          ],
+          [
+            "email",
+            {},
+            "text",
+            "chris@example-hosting.example"
+          ]
+        ]
+      ]
+    }
+  ],
+  "events": [
+    {
+      "eventAction": "registration",
+      "eventDate": "2001-09-11T00:00:00Z"
+    },
+    {
+      "eventAction": "last changed",
+      "eventDate": "2024-12-01T00:00:00Z"
+    }
+  ]
+}

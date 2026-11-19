@@ -65,6 +65,7 @@ export interface LayoutOptions {
   budgetMs?: number;
   /** Schedules the next slice (default: a zero-delay timeout). */
   schedule?: (callback: () => void) => void;
+  /** Milliseconds clock for the slice budget (default: `performance.now`); tests pass a fake one. */
   now?: () => number;
   /** Called after every slice, e.g. to measure. */
   onSlice?: (iterations: number, elapsedMs: number) => void;

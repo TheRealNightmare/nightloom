@@ -42,6 +42,7 @@ class FailureReason(StrEnum):
     SOURCE_UNAVAILABLE = "source_unavailable"
     SOURCE_INVALID_RESPONSE = "source_invalid_response"
     RESULT_TOO_LARGE = "result_too_large"
+    NOT_COVERED = "not_covered"
 
 
 FAILURE_MESSAGES: dict[FailureReason, str] = {
@@ -56,6 +57,11 @@ FAILURE_MESSAGES: dict[FailureReason, str] = {
     FailureReason.RESULT_TOO_LARGE: (
         "The data source's answer is too large to process, even after narrowing the query. "
         "Run the Shuttle on a narrower input instead (for a domain: one of its subdomains)."
+    ),
+    FailureReason.NOT_COVERED: (
+        "The data source has no service for this input (for registration data: no RDAP "
+        "server is known for its top-level domain, address range or AS number). "
+        "Nothing was found."
     ),
 }
 

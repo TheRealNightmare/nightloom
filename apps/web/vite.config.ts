@@ -42,6 +42,9 @@ export default defineConfig({
     // Playwright's end-to-end specs live in e2e/ and run with `pnpm e2e`.
     include: ["src/**/*.test.{ts,tsx}"],
     setupFiles: ["./src/test/setup.ts"],
+    // Above Testing Library's 4 s async limit (src/test/setup.ts), so a slow
+    // findBy* fails with its own message rather than a test timeout.
+    testTimeout: 15_000,
     restoreMocks: true,
     unstubGlobals: true,
     coverage: {
