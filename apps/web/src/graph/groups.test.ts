@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import type { EntityNode, EntityType, InvestigationGraph, RelationEdge } from "../domain/entities";
-import { createGraph, groupSize, MAX_NODE_SIZE, NO_DASH, nodeSize, syncGraph } from "./buildGraph";
+import { DEFAULT_GRAPH_PALETTE } from "../theme/graphPalette";
+import { createGraph, syncGraph } from "./buildGraph";
+import { groupKnotSize, KNOT_MAX_SIZE } from "./encoding";
 import { applyFilters, EMPTY_FILTERS } from "./filters";
 import {
   collapseGroups,
@@ -178,19 +180,14 @@ describe("drawing groups", () => {
     expect(groupLabel("domain", 1)).toBe("1 Domain");
   });
 
-  it("sizes group nodes by count and gives them a dashed outline", () => {
+  it("sizes group nodes by count, in their type's color", () => {
     const data = hub(312);
     const graph = createGraph();
     syncGraph(graph, collapseGroups(data, computeGroups(data, all(data))));
     const id = groupId("domain:example.org", "url");
-    expect(graph.getNodeAttribute(id, "size")).toBe(groupSize(312));
-    expect(graph.getNodeAttribute(id, "dashColor")).not.toBe(NO_DASH);
-    expect(graph.getNodeAttribute(id, "color")).not.toBe(graph.getNodeAttribute(id, "dashColor"));
-    expect(graph.getNodeAttribute("domain:example.org", "dashColor")).toBe(NO_DASH);
-    expect(groupSize(10)).toBeLessThan(groupSize(1000));
-    expect(groupSize(10 ** 9)).toBe(36);
+    expect(graph.getNodeAttribute(id, "size")).toBe(groupKnotSize(312));
+    expect(graph.getNodeAttribute(id, "color")).toBe(DEFAULT_GRAPH_PALETTE.types.url);
     // Entities are capped too, so a hub whose leaves are filtered out stays readable.
-    expect(nodeSize(4)).toBeCloseTo(9.8);
-    expect(nodeSize(1700)).toBe(MAX_NODE_SIZE);
+    expect(graph.getNodeAttribute("domain:example.org", "size")).toBeLessThanOrEqual(KNOT_MAX_SIZE);
   });
 });

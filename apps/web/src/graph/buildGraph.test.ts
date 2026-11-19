@@ -3,14 +3,8 @@ import { describe, expect, it } from "vitest";
 import type { EntityNode, RelationEdge } from "../domain/entities";
 import { DEFAULT_GRAPH_PALETTE } from "../theme/graphPalette";
 import { sampleGraph } from "../demo/sampleGraph";
-import {
-  buildGraph,
-  createGraph,
-  MAX_LAYOUT_ITERATIONS,
-  nodeSize,
-  syncGraph,
-  unitHash,
-} from "./buildGraph";
+import { buildGraph, createGraph, MAX_LAYOUT_ITERATIONS, syncGraph, unitHash } from "./buildGraph";
+import { knotSize } from "./encoding";
 
 describe("buildGraph", () => {
   const graph = buildGraph(sampleGraph);
@@ -27,7 +21,7 @@ describe("buildGraph", () => {
   it("colors nodes by entity type and sizes them by degree", () => {
     graph.forEachNode((node, attributes) => {
       expect(attributes.color).toBe(DEFAULT_GRAPH_PALETTE.types[attributes.entityType]);
-      expect(attributes.size).toBeCloseTo(5 + Math.sqrt(graph.degree(node)) * 2.4);
+      expect(attributes.size).toBeCloseTo(knotSize(graph.degree(node)));
       expect(attributes.entity.id).toBe(node);
     });
   });
@@ -103,7 +97,7 @@ describe("syncGraph", () => {
     expect(graph.getNodeAttributes("a")).toMatchObject({ x: 500, y: 500 });
     const { x, y } = graph.getNodeAttributes("c");
     expect(Math.hypot(x - 500, y - 500)).toBeLessThan(30);
-    expect(graph.getNodeAttribute("a", "size")).toBeCloseTo(nodeSize(2));
+    expect(graph.getNodeAttribute("a", "size")).toBeCloseTo(knotSize(2));
   });
 
   it("resizes nodes without attribute hints, so sigma re-indexes new nodes", () => {

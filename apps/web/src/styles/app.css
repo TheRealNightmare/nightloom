@@ -201,8 +201,12 @@ a.button--primary {
 }
 
 .segmented__option[aria-disabled="true"] {
+  color: var(--muted);
   cursor: not-allowed;
-  text-decoration: line-through;
+}
+
+.segmented__option[aria-disabled="true"]:hover {
+  color: var(--muted);
 }
 
 .segmented__option:has(:focus-visible) {
@@ -670,9 +674,15 @@ a.brand {
   color: var(--muted);
 }
 
-.field__input:focus-visible,
-.search__input:focus-visible {
+/*
+ * Text fields show focus once: a brass border and a 1px ring of brass at 40%,
+ * instead of the 2px offset outline buttons and links get (base.css).
+ */
+.field__input:focus,
+.search__input:focus {
   border-color: var(--brass);
+  outline: none;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--brass) 40%, transparent);
 }
 
 .field__input[aria-invalid="true"] {
@@ -1615,6 +1625,37 @@ select.field__input {
   font-size: 13px;
 }
 
+/* "3D view coming soon": on hover and on keyboard focus (and its description). */
+.view-mode__soon {
+  position: relative;
+  display: inline-flex;
+}
+
+.view-mode__tooltip {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  z-index: 10;
+  width: max-content;
+  padding: 6px 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  color: var(--text);
+  font-size: 13px;
+  transform: translateX(-50%);
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  pointer-events: none;
+}
+
+.view-mode__soon:hover .view-mode__tooltip,
+.view-mode__soon:focus-within .view-mode__tooltip {
+  visibility: visible;
+  opacity: 1;
+}
+
 .search {
   position: relative;
 }
@@ -1753,6 +1794,43 @@ select.field__input {
 
 .legend__item[aria-pressed="false"] .swatch {
   border-style: dashed;
+}
+
+/* The graph's other marks: not toggles, just a key. */
+.legend__key {
+  gap: 2px 12px;
+  padding-left: 12px;
+  border-left: 1px solid var(--line);
+}
+
+.legend__mark {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* A short thread, as the canvas draws one (thin and at 45% when uncertain). */
+.thread-swatch {
+  flex: none;
+  width: 18px;
+  height: 0;
+  border-top: 1.5px solid var(--hair);
+}
+
+.thread-swatch--faint {
+  border-top-width: 1px;
+  border-color: var(--text);
+  opacity: 0.45;
+}
+
+/* A knot with the pinned ring: a thin brass ring around a type ring. */
+.swatch--pinned {
+  --swatch: var(--muted);
+  outline: 1.5px solid var(--brass);
+  outline-offset: 1.5px;
 }
 
 .zoom-controls {

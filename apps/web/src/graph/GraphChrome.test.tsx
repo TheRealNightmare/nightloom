@@ -60,7 +60,9 @@ describe("graph chrome", () => {
     expect(twoD).toHaveAttribute("aria-pressed", "true");
     expect(threeD).toHaveAttribute("aria-pressed", "false");
     expect(threeD).toHaveAttribute("aria-disabled", "true");
-    expect(threeD).toHaveAttribute("title", "3D view coming soon");
+    // The explanation is reachable by keyboard: a tooltip and the description.
+    expect(threeD).toHaveAccessibleDescription("3D view coming soon");
+    expect(screen.getByRole("tooltip", { hidden: true })).toHaveTextContent("3D view coming soon");
     await userEvent.click(threeD);
     expect(threeD).toHaveAttribute("aria-pressed", "false");
   });
@@ -68,30 +70,68 @@ describe("graph chrome", () => {
   it("repaints the canvas in the other theme's colors, without moving anything", async () => {
     const { sigma, graph } = renderDemo();
     const node = sampleGraph.nodes[0];
-    if (!node) throw new Error("empty sample");
+    const edge = sampleGraph.edges[0];
+    if (!node || !edge) throw new Error("empty sample");
     const before = graph.getNodeAttributes(node.id);
     expect(before.color).toBe(GRAPH_PALETTES.dark.types[node.type]);
-    const labelColor = (sigma.options as { styles: { nodes: { labelColor: () => string } } }).styles
-      .nodes.labelColor;
-    expect(labelColor()).toBe(GRAPH_PALETTES.dark.label);
+    expect(sigma.nodeView(node.id)).toMatchObject({
+      ringColor: GRAPH_PALETTES.dark.types[node.type],
+      faceColor: GRAPH_PALETTES.dark.surface,
+      labelColor: GRAPH_PALETTES.dark.label,
+    });
+    expect(sigma.edgeView(edge.id)["color"]).toBe(GRAPH_PALETTES.dark.edge);
     const refreshes = sigma.refresh.mock.calls.length;
 
     await userEvent.click(screen.getByRole("button", { name: "Switch to light theme" }));
     const after = graph.getNodeAttributes(node.id);
     expect(after.color).toBe(GRAPH_PALETTES.light.types[node.type]);
     expect([after.x, after.y, after.size]).toEqual([before.x, before.y, before.size]);
-    const edge = sampleGraph.edges[0];
-    if (edge) expect(graph.getEdgeAttribute(edge.id, "color")).toBe(GRAPH_PALETTES.light.edge);
-    expect(labelColor()).toBe(GRAPH_PALETTES.light.label);
+    expect(graph.getEdgeAttribute(edge.id, "color")).toBe(GRAPH_PALETTES.light.edge);
+    expect(sigma.nodeView(node.id)).toMatchObject({
+      ringColor: GRAPH_PALETTES.light.types[node.type],
+      faceColor: GRAPH_PALETTES.light.surface,
+      labelColor: GRAPH_PALETTES.light.label,
+    });
+    expect(sigma.edgeView(edge.id)["color"]).toBe(GRAPH_PALETTES.light.edge);
     expect(sigma.refresh.mock.calls.length).toBeGreaterThan(refreshes);
     // The same sigma instance: the camera is kept.
     expect(FakeSigma.latest()).toBe(sigma);
 
-    // Dimming blends toward the light background.
+    // The selection is brass in the light theme too, and the halo follows.
     act(() => {
-      sigma.emit("enterNode", { node: node.id });
+      sigma.emit("clickNode", { node: node.id });
     });
-    const far = graph.filterNodes((n) => n !== node.id && !graph.areNeighbors(n, node.id))[0];
-    if (far) expect(sigma.nodeView(far)["color"]).not.toBe(graph.getNodeAttribute(far, "color"));
+    expect(sigma.nodeView(node.id)).toMatchObject({
+      haloColor: GRAPH_PALETTES.light.selection,
+      labelColor: GRAPH_PALETTES.light.selectionText,
+    });
+  });
+
+  it("widens threads as the camera zooms in, repainting only on visible steps", () => {
+    const { sigma } = renderDemo();
+    const edge = sampleGraph.edges[0];
+    if (!edge) throw new Error("empty sample");
+    expect(sigma.edgeView(edge.id)["size"]).toBeCloseTo(1);
+    const refreshes = sigma.refresh.mock.calls.length;
+    act(() => {
+      sigma.zoomTo(0.99);
+    });
+    expect(sigma.refresh.mock.calls.length).toBe(refreshes);
+    act(() => {
+      sigma.zoomTo(0.25);
+    });
+    expect(sigma.refresh.mock.calls.length).toBe(refreshes + 1);
+    // 1.5 px on screen, which sigma scales by 1 / sqrt(ratio).
+    expect(sigma.edgeView(edge.id)["size"]).toBeCloseTo(1.5 * Math.sqrt(0.25));
+  });
+
+  it("draws with the knot and thread programs", () => {
+    const { sigma } = renderDemo();
+    const { primitives, styles } = sigma.options as {
+      primitives: { nodes: { variables: object }; edges: object };
+      styles: { edges: { path: string; labelVisibility: string } };
+    };
+    expect(Object.keys(primitives.nodes.variables)).toContain("ringColor");
+    expect(styles.edges).toMatchObject({ path: "curved", labelVisibility: "hidden" });
   });
 });

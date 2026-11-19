@@ -2,6 +2,7 @@ import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { DIM_OPACITY } from "../graph/encoding";
 import { FakeSigma } from "../test/sigmaMock";
 import { DemoPage } from "./DemoPage";
 
@@ -46,13 +47,24 @@ describe("DemoPage", () => {
       sigma.emit("enterNode", { node: "net:203.0.113.0/24" });
     });
     expect(sigma.refresh.mock.calls.length).toBeGreaterThan(refreshes);
-    expect(sigma.nodeView("ip:203.0.113.5")).toMatchObject({ labelVisibility: "visible" });
-    expect(sigma.nodeView("domain:example.org")).toMatchObject({ labelVisibility: "hidden" });
+    expect(sigma.nodeView("ip:203.0.113.5")).toMatchObject({
+      labelVisibility: "visible",
+      opacity: 1,
+    });
+    expect(sigma.nodeView("domain:example.org")).toMatchObject({
+      labelVisibility: "hidden",
+      opacity: DIM_OPACITY,
+    });
+    // Only the hovered node's threads show their labels, and the canvas describes them.
+    const canvas = screen.getByTestId("graph-canvas");
+    expect(canvas).toHaveAccessibleDescription(/^203\.0\.113\.0\/24: /);
 
     act(() => {
       sigma.emit("leaveNode", { node: "net:203.0.113.0/24" });
     });
-    expect(sigma.nodeView("domain:example.org")).toEqual({});
+    expect(sigma.nodeView("domain:example.org")).toMatchObject({ opacity: 1 });
+    expect(sigma.nodeView("domain:example.org")["labelVisibility"]).toBeUndefined();
+    expect(canvas).toHaveAccessibleDescription("");
   });
 
   it("hides and shows an entity type from the legend", async () => {
@@ -63,7 +75,7 @@ describe("DemoPage", () => {
     expect(sigma.nodeView("cert:wildcard")).toMatchObject({ visibility: "hidden" });
 
     await userEvent.click(screen.getByRole("button", { name: "Show all" }));
-    expect(sigma.nodeView("cert:wildcard")).toEqual({});
+    expect(sigma.nodeView("cert:wildcard")["visibility"]).toBeUndefined();
   });
 
   it("finds a node, selects it and moves the camera to it", async () => {

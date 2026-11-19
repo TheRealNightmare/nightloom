@@ -158,3 +158,47 @@ test("add, connect and delete entities in a case graph", async ({ page }) => {
   await expect(page).toHaveURL(/\/cases$/);
   expect(pageErrors).toEqual([]);
 });
+
+test("edge labels appear only for the hovered entity's relationships", async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.goto("/demo");
+  await signIn(page);
+  const canvas = page.getByTestId("graph-canvas");
+  await expect(canvas).toBeVisible();
+  // At rest no relationship label is drawn, so the canvas describes none.
+  await expect(canvas).toHaveAccessibleDescription("");
+  await page.waitForTimeout(1500); // let the layout settle
+  await screenshot(page, "nightloom-demo-graph.png");
+
+  // Find a knot by sweeping the pointer over the canvas from its centre
+  // outwards (sigma reports the hover; nothing here knows node positions).
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error("the canvas has no size");
+  const description = () =>
+    canvas.evaluate((element) => {
+      const id = element.getAttribute("aria-describedby") ?? "";
+      return document.getElementById(id)?.textContent ?? "";
+    });
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  let found = "";
+  search: for (let radius = 0; radius < Math.min(box.width, box.height) / 2; radius += 10) {
+    const steps = Math.max(1, Math.round((2 * Math.PI * radius) / 10));
+    for (let i = 0; i < steps; i += 1) {
+      const angle = (2 * Math.PI * i) / steps;
+      await page.mouse.move(cx + radius * Math.cos(angle), cy + radius * Math.sin(angle));
+      found = await description();
+      if (found !== "") break search;
+    }
+  }
+  // "203.0.113.5: within 203.0.113.0/24; …": the hovered entity's relationships.
+  expect(found).toMatch(/^[^:]+: .+/);
+  await expect(canvas).toHaveAccessibleDescription(found);
+  await screenshot(page, "nightloom-demo-hover.png");
+
+  // Off the knot (the canvas's padded corner), the labels go again.
+  await page.mouse.move(box.x + 8, box.y + 8);
+  await expect(canvas).toHaveAccessibleDescription("");
+  expect(pageErrors).toEqual([]);
+});
