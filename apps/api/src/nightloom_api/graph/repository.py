@@ -123,6 +123,13 @@ class EntityDetail:
 
 
 @dataclass(frozen=True)
+class GraphCounts:
+    entities: int
+    person_entities: int
+    relationships: int
+
+
+@dataclass(frozen=True)
 class DeletedEntity:
     type: EntityType
     sensitivity: Sensitivity
@@ -271,6 +278,35 @@ MATCH (n:Entity {case_id: $case_id, key: $key})
 WITH n, n.type AS type, n.sensitivity AS sensitivity
 DETACH DELETE n
 RETURN type, sensitivity
+"""
+
+_COUNT_GRAPH: LiteralString = """
+MATCH (n:Entity {case_id: $case_id})
+WITH count(n) AS entities, count(CASE WHEN n.sensitivity = 'person' THEN 1 END) AS person
+CALL (*) {
+  MATCH (:Entity {case_id: $case_id})-[r]->(:Entity {case_id: $case_id})
+  RETURN count(r) AS relationships
+}
+RETURN entities, person, relationships
+"""
+
+# `$person`: null for every entity, true for person-related ones only, false for the others.
+_EXPORT_ENTITIES: LiteralString = """
+MATCH (n:Entity {case_id: $case_id})
+WHERE $person IS NULL OR (n.sensitivity = 'person') = $person
+RETURN n {.*} AS node
+ORDER BY n.key
+"""
+
+# `$person`: null for every relationship, true for those touching a person-related
+# entity, false for the others.
+_EXPORT_RELATIONSHIPS: LiteralString = """
+MATCH (s:Entity {case_id: $case_id})-[r]->(t:Entity {case_id: $case_id})
+WITH s, r, t, (s.sensitivity = 'person' OR t.sensitivity = 'person') AS personal
+WHERE $person IS NULL OR personal = $person
+RETURN type(r) AS type, s.key AS source, t.key AS target,
+       s.sensitivity AS source_sensitivity, t.sensitivity AS target_sensitivity, r {.*} AS rel
+ORDER BY source, type, target
 """
 
 _DELETE_CASE_BATCH: LiteralString = """
@@ -425,6 +461,49 @@ class GraphOperations:
             type=EntityType(record["type"]), sensitivity=Sensitivity(record["sensitivity"])
         )
 
+    async def count_graph(self, case_id: uuid.UUID | str) -> GraphCounts:
+        """How many entities (and person-related ones) and relationships the case has."""
+        result = await self._tx.run(_COUNT_GRAPH, case_id=_case(case_id))
+        record = await result.single(strict=True)
+        return GraphCounts(
+            entities=int(record["entities"]),
+            person_entities=int(record["person"]),
+            relationships=int(record["relationships"]),
+        )
+
+    async def iter_entities(
+        self, case_id: uuid.UUID | str, *, person: bool | None = None
+    ) -> AsyncIterator[EntityRecord]:
+        """Every entity of the case, by key, streamed from Neo4j.
+
+        ``person`` keeps only person-related entities (``True``) or only the
+        others (``False``). The result must be consumed before the next query
+        in the same transaction.
+        """
+        result = await self._tx.run(_EXPORT_ENTITIES, case_id=_case(case_id), person=person)
+        async for record in result:
+            yield _entity(record["node"])
+
+    async def iter_relationships(
+        self, case_id: uuid.UUID | str, *, person: bool | None = None
+    ) -> AsyncIterator[RelationshipRecord]:
+        """Every relationship of the case (by source, type, target), streamed.
+
+        ``person`` keeps only relationships touching a person-related entity
+        (``True``) or only the others (``False``). Records carry both
+        endpoints' sensitivities.
+        """
+        result = await self._tx.run(_EXPORT_RELATIONSHIPS, case_id=_case(case_id), person=person)
+        async for record in result:
+            yield _relationship(
+                record["type"],
+                record["source"],
+                record["target"],
+                record["rel"],
+                source_sensitivity=Sensitivity(record["source_sensitivity"]),
+                target_sensitivity=Sensitivity(record["target_sensitivity"]),
+            )
+
     async def delete_case_batch(self, case_id: uuid.UUID | str, batch_size: int) -> int:
         """Delete up to ``batch_size`` of the case's nodes; returns how many were deleted."""
         result = await self._tx.run(_DELETE_CASE_BATCH, case_id=_case(case_id), batch=batch_size)
@@ -460,9 +539,12 @@ class GraphRepository:
                 raise GraphCommitError("The graph change could not be saved.") from exc
 
     @asynccontextmanager
-    async def read(self) -> AsyncIterator[GraphOperations]:
+    async def read(
+        self, *, tx_timeout: float = TRANSACTION_TIMEOUT
+    ) -> AsyncIterator[GraphOperations]:
+        """One read transaction; ``tx_timeout`` is Neo4j's server-side limit in seconds."""
         async with self._driver.session() as session:
-            tx = await session.begin_transaction(timeout=TRANSACTION_TIMEOUT)
+            tx = await session.begin_transaction(timeout=tx_timeout)
             try:
                 yield GraphOperations(tx)
             finally:
@@ -508,6 +590,10 @@ class GraphRepository:
     async def get_entity(self, case_id: uuid.UUID | str, key: str) -> EntityDetail | None:
         async with self.read() as ops:
             return await ops.get_entity(case_id, key)
+
+    async def count_graph(self, case_id: uuid.UUID | str) -> GraphCounts:
+        async with self.read() as ops:
+            return await ops.count_graph(case_id)
 
     async def delete_entity(self, case_id: uuid.UUID | str, key: str) -> DeletedEntity | None:
         async with self.write() as ops:

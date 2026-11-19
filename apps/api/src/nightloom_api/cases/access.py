@@ -48,6 +48,8 @@ class Capability(StrEnum):
     READ_AUDIT = "read_audit"
     # Purpose, legal basis, status, person entities, retention, members, deletion.
     MANAGE = "manage"
+    # Exporting person-related data unredacted (owners, with a reason).
+    EXPORT_PERSON_DATA = "export_person_data"
 
 
 CAPABILITIES: dict[CaseRole, frozenset[Capability]] = {

@@ -4,13 +4,16 @@ import { ENTITY_TYPE_INFO, type EntityNode, type EntityType } from "../domain/en
 import { searchNodes } from "../graph/view";
 
 export interface SearchBoxProps {
+  /** The entities to search (e.g. those the filters show, collapsed groups included). */
   nodes: readonly EntityNode[];
-  hiddenTypes: ReadonlySet<EntityType>;
+  hiddenTypes?: ReadonlySet<EntityType>;
   onPick: (node: string) => void;
 }
 
+const NO_TYPES: ReadonlySet<EntityType> = new Set();
+
 /** Finds an entity by label and focuses it (combobox with a listbox popup). */
-export function SearchBox({ nodes, hiddenTypes, onPick }: SearchBoxProps) {
+export function SearchBox({ nodes, hiddenTypes = NO_TYPES, onPick }: SearchBoxProps) {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const listId = useId();

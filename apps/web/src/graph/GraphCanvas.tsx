@@ -1,7 +1,14 @@
 import { useEffect, useImperativeHandle, useRef, type Ref } from "react";
+import type { Attributes } from "graphology-types";
 import Sigma from "sigma";
 
-import type { EdgeAttributes, NightloomGraph, NodeAttributes } from "./buildGraph";
+import {
+  NO_DASH,
+  type EdgeAttributes,
+  type NightloomGraph,
+  type NodeAttributes,
+} from "./buildGraph";
+import { nodePrimitives, type NodePrimitives } from "./nodePrimitives";
 import {
   computeHighlight,
   edgeView,
@@ -33,6 +40,9 @@ export interface GraphCanvasProps {
   ref?: Ref<GraphCanvasHandle>;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- sigma's "no custom state"
+type CanvasSigma = Sigma<NodeAttributes, EdgeAttributes, Attributes, {}, {}, {}, NodePrimitives>;
+
 const LABEL_FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
 const CAMERA_DURATION_MS = 450;
 const FOCUS_RETRY_FRAMES = 10;
@@ -55,7 +65,7 @@ export function GraphCanvas({
   ref,
 }: GraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const sigmaRef = useRef<Sigma<NodeAttributes, EdgeAttributes> | null>(null);
+  const sigmaRef = useRef<CanvasSigma | null>(null);
   // Read by the reducers on every refresh; updated before each refresh.
   const viewRef = useRef<{
     state: ViewState;
@@ -76,7 +86,10 @@ export function GraphCanvas({
     const container = containerRef.current;
     if (!container) return;
 
-    const sigma = new Sigma(graph, container, {
+    // Without WebGL (tests) sigma's defaults apply: no dashed group outlines.
+    const primitives = typeof WebGL2RenderingContext === "undefined" ? undefined : nodePrimitives();
+    const sigma: CanvasSigma = new Sigma(graph, container, {
+      ...(primitives ? { primitives } : {}),
       settings: {
         // Node sizes are pixels (sigma 4 defaults to layout units).
         itemSizesReference: "screen",
@@ -98,6 +111,7 @@ export function GraphCanvas({
           size: { attribute: "size", defaultValue: 6 },
           color: { attribute: "color", defaultValue: "#888888" },
           label: { attribute: "label" },
+          dashColor: { attribute: "dashColor", defaultValue: NO_DASH },
           labelColor: LABEL_COLOR,
           labelFont: LABEL_FONT,
           labelSize: 12,

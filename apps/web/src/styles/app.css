@@ -2065,3 +2065,163 @@ select.field__input {
   border-color: rgb(255 122 138 / 60%);
   color: var(--color-danger);
 }
+
+/* --- Graph filters, groups and export ------------------------------------ */
+
+.graph-filters {
+  position: absolute;
+  top: 64px;
+  right: 16px;
+  z-index: 2;
+  width: min(320px, calc(100% - 32px));
+  max-height: calc(100% - 80px);
+  overflow-y: auto;
+  padding: 12px 14px;
+  background: rgb(17 24 51 / 96%);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-overlay);
+}
+
+.graph-filters__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.graph-filters__summary {
+  margin: 8px 0 4px;
+  font-size: 13px;
+}
+
+.graph-filters__hint {
+  margin: 4px 0 0;
+  color: var(--color-text-faint);
+  font-size: 12px;
+}
+
+.graph-filters__group {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding: 10px 0 0;
+  border: 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.graph-filters__group > legend {
+  padding: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.graph-filters__check {
+  align-items: center;
+  font-size: 13px;
+}
+
+.graph-filters__check > span:first-of-type {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+.graph-filters__count {
+  color: var(--color-text-faint);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.graph-filters__field {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.graph-filters .field__input {
+  height: 32px;
+  padding: 0 8px;
+}
+
+.graph-filters__range {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.graph-filters__focus {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
+
+.graph-filters .field__input.graph-filters__inline {
+  display: inline-block;
+  width: auto;
+  height: 26px;
+  padding: 0 4px;
+}
+
+.graph-filters input[type="range"] {
+  width: 100%;
+  accent-color: var(--color-accent);
+}
+
+.filter-status {
+  position: absolute;
+  top: 60px;
+  left: 16px;
+  margin: 0;
+  padding: 4px 10px;
+  background: rgb(17 24 51 / 92%);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+}
+
+.group-actions {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.group-actions li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.button--small {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.choices {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 0;
+  border: 0;
+}
+
+.choice {
+  margin-bottom: 10px;
+}
+
+.choice input[type="radio"] {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 3px 0 0;
+  accent-color: var(--color-accent);
+}
+
+.choice__text {
+  display: grid;
+  gap: 2px;
+}
