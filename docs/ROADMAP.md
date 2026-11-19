@@ -44,7 +44,7 @@ Passive infrastructure Shuttles from free public sources, then a graph UI good e
 A new look for the web UI, in steps that each keep every screen working.
 
 - [x] U1 Design tokens, light and dark theme, self-hosted fonts, every existing screen restyled
-- [ ] U2 The 2D graph in the new look (knots and threads)
+- [x] U2 The 2D graph in the new look (knots and threads)
 - [ ] U3 2D graph interactions
 - [ ] U4 Saved views
 - [ ] U5 3D graph view

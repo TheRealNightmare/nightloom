@@ -48,4 +48,13 @@ describe("Legend", () => {
     await userEvent.click(screen.getByRole("button", { name: "Show all" }));
     expect(onShowAll).toHaveBeenCalledOnce();
   });
+
+  it("explains the low-confidence thread and the pinned ring", () => {
+    renderLegend();
+    const marks = screen.getByRole("list", { name: "Other marks" });
+    expect(marks).toHaveTextContent("Low confidence");
+    expect(marks).toHaveTextContent("Pinned");
+    // A key, not more toggles.
+    expect(screen.getAllByRole("button")).toHaveLength(types.length);
+  });
 });

@@ -17,7 +17,14 @@ import {
   LARGE_LAYOUT_ITERATIONS,
   startLayout,
 } from "./layout";
-import { countByType, searchNodes } from "./view";
+import {
+  computeHighlight,
+  countByType,
+  edgeView,
+  INITIAL_VIEW_STATE,
+  nodeView,
+  searchNodes,
+} from "./view";
 
 const data = largeGraph(2000);
 
@@ -106,6 +113,55 @@ describe("2,000 entities", { timeout: 30_000 }, () => {
     for (let i = 0; i < 20; i += 1) searchNodes(data.nodes, `site${i}`);
     countByType(data.nodes);
     expect(performance.now() - start).toBeLessThan(200 * TIME_FACTOR);
+  });
+});
+
+// sigma runs the reducers for every node and edge on each refresh (a hover,
+// a selection, a theme change, a zoom step), so they must stay cheap.
+describe("reducers for 2,000 nodes and 4,000 edges", { timeout: 30_000 }, () => {
+  const graph = createGraph();
+  syncGraph(graph, data);
+  // Top up to 4,000 edges between existing nodes.
+  const ids = graph.nodes();
+  for (let i = 0; graph.size < 4000; i += 1) {
+    const source = ids[(i * 7919) % ids.length] ?? "";
+    const target = ids[(i * 104_729 + 13) % ids.length] ?? "";
+    if (source === target) continue;
+    graph.addDirectedEdgeWithKey(`extra-${String(i)}`, source, target, {
+      label: "related to",
+      size: 1,
+      color: "transparent",
+      relation: { ...data.edges[0]!, id: `extra-${String(i)}`, from: source, to: target },
+      uncertain: i % 5 === 0,
+    });
+  }
+
+  it("repaint the whole graph quickly, focused or not", () => {
+    expect(graph.order).toBe(2000);
+    expect(graph.size).toBe(4000);
+    const hub = graph.nodes().reduce((a, b) => (graph.degree(a) >= graph.degree(b) ? a : b));
+    const states = [
+      INITIAL_VIEW_STATE,
+      { ...INITIAL_VIEW_STATE, hoveredNode: hub },
+      { ...INITIAL_VIEW_STATE, selectedNode: hub, hoveredNode: ids[1] ?? null },
+    ];
+    // Several full refreshes, the median one timed: one slow pass on a busy
+    // machine says nothing about the reducers.
+    const timings: number[] = [];
+    for (let round = 0; round < 5; round += 1) {
+      for (const state of states) {
+        const start = performance.now();
+        const highlight = computeHighlight(graph, state);
+        const context = { cameraRatio: 0.5, theme: round % 2 ? "light" : "dark" } as const;
+        graph.forEachNode((node) => nodeView(graph, node, state, highlight, context));
+        graph.forEachEdge((edge) => edgeView(graph, edge, state, highlight, context));
+        timings.push(performance.now() - start);
+      }
+    }
+    timings.sort((a, b) => a - b);
+    const median = timings[Math.floor(timings.length / 2)] ?? Infinity;
+    // About 2 ms on a desktop CPU; a frame is 16 ms.
+    expect(median).toBeLessThan(50 * TIME_FACTOR);
   });
 });
 

@@ -10,7 +10,12 @@ export interface LegendProps {
   onShowAll: () => void;
 }
 
-/** Entity-type legend; each entry toggles that type's visibility. */
+/**
+ * Entity-type legend; each entry toggles that type's visibility. After the
+ * types, the graph's other marks (see src/graph/encoding.ts): a faint, thin
+ * thread is a low-confidence or unconfirmed relationship, a brass outer ring
+ * a pinned entity.
+ */
 export function Legend({ types, hiddenTypes, onToggle, onShowAll }: LegendProps) {
   return (
     <section className="legend" aria-labelledby="legend-title">
@@ -47,6 +52,16 @@ export function Legend({ types, hiddenTypes, onToggle, onShowAll }: LegendProps)
             </li>
           );
         })}
+      </ul>
+      <ul className="legend__list legend__key" aria-label="Other marks">
+        <li className="legend__mark">
+          <span className="thread-swatch thread-swatch--faint" aria-hidden="true" />
+          Low confidence
+        </li>
+        <li className="legend__mark">
+          <span className="swatch swatch--pinned" aria-hidden="true" />
+          Pinned
+        </li>
       </ul>
     </section>
   );

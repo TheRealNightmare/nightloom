@@ -8,6 +8,8 @@ type Handler = (payload: { node?: string }) => void;
 type Reducer = (key: string) => Record<string, unknown>;
 
 interface Options {
+  primitives?: unknown;
+  styles?: unknown;
   nodeReducer?: Reducer;
   edgeReducer?: Reducer;
   settings?: Record<string, unknown>;
@@ -17,11 +19,16 @@ export class FakeSigma {
   static instances: FakeSigma[] = [];
 
   readonly handlers = new Map<string, Handler[]>();
+  readonly cameraHandlers: ((state: { ratio: number }) => void)[] = [];
   readonly camera = {
+    ratio: 1,
     animate: vi.fn(() => Promise.resolve()),
     reset: vi.fn(() => Promise.resolve()),
     zoomIn: vi.fn(() => Promise.resolve()),
     zoomOut: vi.fn(() => Promise.resolve()),
+    on: (event: string, handler: (state: { ratio: number }) => void) => {
+      if (event === "updated") this.cameraHandlers.push(handler);
+    },
   };
   readonly refresh = vi.fn(() => this);
   readonly kill = vi.fn();
@@ -46,6 +53,12 @@ export class FakeSigma {
 
   emit(event: string, payload: { node?: string } = {}): void {
     for (const handler of this.handlers.get(event) ?? []) handler(payload);
+  }
+
+  /** Moves the camera to `ratio`, as a zoom would. */
+  zoomTo(ratio: number): void {
+    this.camera.ratio = ratio;
+    for (const handler of this.cameraHandlers) handler({ ratio });
   }
 
   getCamera() {

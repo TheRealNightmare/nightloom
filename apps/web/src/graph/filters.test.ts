@@ -229,7 +229,7 @@ describe("edge visibility", () => {
     expect(nodeView(graph, "p", state, highlight)).toMatchObject({ visibility: "hidden" });
     expect(nodeView(graph, "a", state, highlight).visibility).toBeUndefined();
     expect(edgeView(graph, "a|HAS_EMAIL|p", state, highlight)).toEqual({ visibility: "hidden" });
-    expect(edgeView(graph, "a|HAS_SUBDOMAIN|b", state, highlight)).toEqual({});
+    expect(edgeView(graph, "a|HAS_SUBDOMAIN|b", state, highlight).visibility).toBeUndefined();
   });
 
   it("never highlights a hidden node", () => {

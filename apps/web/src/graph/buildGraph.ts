@@ -8,8 +8,8 @@ import {
   type RelationEdge,
 } from "../domain/entities";
 import { DEFAULT_GRAPH_PALETTE, type GraphPalette } from "../theme/graphPalette";
+import { baseKnotSize, isUncertain } from "./encoding";
 import { FULL_LAYOUT_ITERATIONS, layoutSync } from "./layout";
-import { mixColor } from "./view";
 
 export { MAX_LAYOUT_ITERATIONS } from "./layout";
 
@@ -23,8 +23,8 @@ export interface NodeAttributes {
   entity: EntityNode;
   /** Set only while a layout run keeps the node in place. */
   fixed?: boolean;
-  /** Color of a dashed outline (group nodes); transparent for everything else. */
-  dashColor: string;
+  /** Kept in place by the user (drawn with a brass ring; set by the interactions). */
+  pinned?: boolean;
 }
 
 export interface EdgeAttributes {
@@ -32,6 +32,8 @@ export interface EdgeAttributes {
   size: number;
   color: string;
   relation: RelationEdge;
+  /** Low confidence or not confirmed: drawn as a faint, thin thread (see ./encoding). */
+  uncertain: boolean;
 }
 
 export type NightloomGraph = Graph<NodeAttributes, EdgeAttributes>;
@@ -44,33 +46,9 @@ export function createGraph(): NightloomGraph {
   return new Graph<NodeAttributes, EdgeAttributes>({ type: "directed", multi: true });
 }
 
-/** Largest entity node (pixels): a hub with thousands of links must not cover the canvas. */
-export const MAX_NODE_SIZE = 28;
-
-/** Better-connected entities are drawn larger, up to {@link MAX_NODE_SIZE}. */
-export function nodeSize(degree: number): number {
-  return Math.min(5 + Math.sqrt(degree) * 2.4, MAX_NODE_SIZE);
-}
-
-/** A group node grows with the number of entities it stands for, within limits. */
-export function groupSize(members: number): number {
-  return Math.min(10 + Math.log2(Math.max(members, 1)) * 2.5, 36);
-}
-
-/** No outline. */
-export const NO_DASH = "transparent";
-/** How far a group's fill is blended toward the canvas, so its outline stands out. */
-const GROUP_FILL_DIM = 0.55;
-
-function sizeOf(entity: EntityNode, degree: number): number {
-  return entity.group ? groupSize(entity.group.members.length) : nodeSize(degree);
-}
-
-/** Fill and outline: an entity in its type's color; a group dimmed, with a dashed outline. */
-function colorsOf(entity: EntityNode, palette: GraphPalette): { color: string; dashColor: string } {
-  const color = palette.types[entity.type];
-  if (!entity.group) return { color, dashColor: NO_DASH };
-  return { color: mixColor(color, palette.background, GROUP_FILL_DIM), dashColor: color };
+/** The node's color: its type's (the knot's ring and center; see ./encoding). */
+function colorOf(entity: EntityNode, palette: GraphPalette): string {
+  return palette.types[entity.type];
 }
 
 /** A stable number in [0, 1) for a string (FNV-1a), for deterministic placement. */
@@ -95,7 +73,13 @@ export interface SyncResult {
 }
 
 function edgeAttributes(relation: RelationEdge, palette: GraphPalette): EdgeAttributes {
-  return { label: relationLabel(relation.relation), size: 1, color: palette.edge, relation };
+  return {
+    label: relationLabel(relation.relation),
+    size: 1,
+    color: palette.edge,
+    relation,
+    uncertain: isUncertain(relation),
+  };
 }
 
 /**
@@ -104,10 +88,8 @@ function edgeAttributes(relation: RelationEdge, palette: GraphPalette): EdgeAttr
  */
 export function recolorGraph(graph: NightloomGraph, palette: GraphPalette): void {
   graph.updateEachNodeAttributes((_node, attributes) => {
-    const colors = colorsOf(attributes.entity, palette);
-    return attributes.color === colors.color && attributes.dashColor === colors.dashColor
-      ? attributes
-      : { ...attributes, ...colors };
+    const color = colorOf(attributes.entity, palette);
+    return attributes.color === color ? attributes : { ...attributes, color };
   });
   graph.updateEachEdgeAttributes((_edge, attributes) =>
     attributes.color === palette.edge ? attributes : { ...attributes, color: palette.edge },
@@ -208,8 +190,8 @@ export function syncGraph(
           entity,
           label: entity.label,
           entityType: entity.type,
-          ...colorsOf(entity, palette),
-          size: sizeOf(entity, graph.degree(entity.id)),
+          color: colorOf(entity, palette),
+          size: baseKnotSize(entity, graph.degree(entity.id)),
         });
         result.changed = true;
       }
@@ -221,8 +203,8 @@ export function syncGraph(
       entityType: entity.type,
       x: Math.cos(angle) * START_RADIUS,
       y: Math.sin(angle) * START_RADIUS,
-      size: sizeOf(entity, 0),
-      ...colorsOf(entity, palette),
+      size: baseKnotSize(entity, 0),
+      color: colorOf(entity, palette),
       entity,
     });
     result.addedNodes.push(entity.id);
@@ -261,7 +243,7 @@ export function syncGraph(
     // No attribute hints: with them, sigma repaints in place and throws for
     // a node it has not indexed yet (one added a moment ago).
     graph.updateEachNodeAttributes((node, attributes) => {
-      const size = sizeOf(attributes.entity, graph.degree(node));
+      const size = baseKnotSize(attributes.entity, graph.degree(node));
       return attributes.size === size ? attributes : { ...attributes, size };
     });
   }

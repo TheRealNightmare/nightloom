@@ -4,6 +4,7 @@ import {
   useImperativeHandle,
   useMemo,
   useRef,
+  useId,
   useState,
   type ReactNode,
   type Ref,
@@ -397,6 +398,7 @@ export function GraphView({
             showAllLabels={snapshot.order <= SMALL_GRAPH}
             revision={snapshot}
             palette={painted}
+            theme={theme}
             {...(pulse ? { pulse } : {})}
           />
           {activeFilters > 0 && !filtersOpen && (
@@ -477,23 +479,30 @@ export function GraphView({
 
 /**
  * Placeholder for the 2D / 3D switch: only the 2D view exists so far. 3D
- * stays focusable (so its tooltip can be read) but does nothing.
+ * stays focusable and does nothing; its explanation is a tooltip on hover
+ * and keyboard focus, and its accessible description.
  */
 function ViewModeSwitch() {
+  const hintId = useId();
   return (
     <div className="segmented view-mode" role="group" aria-label="View">
       <button type="button" className="segmented__option" aria-pressed="true">
         2D
       </button>
-      <button
-        type="button"
-        className="segmented__option"
-        aria-pressed="false"
-        aria-disabled="true"
-        title="3D view coming soon"
-      >
-        3D
-      </button>
+      <span className="view-mode__soon">
+        <button
+          type="button"
+          className="segmented__option"
+          aria-pressed="false"
+          aria-disabled="true"
+          aria-describedby={hintId}
+        >
+          3D
+        </button>
+        <span id={hintId} role="tooltip" className="view-mode__tooltip">
+          3D view coming soon
+        </span>
+      </span>
     </div>
   );
 }
