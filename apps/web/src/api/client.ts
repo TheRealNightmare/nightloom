@@ -221,6 +221,7 @@ export abstract class RequestError extends Error {
     | "forbidden"
     | "not_found"
     | "conflict"
+    | "too_large"
     | "network"
     | "timeout"
     | "aborted"
@@ -308,6 +309,17 @@ export class ConflictError extends RequestError {
   constructor(message: string | null) {
     super(message ?? "This change conflicts with the current state. Reload and try again.");
     this.name = "ConflictError";
+  }
+}
+
+/** `413`: the request asks for more than the server will do; `detail` is its explanation. */
+export class ContentTooLargeError extends RequestError {
+  readonly kind = "too_large";
+  readonly detail: string | null;
+  constructor(detail: string | null = null) {
+    super(detail ?? "This is too large to do in one request.");
+    this.name = "ContentTooLargeError";
+    this.detail = detail;
   }
 }
 
@@ -532,6 +544,7 @@ export async function apiRequest(
     if (status === 403) throw new ForbiddenError(detailText(parsed));
     if (status === 404) throw new NotFoundError(detailText(parsed));
     if (status === 409) throw new ConflictError(detailText(parsed));
+    if (status === 413) throw new ContentTooLargeError(detailText(parsed));
     throw new UnexpectedResponseError(status);
   } finally {
     clearTimeout(timer);

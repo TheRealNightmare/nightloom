@@ -6,8 +6,11 @@
  */
 import { describe, expect, it } from "vitest";
 
+import type { InvestigationGraph } from "../domain/entities";
 import { largeGraph } from "../test/largeGraph";
 import { createGraph, syncGraph } from "./buildGraph";
+import { applyFilters, EMPTY_FILTERS } from "./filters";
+import { collapseGroups, computeGroups, groupContaining } from "./groups";
 import {
   fullLayoutIterations,
   INCREMENTAL_LAYOUT_ITERATIONS,
@@ -103,5 +106,93 @@ describe("2,000 entities", { timeout: 30_000 }, () => {
     for (let i = 0; i < 20; i += 1) searchNodes(data.nodes, `site${i}`);
     countByType(data.nodes);
     expect(performance.now() - start).toBeLessThan(200 * TIME_FACTOR);
+  });
+});
+
+// One domain with 1,500 archived URLs (what the Wayback Shuttle can add):
+// the URLs are leaves of one type around one entity, so they collapse into a
+// single group node and the graph the layout sees stays small.
+const LEAVES = 1500;
+const archive = "domain:archive.example.org";
+const leafy: InvestigationGraph = {
+  nodes: [
+    ...data.nodes,
+    { ...data.nodes[0]!, id: archive, label: "archive.example.org", type: "domain" },
+    ...Array.from({ length: LEAVES }, (_, i) => ({
+      ...data.nodes[0]!,
+      id: `url:https://archive.example.org/page/${String(i)}`,
+      label: `https://archive.example.org/page/${String(i)}`,
+      type: "url" as const,
+    })),
+  ],
+  edges: [
+    ...data.edges,
+    {
+      ...data.edges[0]!,
+      id: "anchor-edge",
+      from: data.nodes[100]?.id ?? "",
+      to: archive,
+    },
+    ...Array.from({ length: LEAVES }, (_, i) => ({
+      ...data.edges[0]!,
+      id: `leaf-edge-${String(i)}`,
+      from: archive,
+      to: `url:https://archive.example.org/page/${String(i)}`,
+      relation: "HOSTS",
+    })),
+  ],
+};
+
+describe("a 1,500-leaf group", { timeout: 30_000 }, () => {
+  it("collapses into one node quickly", () => {
+    const start = performance.now();
+    const visible = applyFilters(leafy, EMPTY_FILTERS, { now: 0 });
+    const groups = computeGroups(leafy, visible);
+    const display = collapseGroups(leafy, groups);
+    const graph = createGraph();
+    syncGraph(graph, display);
+    expect(performance.now() - start).toBeLessThan(500 * TIME_FACTOR);
+
+    expect(groups.map((group) => group.members.length)).toEqual([LEAVES]);
+    // The 2,000 entities, the archive domain and one group node.
+    expect(graph.order).toBe(2000 + 2);
+    expect(graph.getNodeAttribute(groups[0]?.id ?? "", "label")).toBe("1,500 URLs");
+  });
+
+  it("filters and regroups quickly when a filter changes", () => {
+    const start = performance.now();
+    for (let i = 0; i < 10; i += 1) {
+      const filters = { ...EMPTY_FILTERS, minConfidence: i / 20, hideIsolated: i % 2 === 0 };
+      collapseGroups(leafy, computeGroups(leafy, applyFilters(leafy, filters, { now: 0 })));
+    }
+    expect(performance.now() - start).toBeLessThan(1000 * TIME_FACTOR);
+  });
+
+  it("expands and collapses again quickly", () => {
+    const visible = applyFilters(leafy, EMPTY_FILTERS, { now: 0 });
+    const groups = computeGroups(leafy, visible);
+    const graph = createGraph();
+    syncGraph(graph, collapseGroups(leafy, groups));
+
+    let start = performance.now();
+    const expanded = syncGraph(graph, collapseGroups(leafy, []));
+    expect(performance.now() - start).toBeLessThan(500 * TIME_FACTOR);
+    expect(expanded.addedNodes).toHaveLength(LEAVES);
+    expect(graph.order).toBe(2000 + 1 + LEAVES);
+
+    start = performance.now();
+    syncGraph(graph, collapseGroups(leafy, groups));
+    expect(performance.now() - start).toBeLessThan(500 * TIME_FACTOR);
+    expect(graph.order).toBe(2000 + 2);
+  });
+
+  it("finds a collapsed entity by search", () => {
+    const start = performance.now();
+    const visible = applyFilters(leafy, EMPTY_FILTERS, { now: 0 });
+    const searchable = leafy.nodes.filter((node) => visible.has(node.id));
+    const [hit] = searchNodes(searchable, "page/1499");
+    expect(performance.now() - start).toBeLessThan(200 * TIME_FACTOR);
+    const group = groupContaining(computeGroups(leafy, visible), hit?.id ?? "");
+    expect(group?.parent).toBe(archive);
   });
 });

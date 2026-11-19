@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The structural part of the GraphML 1.0 schema
+  (http://graphml.graphdrawing.org/xmlns/1.0/graphml-structure.xsd) that
+  Nightloom's exports use, restated so the tests validate offline: graphml,
+  key (with the attr.name / attr.type extension of graphml-attributes.xsd),
+  graph, node, edge and data, with GraphML's attribute types and uniqueness
+  and reference constraints. Hyperedges, ports, nested graphs, locators and
+  desc elements are left out because exports never write them, so a file that
+  validates here also validates against the full schema.
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:g="http://graphml.graphdrawing.org/xmlns"
+           targetNamespace="http://graphml.graphdrawing.org/xmlns"
+           elementFormDefault="qualified"
+           attributeFormDefault="unqualified">
+
+  <xs:simpleType name="key.for.type">
+    <xs:restriction base="xs:NMTOKEN">
+      <xs:enumeration value="all"/>
+      <xs:enumeration value="graphml"/>
+      <xs:enumeration value="graph"/>
+      <xs:enumeration value="node"/>
+      <xs:enumeration value="edge"/>
+      <xs:enumeration value="hyperedge"/>
+      <xs:enumeration value="port"/>
+      <xs:enumeration value="endpoint"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="key.type.type">
+    <xs:restriction base="xs:NMTOKEN">
+      <xs:enumeration value="boolean"/>
+      <xs:enumeration value="int"/>
+      <xs:enumeration value="long"/>
+      <xs:enumeration value="float"/>
+      <xs:enumeration value="double"/>
+      <xs:enumeration value="string"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="graph.edgedefault.type">
+    <xs:restriction base="xs:NMTOKEN">
+      <xs:enumeration value="directed"/>
+      <xs:enumeration value="undirected"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="data.type" mixed="true">
+    <xs:attribute name="key" type="xs:NMTOKEN" use="required"/>
+    <xs:attribute name="id" type="xs:NMTOKEN"/>
+  </xs:complexType>
+
+  <xs:element name="data" type="g:data.type"/>
+
+  <xs:element name="key">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="default" minOccurs="0" type="xs:string"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:NMTOKEN" use="required"/>
+      <xs:attribute name="for" type="g:key.for.type" default="all"/>
+      <xs:attribute name="attr.name" type="xs:NMTOKEN"/>
+      <xs:attribute name="attr.type" type="g:key.type.type" default="string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="node">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="g:data" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:NMTOKEN" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="edge">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="g:data" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:NMTOKEN"/>
+      <xs:attribute name="directed" type="xs:boolean"/>
+      <xs:attribute name="source" type="xs:NMTOKEN" use="required"/>
+      <xs:attribute name="target" type="xs:NMTOKEN" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="graph">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+          <xs:element ref="g:data"/>
+          <xs:element ref="g:node"/>
+          <xs:element ref="g:edge"/>
+        </xs:choice>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:NMTOKEN"/>
+      <xs:attribute name="edgedefault" type="g:graph.edgedefault.type" use="required"/>
+    </xs:complexType>
+    <xs:unique name="graph_node_id_unique">
+      <xs:selector xpath="g:node"/>
+      <xs:field xpath="@id"/>
+    </xs:unique>
+    <xs:unique name="graph_edge_id_unique">
+      <xs:selector xpath="g:edge"/>
+      <xs:field xpath="@id"/>
+    </xs:unique>
+    <xs:key name="graph_node_id_key">
+      <xs:selector xpath="g:node"/>
+      <xs:field xpath="@id"/>
+    </xs:key>
+    <xs:keyref name="graph_edge_source_keyref" refer="g:graph_node_id_key">
+      <xs:selector xpath="g:edge"/>
+      <xs:field xpath="@source"/>
+    </xs:keyref>
+    <xs:keyref name="graph_edge_target_keyref" refer="g:graph_node_id_key">
+      <xs:selector xpath="g:edge"/>
+      <xs:field xpath="@target"/>
+    </xs:keyref>
+  </xs:element>
+
+  <xs:element name="graphml">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="g:key" minOccurs="0" maxOccurs="unbounded"/>
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+          <xs:element ref="g:data"/>
+          <xs:element ref="g:graph"/>
+        </xs:choice>
+      </xs:sequence>
+    </xs:complexType>
+    <xs:key name="graphml_key_id_key">
+      <xs:selector xpath="g:key"/>
+      <xs:field xpath="@id"/>
+    </xs:key>
+    <xs:keyref name="graphml_data_key_keyref" refer="g:graphml_key_id_key">
+      <xs:selector xpath=".//g:data"/>
+      <xs:field xpath="@key"/>
+    </xs:keyref>
+  </xs:element>
+</xs:schema>

@@ -24,6 +24,8 @@ export interface SidePanelProps {
   overview: ReactNode;
   /** The selected entity's details; defaults to its id, properties and provenance. */
   renderEntity?: (entity: EntityNode) => ReactNode;
+  /** Shown under the entity's details (e.g. collapsing a group around it). */
+  extra?: ReactNode;
   onSelect: (node: string) => void;
   onClear: () => void;
 }
@@ -143,6 +145,7 @@ export function SidePanel({
   connections,
   overview,
   renderEntity = defaultRenderEntity,
+  extra = null,
   onSelect,
   onClear,
 }: SidePanelProps) {
@@ -163,6 +166,7 @@ export function SidePanel({
           </h2>
 
           {renderEntity(selected)}
+          {extra}
 
           <section>
             <h3 className="panel__section">Connections ({connections.length})</h3>

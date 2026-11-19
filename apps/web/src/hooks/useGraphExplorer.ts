@@ -13,55 +13,71 @@ export interface GraphExplorer {
   resetView: () => void;
 }
 
-/** Interaction state of the graph view (hover, selection, hidden types). */
-export function useGraphExplorer(graph: NightloomGraph): GraphExplorer {
-  const [view, setView] = useState<ViewState>(INITIAL_VIEW_STATE);
+/** Hidden types kept outside the explorer (e.g. in the URL with the other filters). */
+export interface HiddenTypesStore {
+  hidden: ReadonlySet<EntityType>;
+  setHidden: (next: ReadonlySet<EntityType>) => void;
+}
+
+type Pointer = Pick<ViewState, "hoveredNode" | "selectedNode">;
+
+/**
+ * Interaction state of the graph view (hover, selection, hidden types).
+ * Hidden types live here unless `types` keeps them elsewhere.
+ */
+export function useGraphExplorer(graph: NightloomGraph, types?: HiddenTypesStore): GraphExplorer {
+  const [pointer, setPointer] = useState<Pointer>(INITIAL_VIEW_STATE);
+  const [ownHidden, setOwnHidden] = useState<ReadonlySet<EntityType>>(
+    INITIAL_VIEW_STATE.hiddenTypes,
+  );
+  const hiddenTypes = types?.hidden ?? ownHidden;
+  const setHidden = types?.setHidden ?? setOwnHidden;
 
   const hoverNode = useCallback((node: string | null) => {
-    setView((current) =>
+    setPointer((current) =>
       current.hoveredNode === node ? current : { ...current, hoveredNode: node },
     );
   }, []);
 
   const selectNode = useCallback(
     (node: string | null) => {
-      setView((current) => {
-        if (node !== null && !graph.hasNode(node)) return current;
-        // Selecting an entity of a hidden type shows that type again.
-        let hiddenTypes = current.hiddenTypes;
-        if (node !== null) {
-          const type = graph.getNodeAttribute(node, "entityType");
-          if (hiddenTypes.has(type)) hiddenTypes = toggleType(hiddenTypes, type);
-        }
-        return { ...current, selectedNode: node, hiddenTypes };
-      });
+      if (node !== null && !graph.hasNode(node)) return;
+      // Selecting an entity of a hidden type shows that type again.
+      if (node !== null) {
+        const type = graph.getNodeAttribute(node, "entityType");
+        if (hiddenTypes.has(type)) setHidden(toggleType(hiddenTypes, type));
+      }
+      setPointer((current) => ({ ...current, selectedNode: node }));
     },
-    [graph],
+    [graph, hiddenTypes, setHidden],
   );
 
   const toggleEntityType = useCallback(
     (type: EntityType) => {
-      setView((current) => {
-        const hiddenTypes = toggleType(current.hiddenTypes, type);
-        const isHidden = (node: string | null) =>
-          node !== null && hiddenTypes.has(graph.getNodeAttribute(node, "entityType"));
-        return {
-          hiddenTypes,
-          selectedNode: isHidden(current.selectedNode) ? null : current.selectedNode,
-          hoveredNode: isHidden(current.hoveredNode) ? null : current.hoveredNode,
-        };
-      });
+      const next = toggleType(hiddenTypes, type);
+      setHidden(next);
+      const isHidden = (node: string | null) =>
+        node !== null &&
+        graph.hasNode(node) &&
+        next.has(graph.getNodeAttribute(node, "entityType"));
+      setPointer((current) => ({
+        selectedNode: isHidden(current.selectedNode) ? null : current.selectedNode,
+        hoveredNode: isHidden(current.hoveredNode) ? null : current.hoveredNode,
+      }));
     },
-    [graph],
+    [graph, hiddenTypes, setHidden],
   );
 
   const showAllTypes = useCallback(() => {
-    setView((current) => ({ ...current, hiddenTypes: new Set() }));
-  }, []);
+    setHidden(new Set());
+  }, [setHidden]);
 
   const resetView = useCallback(() => {
-    setView(INITIAL_VIEW_STATE);
-  }, []);
+    setPointer(INITIAL_VIEW_STATE);
+    setHidden(new Set());
+  }, [setHidden]);
+
+  const view = useMemo<ViewState>(() => ({ ...pointer, hiddenTypes }), [pointer, hiddenTypes]);
 
   return useMemo(
     () => ({ view, hoverNode, selectNode, toggleEntityType, showAllTypes, resetView }),

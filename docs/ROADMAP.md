@@ -33,7 +33,7 @@ Passive infrastructure Shuttles from free public sources, then a graph UI good e
 - [x] 1.4 Shodan InternetDB Shuttle (`internetdb`: open ports, CPEs, CVEs, tags, hostnames; no key; non-commercial use)
 - [x] 1.5 Wayback Machine CDX Shuttle (`wayback`: historical URLs and subdomains; query strings stripped, only parameter names kept; no key)
 - [x] 1.6 Reverse DNS Shuttle (`reverse-dns`: PTR names for an address or a netblock of up to 256 addresses, forward-confirmed; same resolver policy as `dns`)
-- [ ] 1.7 Graph UX and export (provenance panel, layout and filtering, export)
+- [x] 1.7 Graph UX and export (filters kept in the URL, collapsed groups of leaves, JSON/GraphML/CSV export with person data redacted by default)
 - [ ] Release v0.1 (production Compose file with HTTPS, backups, user management UI, tagged release with published images)
 
 ## M2 — Auto-pivot

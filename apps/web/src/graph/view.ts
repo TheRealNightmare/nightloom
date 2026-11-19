@@ -23,6 +23,8 @@ export interface ViewState {
   hoveredNode: string | null;
   selectedNode: string | null;
   hiddenTypes: ReadonlySet<EntityType>;
+  /** Nodes the other filters hide (see ./filters), on top of the hidden types. */
+  hiddenNodes?: ReadonlySet<string>;
 }
 
 export const INITIAL_VIEW_STATE: ViewState = {
@@ -43,6 +45,14 @@ export function isTypeVisible(type: EntityType, state: ViewState): boolean {
   return !state.hiddenTypes.has(type);
 }
 
+/** Whether the node is drawn: its type is shown and no filter hides it. */
+export function isNodeVisible(graph: NightloomGraph, node: string, state: ViewState): boolean {
+  return (
+    isTypeVisible(graph.getNodeAttribute(node, "entityType"), state) &&
+    !(state.hiddenNodes?.has(node) ?? false)
+  );
+}
+
 export function neighborhoodOf(graph: NightloomGraph, node: string): Set<string> {
   const result = new Set<string>([node]);
   graph.forEachNeighbor(node, (neighbor) => result.add(neighbor));
@@ -51,11 +61,7 @@ export function neighborhoodOf(graph: NightloomGraph, node: string): Set<string>
 
 export function computeHighlight(graph: NightloomGraph, state: ViewState): Highlight {
   const candidate = state.hoveredNode ?? state.selectedNode;
-  if (
-    candidate === null ||
-    !graph.hasNode(candidate) ||
-    !isTypeVisible(graph.getNodeAttribute(candidate, "entityType"), state)
-  ) {
+  if (candidate === null || !graph.hasNode(candidate) || !isNodeVisible(graph, candidate, state)) {
     return { focus: null, neighborhood: new Set() };
   }
   return { focus: candidate, neighborhood: neighborhoodOf(graph, candidate) };
@@ -95,7 +101,7 @@ export function nodeView(
   pulse: ReadonlySet<string> = NO_PULSE,
 ): Partial<NodeDisplayData> {
   const attributes = graph.getNodeAttributes(node);
-  if (!isTypeVisible(attributes.entityType, state)) {
+  if (!isNodeVisible(graph, node, state)) {
     return { visibility: "hidden", labelVisibility: "hidden" };
   }
 
@@ -140,9 +146,7 @@ export function edgeView(
   highlight: Highlight,
 ): Partial<EdgeDisplayData> {
   const [source, target] = graph.extremities(edge);
-  const sourceType = graph.getNodeAttribute(source, "entityType");
-  const targetType = graph.getNodeAttribute(target, "entityType");
-  if (!isTypeVisible(sourceType, state) || !isTypeVisible(targetType, state)) {
+  if (!isNodeVisible(graph, source, state) || !isNodeVisible(graph, target, state)) {
     return { visibility: "hidden" };
   }
   if (highlight.focus === null) return {};

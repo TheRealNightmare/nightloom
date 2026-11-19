@@ -48,4 +48,4 @@ docker build -f apps/web/Dockerfile -t nightloom-web .
 
 - Unit tests (Vitest, jsdom) mock sigma ([`src/test/sigmaMock.ts`](src/test/sigmaMock.ts)), since jsdom has no WebGL, and talk to a fake API ([`src/test/fakeApi.ts`](src/test/fakeApi.ts)).
 - [`src/test/schema.json`](src/test/schema.json) is a copy of `GET /api/v1/schema`. An API test fails when it is out of date. To regenerate it, run `uv run python -m nightloom_api.routers.schema > apps/web/src/test/schema.json`, then `make web-fmt`.
-- [`src/test/largeGraph.ts`](src/test/largeGraph.ts) generates a synthetic 2,000-entity graph for [`src/graph/performance.test.ts`](src/graph/performance.test.ts). Like everything in `src/test/`, it is never part of the production bundle.
+- [`src/test/largeGraph.ts`](src/test/largeGraph.ts) generates a synthetic 2,000-entity graph for [`src/graph/performance.test.ts`](src/graph/performance.test.ts), which also adds one domain with 1,500 leaf URLs to check that filtering, grouping, expanding and collapsing stay fast. Like everything in `src/test/`, it is never part of the production bundle.

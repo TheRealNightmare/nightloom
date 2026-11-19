@@ -43,12 +43,13 @@ export const CASE_ROLES = ["owner", "editor", "viewer"] as const;
 export type CaseRole = (typeof CASE_ROLES)[number];
 
 /** Mirrors `Capability` and `CAPABILITIES` in cases/access.py (the API does not send them). */
-export type Capability = "read" | "edit" | "run_shuttles" | "read_audit" | "manage";
+export type Capability =
+  "read" | "edit" | "run_shuttles" | "read_audit" | "manage" | "export_person_data";
 
 export const CAPABILITIES: Record<CaseRole, ReadonlySet<Capability>> = {
   viewer: new Set(["read"]),
   editor: new Set(["read", "edit", "run_shuttles", "read_audit"]),
-  owner: new Set(["read", "edit", "run_shuttles", "read_audit", "manage"]),
+  owner: new Set(["read", "edit", "run_shuttles", "read_audit", "manage", "export_person_data"]),
 };
 
 export function can(role: CaseRole, capability: Capability): boolean {

@@ -7,6 +7,7 @@ import type { Job, ShuttleInfo } from "../api/shuttles";
 import { TypeSummary, type GraphSummary } from "../components/SidePanel";
 import type { EntityNode, InvestigationGraph } from "../domain/entities";
 import type { FocusRequest } from "../graph/GraphView";
+import { useUrlFilters } from "../graph/useUrlFilters";
 import { useCase } from "./caseContext";
 import { describeCaseError } from "./errors";
 import { Loading } from "./Feedback";
@@ -14,6 +15,8 @@ import { AddEntityDialog } from "./graph/AddEntityDialog";
 import { AddRelationshipDialog } from "./graph/AddRelationshipDialog";
 import { DeleteEntityDialog } from "./graph/DeleteEntityDialog";
 import { EntityDetails } from "./graph/EntityDetails";
+import { ExportDialog } from "./graph/ExportDialog";
+import { FORMAT_LABELS } from "./graph/exportText";
 import { JobsPanel } from "./graph/JobsPanel";
 import {
   toEntityNode,
@@ -45,6 +48,7 @@ type Dialog =
   | { kind: "add_entity" }
   | { kind: "add_relationship" }
   | { kind: "delete"; entity: EntityNode }
+  | { kind: "export" }
   | null;
 
 function CaseOverview({ summary }: { summary: GraphSummary }) {
@@ -74,6 +78,8 @@ export function GraphTab() {
   const [notice, setNotice] = useState<string | null>(null);
   const [jobsOpen, setJobsOpen] = useState(false);
   const [pulse, setPulse] = useState<ReadonlySet<string> | null>(null);
+  // Filters live in the query string: shareable, and they survive a reload.
+  const [filters, updateFilters] = useUrlFilters();
 
   // A finished job may have changed the graph: load it again (the view syncs
   // incrementally), and highlight what a successful job created or updated.
@@ -156,8 +162,8 @@ export function GraphTab() {
 
   const reason = readOnlyReason(current);
   const canEdit = reason === null;
-  // A case can be closed (or a role changed) while a dialog is open.
-  const openDialog = canEdit ? dialog : null;
+  // A case can be closed (or a role changed) while a dialog is open. Anyone may export.
+  const openDialog = canEdit || dialog?.kind === "export" ? dialog : null;
 
   const allowPersonEntities = current.allow_person_entities;
   const runShuttle = useCallback(
@@ -241,6 +247,18 @@ export function GraphTab() {
               </span>
             )}
           </button>
+          {!empty && (
+            <button
+              type="button"
+              className="button"
+              onClick={() => {
+                setNotice(null);
+                setDialog({ kind: "export" });
+              }}
+            >
+              Export
+            </button>
+          )}
           {canEdit && !empty && (
             <>
               <button
@@ -327,6 +345,9 @@ export function GraphTab() {
             focus={focus}
             onSelectionChange={setSelectedId}
             {...(pulse ? { pulse } : {})}
+            filters={filters}
+            onFiltersChange={updateFilters}
+            grades={schema.admiralty}
           />
         </Suspense>
       )}
@@ -360,6 +381,17 @@ export function GraphTab() {
           onCreated={(created) => {
             update((previous) => withRelationship(previous, toRelationEdge(created)));
             setDialog(null);
+          }}
+        />
+      )}
+      {openDialog?.kind === "export" && (
+        <ExportDialog
+          caseId={caseId}
+          canIncludePersonData={can(current.my_role, "export_person_data")}
+          onClose={closeDialog}
+          onStarted={(format) => {
+            setDialog(null);
+            setNotice(`Your ${FORMAT_LABELS[format].label} export is downloading.`);
           }}
         />
       )}

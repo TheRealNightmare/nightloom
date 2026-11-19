@@ -28,6 +28,8 @@ class AuditAction(StrEnum):
     CASE_MEMBER_REMOVE = "case.member_remove"
     # Removing a deleted case's graph from Neo4j, after the case row is gone.
     CASE_GRAPH_DELETE = "case.graph_delete"
+    # Exporting a case's graph (JSON, GraphML or CSV); never the exported values.
+    CASE_EXPORT = "case.export"
     ENTITY_CREATE = "entity.create"
     ENTITY_DELETE = "entity.delete"
     RELATIONSHIP_CREATE = "relationship.create"

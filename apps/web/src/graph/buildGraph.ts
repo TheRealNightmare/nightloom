@@ -9,6 +9,7 @@ import {
   type RelationEdge,
 } from "../domain/entities";
 import { FULL_LAYOUT_ITERATIONS, layoutSync } from "./layout";
+import { CANVAS_BACKGROUND, mixColor } from "./view";
 
 export { MAX_LAYOUT_ITERATIONS } from "./layout";
 
@@ -22,6 +23,8 @@ export interface NodeAttributes {
   entity: EntityNode;
   /** Set only while a layout run keeps the node in place. */
   fixed?: boolean;
+  /** Color of a dashed outline (group nodes); transparent for everything else. */
+  dashColor: string;
 }
 
 export interface EdgeAttributes {
@@ -42,9 +45,33 @@ export function createGraph(): NightloomGraph {
   return new Graph<NodeAttributes, EdgeAttributes>({ type: "directed", multi: true });
 }
 
-/** Better-connected entities are drawn larger. */
+/** Largest entity node (pixels): a hub with thousands of links must not cover the canvas. */
+export const MAX_NODE_SIZE = 28;
+
+/** Better-connected entities are drawn larger, up to {@link MAX_NODE_SIZE}. */
 export function nodeSize(degree: number): number {
-  return 5 + Math.sqrt(degree) * 2.4;
+  return Math.min(5 + Math.sqrt(degree) * 2.4, MAX_NODE_SIZE);
+}
+
+/** A group node grows with the number of entities it stands for, within limits. */
+export function groupSize(members: number): number {
+  return Math.min(10 + Math.log2(Math.max(members, 1)) * 2.5, 36);
+}
+
+/** No outline. */
+export const NO_DASH = "rgba(0,0,0,0)";
+/** How far a group's fill is blended toward the canvas, so its outline stands out. */
+const GROUP_FILL_DIM = 0.55;
+
+function sizeOf(entity: EntityNode, degree: number): number {
+  return entity.group ? groupSize(entity.group.members.length) : nodeSize(degree);
+}
+
+/** Fill and outline: an entity in its type's color; a group dimmed, with a dashed outline. */
+function colorsOf(entity: EntityNode): { color: string; dashColor: string } {
+  const color = ENTITY_TYPE_INFO[entity.type].color;
+  if (!entity.group) return { color, dashColor: NO_DASH };
+  return { color: mixColor(color, CANVAS_BACKGROUND, GROUP_FILL_DIM), dashColor: color };
 }
 
 /** A stable number in [0, 1) for a string (FNV-1a), for deterministic placement. */
@@ -162,7 +189,8 @@ export function syncGraph(graph: NightloomGraph, data: InvestigationGraph): Sync
           entity,
           label: entity.label,
           entityType: entity.type,
-          color: ENTITY_TYPE_INFO[entity.type].color,
+          ...colorsOf(entity),
+          size: sizeOf(entity, graph.degree(entity.id)),
         });
         result.changed = true;
       }
@@ -174,8 +202,8 @@ export function syncGraph(graph: NightloomGraph, data: InvestigationGraph): Sync
       entityType: entity.type,
       x: Math.cos(angle) * START_RADIUS,
       y: Math.sin(angle) * START_RADIUS,
-      size: nodeSize(0),
-      color: ENTITY_TYPE_INFO[entity.type].color,
+      size: sizeOf(entity, 0),
+      ...colorsOf(entity),
       entity,
     });
     result.addedNodes.push(entity.id);
@@ -209,7 +237,7 @@ export function syncGraph(graph: NightloomGraph, data: InvestigationGraph): Sync
     // No attribute hints: with them, sigma repaints in place and throws for
     // a node it has not indexed yet (one added a moment ago).
     graph.updateEachNodeAttributes((node, attributes) => {
-      const size = nodeSize(graph.degree(node));
+      const size = sizeOf(attributes.entity, graph.degree(node));
       return attributes.size === size ? attributes : { ...attributes, size };
     });
   }
