@@ -219,6 +219,55 @@ def test_dns_properties_of_domains_and_ip_addresses() -> None:
     assert build_entity(EntityType.IP_ADDRESS, "192.0.2.1", {"scope": "public"}).stored_properties()
 
 
+def test_exposure_properties_of_ip_addresses() -> None:
+    ip = build_entity(
+        EntityType.IP_ADDRESS,
+        "192.0.2.10",
+        {
+            "open_ports": [22, 80, 443],
+            "cpes": [" cpe:/a:nginx:nginx ", "cpe:/o:canonical:ubuntu_linux"],
+            "vulns": ["CVE-2021-44228", "cve-2023-123456"],
+            "tags": ["cdn", "self-signed"],
+            "internetdb_checked_at": "2026-11-19T06:00:00Z",
+        },
+    )
+    assert ip.stored_properties() == {
+        "open_ports": [22, 80, 443],
+        "cpes": ["cpe:/a:nginx:nginx", "cpe:/o:canonical:ubuntu_linux"],
+        "vulns": ["CVE-2021-44228", "CVE-2023-123456"],
+        "tags": ["cdn", "self-signed"],
+        "internetdb_checked_at": "2026-11-19T06:00:00Z",
+    }
+    full = {
+        "open_ports": list(range(1, 201)),
+        "cpes": ["cpe:/a:x:y"] * 100,
+        "vulns": ["CVE-2024-0001"] * 500,
+        "tags": ["t"] * 50,
+    }
+    assert build_entity(EntityType.IP_ADDRESS, "192.0.2.10", full).stored_properties()
+
+
+@pytest.mark.parametrize(
+    "properties",
+    [
+        {"open_ports": [0]},
+        {"open_ports": [65536]},
+        {"open_ports": list(range(1, 202))},  # at most 200
+        {"cpes": ["nginx"]},  # not a CPE name
+        {"cpes": ["cpe:/a:x:y"] * 101},
+        {"vulns": ["CVE-2021-123"]},  # at least four digits after the year
+        {"vulns": ["GHSA-xxxx-yyyy-zzzz"]},
+        {"vulns": ["CVE-2024-0001"] * 501},
+        {"tags": [""]},
+        {"tags": ["t"] * 51},
+        {"internetdb_checked_at": "2026-11-19T06:00:00"},  # naive
+    ],
+)
+def test_invalid_exposure_properties(properties: dict[str, Any]) -> None:
+    with pytest.raises(ValidationError):
+        build_entity(EntityType.IP_ADDRESS, "192.0.2.10", properties)
+
+
 def test_build_entity_phone_region() -> None:
     phone = build_entity(EntityType.PHONE, "020 7946 0958", phone_region="GB")
     assert isinstance(phone, Phone)

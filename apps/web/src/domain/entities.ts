@@ -88,7 +88,7 @@ export interface ProvenanceDetails {
   evidence_refs: readonly string[];
 }
 
-export type PropertyValue = string | number | boolean | readonly string[];
+export type PropertyValue = string | number | boolean | readonly string[] | readonly number[];
 
 export interface EntityNode extends Provenance {
   /** Unique id; for case data, the canonical key. */

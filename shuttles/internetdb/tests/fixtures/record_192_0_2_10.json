@@ -1,0 +1,12 @@
+{
+  "cpes": [
+    "cpe:/a:nginx:nginx:1.18.0",
+    "cpe:/a:openbsd:openssh:8.2p1",
+    "cpe:/o:canonical:ubuntu_linux"
+  ],
+  "hostnames": ["www.example.org", "MAIL.Example.org.", "api.example.net"],
+  "ip": "192.0.2.10",
+  "ports": [443, 22, 80, 8443],
+  "tags": ["self-signed", "starttls"],
+  "vulns": ["CVE-2023-38408", "CVE-2021-23017", "CVE-2021-3618"]
+}

@@ -341,7 +341,7 @@ class JobRun:
         except RelationshipError as error:
             raise _RejectedError("relationship_not_allowed") from error
         observation = self.observation(
-            confidence=finding.confidence, admiralty=None, note=finding.note
+            confidence=finding.confidence, admiralty=finding.admiralty, note=finding.note
         )
         personal = Sensitivity.PERSON in (sensitivity_of(source.type), sensitivity_of(target.type))
         async with self.locked_case() as case:

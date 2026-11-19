@@ -13,6 +13,7 @@ dependencies = [
     # Built-in Shuttles, installed wherever the worker runs.
     "nightloom-shuttle-crtsh",
     "nightloom-shuttle-dns",
+    "nightloom-shuttle-internetdb",
     "nightloom-shuttle-rdap",
     "nightloom-shuttle-ripestat",
     "nightloom-shuttle-registrable-domain",
@@ -28,6 +29,7 @@ nightloom-core = { workspace = true }
 nightloom-sdk = { workspace = true }
 nightloom-shuttle-crtsh = { workspace = true }
 nightloom-shuttle-dns = { workspace = true }
+nightloom-shuttle-internetdb = { workspace = true }
 nightloom-shuttle-rdap = { workspace = true }
 nightloom-shuttle-ripestat = { workspace = true }
 nightloom-shuttle-registrable-domain = { workspace = true }

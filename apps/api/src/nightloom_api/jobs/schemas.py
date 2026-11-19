@@ -36,6 +36,8 @@ class ShuttleOut(BaseModel):
     timeout_seconds: int
     terms_url: str | None
     homepage: str | None
+    # Conditions of use of the source (plain text, at most 300 characters).
+    usage_note: str | None
     default_admiralty: str
     default_confidence: float
 
@@ -64,6 +66,7 @@ class ShuttleOut(BaseModel):
             timeout_seconds=meta.timeout_seconds,
             terms_url=meta.terms_url,
             homepage=meta.homepage,
+            usage_note=meta.usage_note,
             default_admiralty=meta.default_admiralty,
             default_confidence=meta.default_confidence,
         )

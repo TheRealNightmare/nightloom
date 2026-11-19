@@ -60,6 +60,8 @@ class RelationshipFinding(BaseModel):
 
     Yield the endpoints as :class:`EntityFinding` first (unless one is the
     input entity), so they exist by the time the relationship arrives.
+    ``confidence`` and ``admiralty`` override the Shuttle's defaults for this
+    relationship only (e.g. a link the source reports but cannot vouch for).
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -68,6 +70,7 @@ class RelationshipFinding(BaseModel):
     source: EntityRef
     target: EntityRef
     confidence: Confidence | None = None
+    admiralty: Admiralty | None = None
     note: Note | None = None
 
 

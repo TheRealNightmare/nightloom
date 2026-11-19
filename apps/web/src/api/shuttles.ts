@@ -28,6 +28,11 @@ export interface ShuttleInfo {
   timeout_seconds: number;
   terms_url: string | null;
   homepage: string | null;
+  /**
+   * Conditions of use of the source (plain text, at most 300 characters),
+   * e.g. a non-commercial licence; shown before a run.
+   */
+  usage_note: string | null;
   default_admiralty: string;
   default_confidence: number;
 }
@@ -109,7 +114,8 @@ export function isShuttleInfo(value: unknown): value is ShuttleInfo {
     (SENSITIVITIES as readonly string[]).includes(value["sensitivity"]) &&
     typeof value["network"] === "boolean" &&
     isNullableString(value["terms_url"]) &&
-    isNullableString(value["homepage"])
+    isNullableString(value["homepage"]) &&
+    isNullableString(value["usage_note"])
   );
 }
 

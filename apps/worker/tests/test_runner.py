@@ -312,6 +312,7 @@ async def test_finding_overrides_and_defaults(world: World) -> None:
             domain("example.co.uk", admiralty="A2", confidence=0.9, note="from the list"),
             domain("other.example.co.uk"),
             sub("example.co.uk", "www.shop.example.co.uk", confidence=0.7),
+            sub("example.co.uk", "other.example.co.uk", admiralty="B3", note="reported"),
         ]
     )
     job_id = await world.queue(shuttle)
@@ -330,6 +331,12 @@ async def test_finding_overrides_and_defaults(world: World) -> None:
         0.6,
     )
     assert second.entity.provenance.sources == ["shuttle:scripted@1.0.0"]
+    # Relationships take the same overrides, else the Shuttle's defaults.
+    edges = {e.target_key: e.provenance for e in (await repo.get_graph(world.case_id)).edges}
+    rated = edges["domain:other.example.co.uk"]
+    assert (rated.admiralty, rated.max_confidence, rated.note) == ("B3", 0.6, "reported")
+    plain = edges["domain:www.shop.example.co.uk"]
+    assert (plain.admiralty, plain.max_confidence) == ("C3", 0.7)
 
 
 # --- rejected findings -------------------------------------------------------------------

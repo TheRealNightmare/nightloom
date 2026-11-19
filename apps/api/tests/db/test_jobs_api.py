@@ -86,6 +86,7 @@ class IPInfo(_Nothing):
         network=True,
         rate_limit={"requests": 10, "period_seconds": 60},
         terms_url="https://example.org/terms",
+        usage_note="Free for non-commercial use only.",
     )
 
 
@@ -210,12 +211,14 @@ async def test_shuttles_list_metadata(world: World) -> None:
         "timeout_seconds": 30,
         "terms_url": None,
         "homepage": "https://publicsuffix.org/",
+        "usage_note": None,
         "default_admiralty": "B1",
         "default_confidence": 0.95,
     }
     ip = await viewer.get(f"{PREFIX}/shuttles", params={"input_type": "ip_address"})
     assert ip.json()[0]["rate_limit"] == {"requests": 10, "period_seconds": 60.0}
     assert ip.json()[0]["terms_url"] == "https://example.org/terms"
+    assert ip.json()[0]["usage_note"] == "Free for non-commercial use only."
     bad = await viewer.get(f"{PREFIX}/shuttles", params={"input_type": "planet"})
     assert bad.status_code == 422
 

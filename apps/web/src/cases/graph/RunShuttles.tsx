@@ -8,6 +8,28 @@ import { SensitivityBadge } from "./EntityDetails";
 import { describeJobError, shuttleBlockedReason } from "./jobText";
 
 export const NO_SHUTTLES_MESSAGE = "No installed Shuttle accepts this type of entity.";
+/** Read by screen readers before a Shuttle's usage note. */
+export const USAGE_NOTE_LABEL = "Usage conditions";
+
+/** A small "i" in a circle; decorative, the note's text says it all. */
+function InfoIcon() {
+  return (
+    <svg
+      className="shuttle-card__usage-icon"
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+      focusable="false"
+      data-testid="usage-note-icon"
+    >
+      <circle cx="8" cy="8" r="6.75" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M8 7.25v4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <circle cx="8" cy="4.9" r="0.95" fill="currentColor" />
+    </svg>
+  );
+}
 
 type Load =
   | { kind: "loading"; type: EntityType }
@@ -61,6 +83,15 @@ function ShuttleCard({
         </span>
       </div>
       <p className="shuttle-card__description">{shuttle.description}</p>
+      {shuttle.usage_note && (
+        <p className="shuttle-card__usage">
+          <InfoIcon />
+          <span>
+            <span className="visually-hidden">{USAGE_NOTE_LABEL}: </span>
+            {shuttle.usage_note}
+          </span>
+        </p>
+      )}
       {(shuttle.terms_url ?? shuttle.homepage) && (
         <p className="shuttle-card__links">
           {shuttle.terms_url && (

@@ -95,8 +95,9 @@ MimeType = Annotated[
 class Properties(BaseModel):
     """Base class for an entity type's optional properties.
 
-    Fields are flat scalars or lists of strings, so they can be stored as
-    graph properties. Every field is optional.
+    Fields are flat scalars or lists of strings (or of integers, such as an
+    address's open ports), so they can be stored as graph properties. Every
+    field is optional.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -169,11 +170,38 @@ class DomainProperties(Properties):
     rdap_server: UrlText | None = None
 
 
+# Exposure data on an IP address (Shodan InternetDB): at most this many of each.
+EXPOSURE_MAX_PORTS = 200
+EXPOSURE_MAX_CPES = 100
+EXPOSURE_MAX_VULNS = 500
+EXPOSURE_MAX_TAGS = 50
+Port = Annotated[int, Field(ge=1, le=65535)]
+CpeText = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=5, max_length=300, pattern=r"^cpe:")
+]
+CveId = Annotated[str, Field(max_length=30), _matching(r"CVE-\d{4}-\d{4,}", upper=True)]
+
+
 class IPAddressProperties(Properties):
     """``scope``: ``private`` for addresses that are not globally routable
-    (RFC 1918, loopback, link-local, ...), ``public`` otherwise."""
+    (RFC 1918, loopback, link-local, ...), ``public`` otherwise.
+
+    From Shodan's InternetDB (a weekly summary of Shodan's own scans, never a
+    connection to the address): ``open_ports`` (the TCP ports Shodan found
+    open, ascending, at most 200), ``cpes`` (CPE names of the software it
+    identified, e.g. ``cpe:/a:nginx:nginx``, at most 100), ``vulns`` (CVE IDs
+    Shodan associates with that software, ascending, at most 500; reported by
+    version, not verified), ``tags`` (Shodan's labels such as ``cdn`` or
+    ``self-signed``, at most 50) and ``internetdb_checked_at`` (when the
+    record was read).
+    """
 
     scope: Literal["public", "private"] | None = None
+    open_ports: Annotated[list[Port], Field(max_length=EXPOSURE_MAX_PORTS)] | None = None
+    cpes: Annotated[list[CpeText], Field(max_length=EXPOSURE_MAX_CPES)] | None = None
+    vulns: Annotated[list[CveId], Field(max_length=EXPOSURE_MAX_VULNS)] | None = None
+    tags: Annotated[list[ShortText], Field(max_length=EXPOSURE_MAX_TAGS)] | None = None
+    internetdb_checked_at: AwareDatetime | None = None
 
 
 class NetblockProperties(Properties):
