@@ -6,6 +6,12 @@ import { ROLE_LABELS } from "../auth/messages";
 import { APP_VERSION } from "../version";
 import { ChangePasswordDialog } from "./ChangePasswordDialog";
 
+/** The first letter of a name, for the avatar ("?" for none). */
+function initialOf(name: string): string {
+  const first = name.trim().codePointAt(0);
+  return first === undefined ? "?" : String.fromCodePoint(first).toLocaleUpperCase();
+}
+
 export interface UserMenuProps {
   user: User;
 }
@@ -111,9 +117,14 @@ export function UserMenu({ user }: UserMenuProps) {
           }
         }}
       >
-        <span className="user-menu__name">{user.display_name}</span>
-        <span className="role-badge" data-role={user.role}>
-          {ROLE_LABELS[user.role]}
+        <span className="avatar" aria-hidden="true">
+          {initialOf(user.display_name)}
+        </span>
+        <span className="user-menu__who">
+          <span className="user-menu__name">{user.display_name}</span>
+          <span className="user-menu__role" data-role={user.role}>
+            {ROLE_LABELS[user.role]}
+          </span>
         </span>
         <span className="user-menu__caret" aria-hidden="true" />
       </button>

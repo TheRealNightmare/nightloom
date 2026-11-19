@@ -1,6 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
-  <rect width="32" height="32" rx="7" fill="#0b1020"/>
-  <path d="M19.5 3.2a8 8 0 1 0 8.6 9.9A6.4 6.4 0 0 1 19.5 3.2Z" fill="#d6dbe6"/>
-  <path d="M2.5 20.5C8 20.5 9.5 28.5 16 28.5S24 20.5 29.5 20.5" stroke="#e8c37a" stroke-width="2" stroke-linecap="round"/>
-  <path d="M2.5 28.5C8 28.5 9.5 20.5 16 20.5S24 28.5 29.5 28.5" stroke="#d6dbe6" stroke-width="2" stroke-linecap="round" opacity="0.75"/>
+  <!-- The logo mark (src/components/LogoMark.tsx); colors are the design tokens of src/styles/tokens.css. -->
+  <style>
+    .bg { fill: #12131a; }
+    .brass { stroke: #c8963e; }
+    .ink { stroke: #e8e1d3; }
+    .knot { fill: #12131a; stroke: #e8e1d3; }
+    @media (prefers-color-scheme: light) {
+      .bg { fill: #f4f0e6; }
+      .brass { stroke: #8a5a1c; }
+      .ink { stroke: #1d1c22; }
+      .knot { fill: #f4f0e6; stroke: #1d1c22; }
+    }
+  </style>
+  <rect class="bg" width="32" height="32" rx="6"/>
+  <path class="brass" d="M19 3.5a6.5 6.5 0 1 0 6.9 8.2A5.2 5.2 0 0 1 19 3.5Z" stroke-width="1.25" stroke-linejoin="round"/>
+  <path class="ink" d="M3 19.5C10 19.5 22 28.5 29 28.5" stroke-width="1.5" stroke-linecap="round"/>
+  <path class="brass" d="M3 28.5C10 28.5 22 19.5 29 19.5" stroke-width="1.5" stroke-linecap="round"/>
+  <circle class="knot" cx="16" cy="24" r="2.25" stroke-width="1.25"/>
 </svg>

@@ -109,10 +109,8 @@ describe("sign-in", () => {
     expect(passwordField()).toHaveAttribute("autocomplete", "current-password");
     expect(passwordField()).toHaveAttribute("type", "password");
     expect(screen.getByTestId("login-error")).toHaveAttribute("aria-live", "polite");
-    expect(screen.getByRole("link", { name: "Use Nightloom responsibly" })).toHaveAttribute(
-      "href",
-      ETHICS_URL,
-    );
+    expect(screen.getByText(/Use Nightloom responsibly/)).toBeVisible();
+    expect(screen.getByRole("link", { name: "Ethics policy" })).toHaveAttribute("href", ETHICS_URL);
     // The API status is only shown once signed in.
     expect(screen.queryByRole("button", { name: /API status/ })).not.toBeInTheDocument();
     expect(api.callsTo("GET", "/ready")).toHaveLength(0);

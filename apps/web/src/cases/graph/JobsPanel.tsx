@@ -48,22 +48,10 @@ function statsTitle(job: Job): string {
 /** `domain:example.org` → `example.org`. */
 const valueOf = (key: string) => key.slice(key.indexOf(":") + 1);
 
-function JobRow({
-  job,
-  canCancel,
-  onCancel,
-}: {
-  job: Job;
-  canCancel: boolean;
-  onCancel: (jobId: string) => Promise<unknown>;
-}) {
-  const active = isActive(job);
-  const now = useNow(active);
+/** Requests a job's cancellation; `error` is null or what went wrong. */
+function useCancel(job: Job, onCancel: (jobId: string) => Promise<unknown>) {
   const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const label = `${job.shuttle_name} on ${valueOf(job.input_key)}`;
-  const notes = job.stats.notes ?? [];
-
   const cancel = () => {
     setCancelling(true);
     setError(null);
@@ -77,6 +65,71 @@ function JobRow({
       },
     );
   };
+  return { cancel, cancelling, error };
+}
+
+export interface RunningJobChipProps {
+  job: Job;
+  canCancel: boolean;
+  onCancel: (jobId: string) => Promise<unknown>;
+  /** Opens the Jobs panel. */
+  onOpen: () => void;
+}
+
+/** The latest job still under way, over the graph: what runs, for how long, and Cancel. */
+export function RunningJobChip({ job, canCancel, onCancel, onOpen }: RunningJobChipProps) {
+  const now = useNow(true);
+  const { cancel, cancelling, error } = useCancel(job, onCancel);
+  const label = `${job.shuttle_name} on ${valueOf(job.input_key)}`;
+  return (
+    <div className="job-chip" data-status={job.status}>
+      <span className="job-chip__dot" aria-hidden="true" />
+      <button
+        type="button"
+        className="job-chip__label"
+        aria-label={`${JOB_STATUS_LABELS[job.status]}: ${label}`}
+        title="Show jobs"
+        onClick={onOpen}
+      >
+        {job.shuttle_name} <span className="job-chip__input">{valueOf(job.input_key)}</span>
+      </button>
+      <span className="job-chip__timer" aria-hidden="true">
+        {formatDuration(elapsedMs(job, now))}
+      </span>
+      {canCancel && (
+        <button
+          type="button"
+          className="button button--ghost button--small"
+          aria-label={`Cancel ${label}`}
+          disabled={cancelling || job.cancel_requested}
+          onClick={cancel}
+        >
+          {job.cancel_requested ? "Cancelling…" : "Cancel"}
+        </button>
+      )}
+      {error && (
+        <span className="job-chip__error" role="alert">
+          {error}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function JobRow({
+  job,
+  canCancel,
+  onCancel,
+}: {
+  job: Job;
+  canCancel: boolean;
+  onCancel: (jobId: string) => Promise<unknown>;
+}) {
+  const active = isActive(job);
+  const now = useNow(active);
+  const { cancel, cancelling, error } = useCancel(job, onCancel);
+  const label = `${job.shuttle_name} on ${valueOf(job.input_key)}`;
+  const notes = job.stats.notes ?? [];
 
   return (
     <li className="job" data-status={job.status} aria-label={label}>
@@ -89,7 +142,7 @@ function JobRow({
         {canCancel && active && (
           <button
             type="button"
-            className="link-button job__cancel"
+            className="button button--ghost button--small job__cancel"
             disabled={cancelling || job.cancel_requested}
             onClick={cancel}
           >

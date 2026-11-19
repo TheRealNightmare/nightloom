@@ -20,6 +20,8 @@ export class FakeSigma {
   readonly camera = {
     animate: vi.fn(() => Promise.resolve()),
     reset: vi.fn(() => Promise.resolve()),
+    zoomIn: vi.fn(() => Promise.resolve()),
+    zoomOut: vi.fn(() => Promise.resolve()),
   };
   readonly refresh = vi.fn(() => this);
   readonly kill = vi.fn();

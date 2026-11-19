@@ -13,11 +13,8 @@ import {
   type EntityType,
   type RelationEdge,
 } from "../domain/entities";
+import { DEFAULT_GRAPH_PALETTE, type GraphPalette } from "../theme/graphPalette";
 import type { NightloomGraph } from "./buildGraph";
-
-export const CANVAS_BACKGROUND = "#0b1020";
-export const LABEL_COLOR = "#d6dbe6";
-export const HIGHLIGHT_EDGE_COLOR = "#e8c37a";
 
 export interface ViewState {
   hoveredNode: string | null;
@@ -92,6 +89,7 @@ export const NO_PULSE: ReadonlySet<string> = new Set();
 /**
  * Sigma node reducer body: hidden types, dimming and emphasis. Nodes in
  * `pulse` (e.g. what a Shuttle just found) are emphasized and never dimmed.
+ * Dimmed nodes blend toward the theme's background (`palette`).
  */
 export function nodeView(
   graph: NightloomGraph,
@@ -99,6 +97,7 @@ export function nodeView(
   state: ViewState,
   highlight: Highlight,
   pulse: ReadonlySet<string> = NO_PULSE,
+  palette: GraphPalette = DEFAULT_GRAPH_PALETTE,
 ): Partial<NodeDisplayData> {
   const attributes = graph.getNodeAttributes(node);
   if (!isNodeVisible(graph, node, state)) {
@@ -113,7 +112,7 @@ export function nodeView(
       view.depth = "topNodes";
       view.labelDepth = "topNodes";
     } else {
-      view.color = mixColor(attributes.color, CANVAS_BACKGROUND, DIM_AMOUNT);
+      view.color = mixColor(attributes.color, palette.background, DIM_AMOUNT);
       view.labelVisibility = "hidden";
       view.zIndex = 0;
     }
@@ -138,12 +137,13 @@ export function nodeView(
   return view;
 }
 
-/** Sigma edge reducer body. */
+/** Sigma edge reducer body: the focused entity's threads in the selection color. */
 export function edgeView(
   graph: NightloomGraph,
   edge: string,
   state: ViewState,
   highlight: Highlight,
+  palette: GraphPalette = DEFAULT_GRAPH_PALETTE,
 ): Partial<EdgeDisplayData> {
   const [source, target] = graph.extremities(edge);
   if (!isNodeVisible(graph, source, state) || !isNodeVisible(graph, target, state)) {
@@ -153,17 +153,17 @@ export function edgeView(
 
   if (source === highlight.focus || target === highlight.focus) {
     return {
-      color: HIGHLIGHT_EDGE_COLOR,
+      color: palette.selection,
       size: 2,
       zIndex: 1,
       depth: "topEdges",
       label: graph.getEdgeAttribute(edge, "label"),
       labelVisibility: "visible",
-      labelColor: LABEL_COLOR,
+      labelColor: palette.label,
     };
   }
   return {
-    color: mixColor(graph.getEdgeAttribute(edge, "color"), CANVAS_BACKGROUND, 0.6),
+    color: mixColor(graph.getEdgeAttribute(edge, "color"), palette.background, 0.6),
     zIndex: 0,
   };
 }

@@ -15,7 +15,9 @@ import { SearchBox } from "../components/SearchBox";
 import { SidePanel, type GraphSummary } from "../components/SidePanel";
 import type { EntityNode, EntityType, InvestigationGraph } from "../domain/entities";
 import { useGraphExplorer, type HiddenTypesStore } from "../hooks/useGraphExplorer";
-import { createGraph, syncGraph } from "./buildGraph";
+import { useTheme } from "../theme/context";
+import { GRAPH_PALETTES } from "../theme/graphPalette";
+import { createGraph, recolorGraph, syncGraph } from "./buildGraph";
 import {
   applyFilters,
   countActiveFilters,
@@ -60,8 +62,10 @@ export interface GraphViewProps {
   overview: (summary: GraphSummary) => ReactNode;
   /** The selected entity's details in the side panel (default: id, properties, provenance). */
   renderEntity?: (entity: EntityNode) => ReactNode;
-  /** Extra controls next to the search box. */
+  /** Extra content at the end of the toolbar (e.g. a summary and the case's actions). */
   toolbar?: ReactNode;
+  /** Shown over the canvas's top-right corner (e.g. the running job). */
+  overlay?: ReactNode;
   /** Applied once the node exists in the graph. */
   focus?: FocusRequest | null;
   onSelectionChange?: (id: string | null) => void;
@@ -93,6 +97,7 @@ export function GraphView({
   overview,
   renderEntity,
   toolbar,
+  overlay,
   focus = null,
   onSelectionChange,
   pulse,
@@ -103,6 +108,8 @@ export function GraphView({
   ref,
 }: GraphViewProps) {
   const [graph] = useState(createGraph);
+  const { theme } = useTheme();
+  const palette = GRAPH_PALETTES[theme];
   const layoutRef = useRef<LayoutRun | null>(null);
   const canvasRef = useRef<GraphCanvasHandle>(null);
   // What the last layout decision saw; anything else in the graph is new.
@@ -147,9 +154,16 @@ export function GraphView({
   // The graph is an external, mutable store: bring it in line with what is
   // displayed (cheap, incremental) and keep a snapshot that changes whenever it does.
   const snapshot = useMemo(() => {
-    syncGraph(graph, display);
+    syncGraph(graph, display, palette);
     return { order: graph.order, size: graph.size };
+    // A theme change only repaints (below); it does not resync.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graph, display]);
+  // The theme changed: repaint what is there (colors only), then let the canvas refresh.
+  const painted = useMemo(() => {
+    recolorGraph(graph, palette);
+    return palette;
+  }, [graph, palette]);
 
   useEffect(() => {
     if (snapshot.order === 0) return;
@@ -353,21 +367,8 @@ export function GraphView({
   return (
     <div className={className ? `workspace ${className}` : "workspace"}>
       <section className="stage" aria-label="Graph">
-        <GraphCanvas
-          ref={canvasRef}
-          graph={graph}
-          view={view}
-          onHoverNode={explorer.hoverNode}
-          onSelectNode={choose}
-          showAllLabels={snapshot.order <= SMALL_GRAPH}
-          revision={snapshot}
-          {...(pulse ? { pulse } : {})}
-        />
-        <div className="toolbar">
+        <div className="graph-toolbar">
           <SearchBox nodes={searchable} onPick={focusNode} />
-          <button type="button" className="button" onClick={onResetView}>
-            Reset view
-          </button>
           <button
             type="button"
             className="button"
@@ -383,37 +384,81 @@ export function GraphView({
               </span>
             )}
           </button>
+          <ViewModeSwitch />
           {toolbar}
         </div>
-        {activeFilters > 0 && !filtersOpen && (
-          <p className="filter-status" role="status">
-            {summaryText} ·{" "}
-            <button type="button" className="link-button" onClick={clearFilters}>
-              Clear all
-            </button>
-          </p>
-        )}
-        {filtersOpen && (
-          <FiltersPanel
-            data={data}
-            filters={filters}
-            onChange={updateFilters}
-            summary={summaryText}
-            activeCount={activeFilters}
-            onClearAll={clearFilters}
-            onClose={() => {
-              setFiltersOpen(false);
-            }}
-            selected={selected?.group ? null : selected}
-            {...(grades ? { grades } : {})}
+        <div className="stage__canvas">
+          <GraphCanvas
+            ref={canvasRef}
+            graph={graph}
+            view={view}
+            onHoverNode={explorer.hoverNode}
+            onSelectNode={choose}
+            showAllLabels={snapshot.order <= SMALL_GRAPH}
+            revision={snapshot}
+            palette={painted}
+            {...(pulse ? { pulse } : {})}
           />
-        )}
-        <Legend
-          types={types}
-          hiddenTypes={view.hiddenTypes}
-          onToggle={explorer.toggleEntityType}
-          onShowAll={explorer.showAllTypes}
-        />
+          {activeFilters > 0 && !filtersOpen && (
+            <p className="filter-status" role="status">
+              {summaryText} ·{" "}
+              <button type="button" className="link-button" onClick={clearFilters}>
+                Clear all
+              </button>
+            </p>
+          )}
+          {overlay !== undefined && <div className="stage__overlay">{overlay}</div>}
+          {filtersOpen && (
+            <FiltersPanel
+              data={data}
+              filters={filters}
+              onChange={updateFilters}
+              summary={summaryText}
+              activeCount={activeFilters}
+              onClearAll={clearFilters}
+              onClose={() => {
+                setFiltersOpen(false);
+              }}
+              selected={selected?.group ? null : selected}
+              {...(grades ? { grades } : {})}
+            />
+          )}
+          <Legend
+            types={types}
+            hiddenTypes={view.hiddenTypes}
+            onToggle={explorer.toggleEntityType}
+            onShowAll={explorer.showAllTypes}
+          />
+          <div className="zoom-controls" role="group" aria-label="Zoom">
+            <button
+              type="button"
+              className="icon-button icon-button--square"
+              aria-label="Zoom in"
+              title="Zoom in"
+              onClick={() => canvasRef.current?.zoomIn()}
+            >
+              <ZoomIcon plus />
+            </button>
+            <button
+              type="button"
+              className="icon-button icon-button--square"
+              aria-label="Zoom out"
+              title="Zoom out"
+              onClick={() => canvasRef.current?.zoomOut()}
+            >
+              <ZoomIcon />
+            </button>
+            <button
+              type="button"
+              className="icon-button icon-button--square"
+              aria-label="Reset view"
+              title="Reset view"
+              onClick={onResetView}
+            >
+              <FitIcon />
+            </button>
+          </div>
+        </div>
       </section>
       <SidePanel
         selected={selected}
@@ -427,6 +472,71 @@ export function GraphView({
         }}
       />
     </div>
+  );
+}
+
+/**
+ * Placeholder for the 2D / 3D switch: only the 2D view exists so far. 3D
+ * stays focusable (so its tooltip can be read) but does nothing.
+ */
+function ViewModeSwitch() {
+  return (
+    <div className="segmented view-mode" role="group" aria-label="View">
+      <button type="button" className="segmented__option" aria-pressed="true">
+        2D
+      </button>
+      <button
+        type="button"
+        className="segmented__option"
+        aria-pressed="false"
+        aria-disabled="true"
+        title="3D view coming soon"
+      >
+        3D
+      </button>
+    </div>
+  );
+}
+
+function ZoomIcon({ plus = false }: { plus?: boolean }) {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path
+        d={plus ? "M3 8h10M8 3v10" : "M3 8h10"}
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+/** Four corners: fit the whole graph. */
+function FitIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path
+        d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 

@@ -3,10 +3,14 @@ import { useEffect, useId, useRef, useState, type SubmitEvent } from "react";
 import { InvalidCredentialsError } from "../api/client";
 import { useAuth } from "../auth/context";
 import { describeError } from "../auth/messages";
+import { ThemeToggle } from "../theme/ThemeToggle";
+import { APP_VERSION } from "../version";
+import { LoomArt } from "./LoomArt";
 import { LogoMark } from "./LogoMark";
 import { PasswordField } from "./PasswordField";
 
 export const ETHICS_URL = "https://github.com/TheRealNightmare/nightloom/blob/main/ETHICS.md";
+export const TAGLINE = "Every thread, woven into the full picture.";
 
 export interface LoginScreenProps {
   /** Shown above the form, e.g. after the session ended. */
@@ -58,12 +62,22 @@ export function LoginScreen({ notice = null }: LoginScreenProps) {
   };
 
   return (
-    <main className="login">
-      <section className="login__card" aria-labelledby={titleId}>
-        <LogoMark size={44} />
+    <main className="login login--split">
+      <div className="login__art">
+        <LoomArt />
+        <p className="login__tagline">{TAGLINE}</p>
+        <p className="login__caption">Entities are knots · relationships are threads</p>
+      </div>
+      <section className="login__panel" aria-labelledby={titleId}>
+        <div className="login__panel-top">
+          <LogoMark size={40} />
+          <ThemeToggle />
+        </div>
         <h1 id={titleId} className="login__title">
-          Sign in to Nightloom
+          {/* Read as "Sign in to Nightloom"; the space sits outside the span so it survives. */}
+          Sign in <span className="visually-hidden">to Nightloom</span>
         </h1>
+        <p className="login__subtitle">Open-source intelligence, mapped as a graph.</p>
         {notice !== null && (
           <p className="login__notice" role="status">
             {notice}
@@ -117,12 +131,14 @@ export function LoginScreen({ notice = null }: LoginScreenProps) {
             {pending ? "Signing in…" : "Sign in"}
           </button>
         </form>
+        <p className="login__footer">
+          Use Nightloom responsibly ·{" "}
+          <a href={ETHICS_URL} target="_blank" rel="noreferrer">
+            Ethics policy
+          </a>{" "}
+          · <span className="login__version">v{APP_VERSION}</span>
+        </p>
       </section>
-      <p className="login__footer">
-        <a href={ETHICS_URL} target="_blank" rel="noreferrer">
-          Use Nightloom responsibly
-        </a>
-      </p>
     </main>
   );
 }

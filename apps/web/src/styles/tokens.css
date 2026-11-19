@@ -1,0 +1,104 @@
+/*
+ * Nightloom design tokens ("Loom & thread"): ink and paper, brass thread.
+ *
+ * This is the only file with color literals (src/styles/tokens.test.ts fails
+ * on any elsewhere). Components use these custom properties; the graph canvas
+ * reads the same values through src/theme/tokens.ts. The theme is chosen
+ * before the first paint by public/theme-init.js, which sets
+ * data-theme="dark" or "light" on <html>.
+ *
+ * Depth comes from 1px hairlines and surface steps, never shadows or glows.
+ */
+
+:root {
+  /* Entity types without a color of their own (src/domain/entities.ts). */
+  --type-technology: var(--muted);
+  --type-email: var(--muted);
+  --type-username: var(--muted);
+  --type-person: var(--muted);
+  --type-phone: var(--muted);
+  --type-social-profile: var(--muted);
+  --type-location: var(--muted);
+  --type-crypto-wallet: var(--muted);
+  --type-document: var(--muted);
+  --type-image: var(--muted);
+  --type-breach: var(--muted);
+
+  --font-display: "Fraunces Variable", "Iowan Old Style", Georgia, serif;
+  --font-sans: "Source Sans 3 Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  --radius-chip: 6px;
+  --radius-control: 10px;
+  --radius-panel: 12px;
+  --radius-panel-lg: 14px;
+  --radius-round: 999px;
+
+  --control-height: 40px;
+  --touch-target: 44px;
+  --topbar-height: 60px;
+  --panel-width: 360px;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* ink */
+  --bg: #12131a;
+  --surface: #1b1d27;
+  --surface-2: #232634;
+  --line: #2e3040;
+  --hair: #4a3d26;
+  --grid: #262836;
+  --text: #e8e1d3;
+  --muted: #a59e90;
+  --brass: #c8963e;
+  --brass-text: #d9a752;
+  --on-brass: #12131a;
+  --copper: #d9875e;
+  --ok: #7fb08a;
+  --danger: #e2817c;
+
+  /* The woven texture on --bg: brass threads at 3.5%. */
+  --weave-alpha: 3.5%;
+
+  --type-domain: #c8963e;
+  --type-ip-address: #86a3c8;
+  --type-netblock: #6fae9f;
+  --type-asn: #a99bd0;
+  --type-certificate: #d9cfb8;
+  --type-url: #d9875e;
+  --type-organization: #b7b46a;
+  --type-service: #cf7676;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* paper */
+  --bg: #f4f0e6;
+  --surface: #fbf8f1;
+  --surface-2: #ece6d8;
+  --line: #d9d1bf;
+  --hair: #c9b48a;
+  --grid: #e2dbcb;
+  --text: #1d1c22;
+  --muted: #5b564c;
+  --brass: #8a5a1c;
+  --brass-text: #7a4f17;
+  --on-brass: #fbf8f1;
+  --copper: #9a4a2a;
+  --ok: #2f6b3d;
+  --danger: #a3322e;
+
+  --weave-alpha: 5%;
+
+  --type-domain: #8a5a1c;
+  --type-ip-address: #2f5d8a;
+  --type-netblock: #2c6b5e;
+  --type-asn: #5b4a94;
+  --type-certificate: #6b6253;
+  --type-url: #9a4a2a;
+  --type-organization: #6b6a24;
+  --type-service: #9b3434;
+}

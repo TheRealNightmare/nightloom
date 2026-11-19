@@ -5,7 +5,10 @@ import { RouterProvider } from "react-router/dom";
 
 import { routes } from "./app/routes";
 import { AuthProvider } from "./auth/AuthProvider";
-import "./styles/theme.css";
+import { ThemeProvider } from "./theme/ThemeProvider";
+import "./styles/fonts.css";
+import "./styles/tokens.css";
+import "./styles/base.css";
 import "./styles/app.css";
 
 const root = document.getElementById("root");
@@ -15,8 +18,10 @@ const router = createBrowserRouter(routes);
 
 createRoot(root).render(
   <StrictMode>
-    <AuthProvider>
-      <RouterProvider router={router} />
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <RouterProvider router={router} />
+      </AuthProvider>
+    </ThemeProvider>
   </StrictMode>,
 );

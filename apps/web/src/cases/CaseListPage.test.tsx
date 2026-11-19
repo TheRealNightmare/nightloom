@@ -79,7 +79,10 @@ describe("case list", () => {
       .on("GET", "/cases?limit=25&status=closed", () => page([second]));
     renderApp("/cases");
     await screen.findByRole("list", { name: "Cases" });
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Status" }), "closed");
+    const status = screen.getByRole("group", { name: "Status" });
+    expect(within(status).getByRole("radio", { name: "All" })).toBeChecked();
+    await userEvent.click(within(status).getByRole("radio", { name: "Closed" }));
+    expect(within(status).getByRole("radio", { name: "Closed" })).toBeChecked();
     await waitFor(() => {
       expect(within(list()).getAllByRole("listitem")).toHaveLength(1);
     });
@@ -145,7 +148,11 @@ describe("case list", () => {
       .on("GET", "/cases?limit=25&status=archived", () => json(EMPTY_PAGE));
     renderApp("/cases");
     await screen.findByRole("list", { name: "Cases" });
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Status" }), "archived");
+    await userEvent.click(
+      within(screen.getByRole("group", { name: "Status" })).getByRole("radio", {
+        name: "Archived",
+      }),
+    );
     expect(await screen.findByRole("heading", { name: "No matching cases" })).toBeVisible();
   });
 

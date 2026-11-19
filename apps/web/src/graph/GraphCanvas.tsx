@@ -8,11 +8,11 @@ import {
   type NightloomGraph,
   type NodeAttributes,
 } from "./buildGraph";
+import { DEFAULT_GRAPH_PALETTE, type GraphPalette } from "../theme/graphPalette";
 import { nodePrimitives, type NodePrimitives } from "./nodePrimitives";
 import {
   computeHighlight,
   edgeView,
-  LABEL_COLOR,
   NO_PULSE,
   nodeView,
   type Highlight,
@@ -24,6 +24,10 @@ export interface GraphCanvasHandle {
   focusNode: (node: string) => void;
   /** Animates the camera back to the whole graph. */
   resetCamera: () => void;
+  /** Animates the camera one step closer. */
+  zoomIn: () => void;
+  /** Animates the camera one step further away. */
+  zoomOut: () => void;
 }
 
 export interface GraphCanvasProps {
@@ -37,6 +41,12 @@ export interface GraphCanvasProps {
   revision?: unknown;
   /** Nodes to emphasize for a moment (e.g. a job's results). */
   pulse?: ReadonlySet<string>;
+  /**
+   * Colors of the current theme. Node and edge colors are graph attributes
+   * (see recolorGraph); labels, dimming and the selection are read from here
+   * on every refresh. The canvas itself is transparent.
+   */
+  palette?: GraphPalette;
   ref?: Ref<GraphCanvasHandle>;
 }
 
@@ -45,6 +55,7 @@ type CanvasSigma = Sigma<NodeAttributes, EdgeAttributes, Attributes, {}, {}, {},
 
 const LABEL_FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
 const CAMERA_DURATION_MS = 450;
+const ZOOM_DURATION_MS = 200;
 const FOCUS_RETRY_FRAMES = 10;
 const FOCUS_RATIO = 0.7;
 /** sigma's default: only nodes drawn at least this many pixels wide get a label. */
@@ -62,6 +73,7 @@ export function GraphCanvas({
   showAllLabels = false,
   revision,
   pulse = NO_PULSE,
+  palette = DEFAULT_GRAPH_PALETTE,
   ref,
 }: GraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -71,10 +83,12 @@ export function GraphCanvas({
     state: ViewState;
     highlight: Highlight;
     pulse: ReadonlySet<string>;
+    palette: GraphPalette;
   }>({
     state: view,
     highlight: computeHighlight(graph, view),
     pulse,
+    palette,
   });
   const callbacksRef = useRef({ onHoverNode, onSelectNode });
 
@@ -109,18 +123,18 @@ export function GraphCanvas({
           x: { attribute: "x" },
           y: { attribute: "y" },
           size: { attribute: "size", defaultValue: 6 },
-          color: { attribute: "color", defaultValue: "#888888" },
+          color: { attribute: "color", defaultValue: DEFAULT_GRAPH_PALETTE.label },
           label: { attribute: "label" },
           dashColor: { attribute: "dashColor", defaultValue: NO_DASH },
-          labelColor: LABEL_COLOR,
+          labelColor: () => viewRef.current.palette.label,
           labelFont: LABEL_FONT,
           labelSize: 12,
           cursor: "pointer",
         },
         edges: {
           size: { attribute: "size", defaultValue: 1 },
-          color: { attribute: "color", defaultValue: "#3a4568" },
-          labelColor: LABEL_COLOR,
+          color: { attribute: "color", defaultValue: DEFAULT_GRAPH_PALETTE.edge },
+          labelColor: () => viewRef.current.palette.label,
           labelFont: LABEL_FONT,
           labelSize: 11,
           labelVisibility: "hidden",
@@ -133,9 +147,16 @@ export function GraphCanvas({
           viewRef.current.state,
           viewRef.current.highlight,
           viewRef.current.pulse,
+          viewRef.current.palette,
         ),
       edgeReducer: (edge) =>
-        edgeView(graph, edge, viewRef.current.state, viewRef.current.highlight),
+        edgeView(
+          graph,
+          edge,
+          viewRef.current.state,
+          viewRef.current.highlight,
+          viewRef.current.palette,
+        ),
     });
     sigmaRef.current = sigma;
 
@@ -166,9 +187,9 @@ export function GraphCanvas({
   }, [graph, showAllLabels]);
 
   useEffect(() => {
-    viewRef.current = { state: view, highlight: computeHighlight(graph, view), pulse };
+    viewRef.current = { state: view, highlight: computeHighlight(graph, view), pulse, palette };
     sigmaRef.current?.refresh({ skipIndexation: true });
-  }, [graph, view, revision, pulse]);
+  }, [graph, view, revision, pulse, palette]);
 
   useImperativeHandle(
     ref,
@@ -197,6 +218,12 @@ export function GraphCanvas({
       },
       resetCamera() {
         void sigmaRef.current?.getCamera().reset({ duration: CAMERA_DURATION_MS });
+      },
+      zoomIn() {
+        void sigmaRef.current?.getCamera().zoomIn({ duration: ZOOM_DURATION_MS });
+      },
+      zoomOut() {
+        void sigmaRef.current?.getCamera().zoomOut({ duration: ZOOM_DURATION_MS });
       },
     }),
     [],

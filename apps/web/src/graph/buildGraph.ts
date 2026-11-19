@@ -1,15 +1,15 @@
 import Graph from "graphology";
 
 import {
-  ENTITY_TYPE_INFO,
   relationLabel,
   type EntityNode,
   type EntityType,
   type InvestigationGraph,
   type RelationEdge,
 } from "../domain/entities";
+import { DEFAULT_GRAPH_PALETTE, type GraphPalette } from "../theme/graphPalette";
 import { FULL_LAYOUT_ITERATIONS, layoutSync } from "./layout";
-import { CANVAS_BACKGROUND, mixColor } from "./view";
+import { mixColor } from "./view";
 
 export { MAX_LAYOUT_ITERATIONS } from "./layout";
 
@@ -36,7 +36,6 @@ export interface EdgeAttributes {
 
 export type NightloomGraph = Graph<NodeAttributes, EdgeAttributes>;
 
-export const EDGE_COLOR = "#3a4568";
 /** Radius of the starting circle of a freshly built graph. */
 export const START_RADIUS = 100;
 
@@ -59,7 +58,7 @@ export function groupSize(members: number): number {
 }
 
 /** No outline. */
-export const NO_DASH = "rgba(0,0,0,0)";
+export const NO_DASH = "transparent";
 /** How far a group's fill is blended toward the canvas, so its outline stands out. */
 const GROUP_FILL_DIM = 0.55;
 
@@ -68,10 +67,10 @@ function sizeOf(entity: EntityNode, degree: number): number {
 }
 
 /** Fill and outline: an entity in its type's color; a group dimmed, with a dashed outline. */
-function colorsOf(entity: EntityNode): { color: string; dashColor: string } {
-  const color = ENTITY_TYPE_INFO[entity.type].color;
+function colorsOf(entity: EntityNode, palette: GraphPalette): { color: string; dashColor: string } {
+  const color = palette.types[entity.type];
   if (!entity.group) return { color, dashColor: NO_DASH };
-  return { color: mixColor(color, CANVAS_BACKGROUND, GROUP_FILL_DIM), dashColor: color };
+  return { color: mixColor(color, palette.background, GROUP_FILL_DIM), dashColor: color };
 }
 
 /** A stable number in [0, 1) for a string (FNV-1a), for deterministic placement. */
@@ -95,8 +94,24 @@ export interface SyncResult {
   changed: boolean;
 }
 
-function edgeAttributes(relation: RelationEdge): EdgeAttributes {
-  return { label: relationLabel(relation.relation), size: 1, color: EDGE_COLOR, relation };
+function edgeAttributes(relation: RelationEdge, palette: GraphPalette): EdgeAttributes {
+  return { label: relationLabel(relation.relation), size: 1, color: palette.edge, relation };
+}
+
+/**
+ * Repaints every node and edge in `palette` (after the theme changed); only
+ * colors change, never positions or sizes.
+ */
+export function recolorGraph(graph: NightloomGraph, palette: GraphPalette): void {
+  graph.updateEachNodeAttributes((_node, attributes) => {
+    const colors = colorsOf(attributes.entity, palette);
+    return attributes.color === colors.color && attributes.dashColor === colors.dashColor
+      ? attributes
+      : { ...attributes, ...colors };
+  });
+  graph.updateEachEdgeAttributes((_edge, attributes) =>
+    attributes.color === palette.edge ? attributes : { ...attributes, color: palette.edge },
+  );
 }
 
 /** Places a new node: at the centre of its already placed neighbours, else outside the rest. */
@@ -149,7 +164,11 @@ function placeNear(graph: NightloomGraph, node: string, placed: ReadonlySet<stri
  * on a circle grouped by type (deterministic); later additions are placed
  * next to their neighbours, so the existing picture stays where it was.
  */
-export function syncGraph(graph: NightloomGraph, data: InvestigationGraph): SyncResult {
+export function syncGraph(
+  graph: NightloomGraph,
+  data: InvestigationGraph,
+  palette: GraphPalette = DEFAULT_GRAPH_PALETTE,
+): SyncResult {
   const nodeIds = new Set(data.nodes.map((node) => node.id));
   const edgeIds = new Set<string>();
   for (const edge of data.edges) {
@@ -189,7 +208,7 @@ export function syncGraph(graph: NightloomGraph, data: InvestigationGraph): Sync
           entity,
           label: entity.label,
           entityType: entity.type,
-          ...colorsOf(entity),
+          ...colorsOf(entity, palette),
           size: sizeOf(entity, graph.degree(entity.id)),
         });
         result.changed = true;
@@ -203,7 +222,7 @@ export function syncGraph(graph: NightloomGraph, data: InvestigationGraph): Sync
       x: Math.cos(angle) * START_RADIUS,
       y: Math.sin(angle) * START_RADIUS,
       size: sizeOf(entity, 0),
-      ...colorsOf(entity),
+      ...colorsOf(entity, palette),
       entity,
     });
     result.addedNodes.push(entity.id);
@@ -213,12 +232,17 @@ export function syncGraph(graph: NightloomGraph, data: InvestigationGraph): Sync
     if (!edgeIds.has(relation.id)) continue;
     if (graph.hasEdge(relation.id)) {
       if (graph.getEdgeAttribute(relation.id, "relation") !== relation) {
-        graph.replaceEdgeAttributes(relation.id, edgeAttributes(relation));
+        graph.replaceEdgeAttributes(relation.id, edgeAttributes(relation, palette));
         result.changed = true;
       }
       continue;
     }
-    graph.addDirectedEdgeWithKey(relation.id, relation.from, relation.to, edgeAttributes(relation));
+    graph.addDirectedEdgeWithKey(
+      relation.id,
+      relation.from,
+      relation.to,
+      edgeAttributes(relation, palette),
+    );
     result.addedEdges.push(relation.id);
   }
 

@@ -3,7 +3,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react
 import { can } from "../api/cases";
 import { RequestAbortedError } from "../api/client";
 import { DEFAULT_GRAPH_LIMIT, getCaseGraph, getSchema, type Schema } from "../api/graph";
-import type { Job, ShuttleInfo } from "../api/shuttles";
+import { isActive, type Job, type ShuttleInfo } from "../api/shuttles";
 import { TypeSummary, type GraphSummary } from "../components/SidePanel";
 import type { EntityNode, InvestigationGraph } from "../domain/entities";
 import type { FocusRequest } from "../graph/GraphView";
@@ -17,7 +17,7 @@ import { DeleteEntityDialog } from "./graph/DeleteEntityDialog";
 import { EntityDetails } from "./graph/EntityDetails";
 import { ExportDialog } from "./graph/ExportDialog";
 import { FORMAT_LABELS } from "./graph/exportText";
-import { JobsPanel } from "./graph/JobsPanel";
+import { JobsPanel, RunningJobChip } from "./graph/JobsPanel";
 import {
   toEntityNode,
   toInvestigationGraph,
@@ -224,69 +224,82 @@ export function GraphTab() {
   const { data, schema, truncated } = load;
   const empty = data.nodes.length === 0;
 
-  return (
-    <section className="case-graph" aria-label="Graph">
-      <div className="case-graph__bar">
-        <p className="case-graph__summary" role="status" aria-live="polite">
-          {graphSummaryText(data.nodes.length, data.edges.length)}
-        </p>
-        <div className="button-row">
+  const summaryText = (
+    <p className="case-graph__summary" role="status" aria-live="polite">
+      {graphSummaryText(data.nodes.length, data.edges.length)}
+    </p>
+  );
+  const actions = (
+    <div className="button-row case-graph__actions">
+      <button
+        type="button"
+        className="button"
+        aria-expanded={jobsOpen}
+        aria-controls="case-jobs"
+        onClick={() => {
+          setJobsOpen((open) => !open);
+        }}
+      >
+        Jobs
+        {jobs.activeCount > 0 && (
+          <span className="count-badge" aria-label={`${String(jobs.activeCount)} active`}>
+            {jobs.activeCount}
+          </span>
+        )}
+      </button>
+      {!empty && (
+        <button
+          type="button"
+          className="button"
+          onClick={() => {
+            setNotice(null);
+            setDialog({ kind: "export" });
+          }}
+        >
+          Export
+        </button>
+      )}
+      {canEdit && !empty && (
+        <>
           <button
             type="button"
             className="button"
-            aria-expanded={jobsOpen}
-            aria-controls="case-jobs"
+            disabled={data.nodes.length < 2}
+            title={data.nodes.length < 2 ? "Add at least two entities first." : undefined}
             onClick={() => {
-              setJobsOpen((open) => !open);
+              setNotice(null);
+              setDialog({ kind: "add_relationship" });
             }}
           >
-            Jobs
-            {jobs.activeCount > 0 && (
-              <span className="count-badge" aria-label={`${String(jobs.activeCount)} active`}>
-                {jobs.activeCount}
-              </span>
-            )}
+            Add relationship
           </button>
-          {!empty && (
-            <button
-              type="button"
-              className="button"
-              onClick={() => {
-                setNotice(null);
-                setDialog({ kind: "export" });
-              }}
-            >
-              Export
-            </button>
-          )}
-          {canEdit && !empty && (
-            <>
-              <button
-                type="button"
-                className="button button--primary"
-                onClick={() => {
-                  setNotice(null);
-                  setDialog({ kind: "add_entity" });
-                }}
-              >
-                Add entity
-              </button>
-              <button
-                type="button"
-                className="button"
-                disabled={data.nodes.length < 2}
-                title={data.nodes.length < 2 ? "Add at least two entities first." : undefined}
-                onClick={() => {
-                  setNotice(null);
-                  setDialog({ kind: "add_relationship" });
-                }}
-              >
-                Add relationship
-              </button>
-            </>
-          )}
+          <button
+            type="button"
+            className="button button--primary"
+            onClick={() => {
+              setNotice(null);
+              setDialog({ kind: "add_entity" });
+            }}
+          >
+            Add entity
+          </button>
+        </>
+      )}
+    </div>
+  );
+  const canCancel = can(current.my_role, "run_shuttles");
+  // Newest first: the chip over the graph shows the latest job still under way.
+  const running = jobs.jobs.find(isActive);
+
+  return (
+    <section className="case-graph" aria-label="Graph">
+      {/* With a graph, the summary and actions sit in the graph's toolbar. */}
+      {empty && (
+        <div className="case-graph__bar">
+          {summaryText}
+          {actions}
         </div>
-      </div>
+      )}
       {reason !== null && <p className="case-graph__readonly">{reason}</p>}
       {truncated && (
         <p className="warning case-graph__truncated" role="status">
@@ -309,7 +322,7 @@ export function GraphTab() {
             hasMore={jobs.hasMore}
             loadingMore={jobs.loadingMore}
             // Editors and owners may cancel, also while the case is closed.
-            canCancel={can(current.my_role, "run_shuttles")}
+            canCancel={canCancel}
             onCancel={jobs.cancel}
             onLoadMore={jobs.loadMore}
             onClose={() => {
@@ -348,6 +361,26 @@ export function GraphTab() {
             filters={filters}
             onFiltersChange={updateFilters}
             grades={schema.admiralty}
+            toolbar={
+              <>
+                {summaryText}
+                {actions}
+              </>
+            }
+            {...(running
+              ? {
+                  overlay: (
+                    <RunningJobChip
+                      job={running}
+                      canCancel={canCancel}
+                      onCancel={jobs.cancel}
+                      onOpen={() => {
+                        setJobsOpen(true);
+                      }}
+                    />
+                  ),
+                }
+              : {})}
           />
         </Suspense>
       )}

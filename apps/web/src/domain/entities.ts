@@ -5,7 +5,8 @@
  * order). The rules about them (sensitivity, which relationships connect
  * which types, value hints) are not repeated here: the UI reads them from
  * `GET /api/v1/schema`. Only presentation lives here: a label and a color per
- * type, which the WebGL renderer and the legend both use.
+ * type. The colors are design tokens (`--type-*` in src/styles/tokens.css);
+ * the WebGL renderer reads their values through src/theme/graphPalette.ts.
  */
 
 export const ENTITY_TYPES = [
@@ -41,31 +42,49 @@ export interface EntityTypeInfo {
   label: string;
   /** The name of several, for group nodes ("312 URLs"). */
   plural: string;
-  /** Node color on the dark theme (≥ 3:1 contrast against the canvas). */
+  /**
+   * The type's color as CSS (`var(--type-…)`), for swatches and chips. Types
+   * without a color of their own use --muted.
+   */
   color: string;
 }
 
+/** The design token of a type's color: `ip_address` → `--type-ip-address`. */
+export function typeToken(type: EntityType): string {
+  return `--type-${type.replaceAll("_", "-")}`;
+}
+
+const colorOf = (type: EntityType) => `var(${typeToken(type)})`;
+
 /** The one palette: graph nodes, legend swatches, search results and chips. */
 export const ENTITY_TYPE_INFO: Readonly<Record<EntityType, EntityTypeInfo>> = {
-  domain: { label: "Domain", plural: "Domains", color: "#6ea8fe" },
-  ip_address: { label: "IP address", plural: "IP addresses", color: "#ff9f6e" },
-  netblock: { label: "Netblock", plural: "Netblocks", color: "#b794f6" },
-  asn: { label: "ASN", plural: "ASNs", color: "#ff6b81" },
-  certificate: { label: "Certificate", plural: "Certificates", color: "#5fd39b" },
-  url: { label: "URL", plural: "URLs", color: "#a3b8cc" },
-  service: { label: "Port / Service", plural: "Ports / services", color: "#c3e88d" },
-  technology: { label: "Technology", plural: "Technologies", color: "#e9a8f2" },
-  organization: { label: "Organization", plural: "Organizations", color: "#e5e9f0" },
-  email: { label: "Email", plural: "Emails", color: "#8bd5ca" },
-  username: { label: "Username", plural: "Usernames", color: "#91d7e3" },
-  person: { label: "Person", plural: "People", color: "#f7a8b8" },
-  phone: { label: "Phone", plural: "Phones", color: "#eed49f" },
-  social_profile: { label: "Social profile", plural: "Social profiles", color: "#7dc4e4" },
-  location: { label: "Location", plural: "Locations", color: "#a6da95" },
-  crypto_wallet: { label: "Crypto wallet", plural: "Crypto wallets", color: "#f5a97f" },
-  document: { label: "Document", plural: "Documents", color: "#b8c0e0" },
-  image: { label: "Image", plural: "Images", color: "#c6a0f6" },
-  breach: { label: "Breach", plural: "Breaches", color: "#ed8796" },
+  domain: { label: "Domain", plural: "Domains", color: colorOf("domain") },
+  ip_address: { label: "IP address", plural: "IP addresses", color: colorOf("ip_address") },
+  netblock: { label: "Netblock", plural: "Netblocks", color: colorOf("netblock") },
+  asn: { label: "ASN", plural: "ASNs", color: colorOf("asn") },
+  certificate: { label: "Certificate", plural: "Certificates", color: colorOf("certificate") },
+  url: { label: "URL", plural: "URLs", color: colorOf("url") },
+  service: { label: "Port / Service", plural: "Ports / services", color: colorOf("service") },
+  technology: { label: "Technology", plural: "Technologies", color: colorOf("technology") },
+  organization: { label: "Organization", plural: "Organizations", color: colorOf("organization") },
+  email: { label: "Email", plural: "Emails", color: colorOf("email") },
+  username: { label: "Username", plural: "Usernames", color: colorOf("username") },
+  person: { label: "Person", plural: "People", color: colorOf("person") },
+  phone: { label: "Phone", plural: "Phones", color: colorOf("phone") },
+  social_profile: {
+    label: "Social profile",
+    plural: "Social profiles",
+    color: colorOf("social_profile"),
+  },
+  location: { label: "Location", plural: "Locations", color: colorOf("location") },
+  crypto_wallet: {
+    label: "Crypto wallet",
+    plural: "Crypto wallets",
+    color: colorOf("crypto_wallet"),
+  },
+  document: { label: "Document", plural: "Documents", color: colorOf("document") },
+  image: { label: "Image", plural: "Images", color: colorOf("image") },
+  breach: { label: "Breach", plural: "Breaches", color: colorOf("breach") },
 };
 
 /** Provenance carried by every node and edge (see docs/ARCHITECTURE.md#provenance). */

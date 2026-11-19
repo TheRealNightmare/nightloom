@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { ENTITY_TYPE_INFO, type EntityNode, type RelationEdge } from "../domain/entities";
+import type { EntityNode, RelationEdge } from "../domain/entities";
+import { DEFAULT_GRAPH_PALETTE } from "../theme/graphPalette";
 import { sampleGraph } from "../demo/sampleGraph";
 import {
   buildGraph,
@@ -25,7 +26,7 @@ describe("buildGraph", () => {
 
   it("colors nodes by entity type and sizes them by degree", () => {
     graph.forEachNode((node, attributes) => {
-      expect(attributes.color).toBe(ENTITY_TYPE_INFO[attributes.entityType].color);
+      expect(attributes.color).toBe(DEFAULT_GRAPH_PALETTE.types[attributes.entityType]);
       expect(attributes.size).toBeCloseTo(5 + Math.sqrt(graph.degree(node)) * 2.4);
       expect(attributes.entity.id).toBe(node);
     });
@@ -138,7 +139,7 @@ describe("syncGraph", () => {
     expect(graph.getNodeAttributes("b")).toMatchObject({
       label: "B!",
       entityType: "ip_address",
-      color: ENTITY_TYPE_INFO.ip_address.color,
+      color: DEFAULT_GRAPH_PALETTE.types.ip_address,
     });
     expect(syncGraph(graph, { nodes: [a, renamed], edges: [ab] }).changed).toBe(false);
   });
