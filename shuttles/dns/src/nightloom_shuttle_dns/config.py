@@ -26,6 +26,10 @@ ENV_ENVIRONMENT = "NIGHTLOOM_ENV"
 
 DEFAULT_RESOLVERS = ("1.1.1.1", "9.9.9.9")
 MAX_RESOLVERS = 8
+# Shown with every Shuttle of this package: the default resolver's homepage and
+# privacy policy (the operator who changes NIGHTLOOM_DNS_RESOLVERS picks others).
+RESOLVER_HOMEPAGE = "https://developers.cloudflare.com/1.1.1.1/"
+RESOLVER_TERMS_URL = "https://developers.cloudflare.com/1.1.1.1/privacy/public-dns-resolver/"
 
 _TRUE = frozenset({"1", "true", "yes", "on"})
 _FALSE = frozenset({"", "0", "false", "no", "off"})
@@ -93,6 +97,8 @@ __all__ = [
     "ENV_ENVIRONMENT",
     "ENV_RESOLVERS",
     "MAX_RESOLVERS",
+    "RESOLVER_HOMEPAGE",
+    "RESOLVER_TERMS_URL",
     "DnsConfig",
     "load_config",
 ]

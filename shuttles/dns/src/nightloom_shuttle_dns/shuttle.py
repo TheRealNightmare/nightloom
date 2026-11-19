@@ -52,7 +52,6 @@ from nightloom_sdk import (
     Finding,
     InputRefusedError,
     Mode,
-    RateLimit,
     RefusalReason,
     RelationshipFinding,
     Shuttle,
@@ -61,9 +60,21 @@ from nightloom_sdk import (
 )
 from nightloom_sdk.http import is_public_address
 from nightloom_sdk.ratelimit import HostRateLimiter
-from nightloom_shuttle_dns.client import Answer, DnsClient, DnsQueryError, ResolverClient
-from nightloom_shuttle_dns.config import DnsConfig, load_config
+from nightloom_shuttle_dns.client import (
+    RESOLVER_RATE_LIMIT,
+    Answer,
+    DnsClient,
+    DnsQueryError,
+    ResolverClient,
+)
+from nightloom_shuttle_dns.config import (
+    RESOLVER_HOMEPAGE,
+    RESOLVER_TERMS_URL,
+    DnsConfig,
+    load_config,
+)
 from nightloom_shuttle_dns.names import is_internal_name
+from nightloom_shuttle_dns.names import name_text as _name
 
 R = dns.rdatatype.RdataType
 
@@ -87,11 +98,6 @@ D = EntityType.DOMAIN
 
 class AllQueriesFailedError(Exception):
     """No resolver answered any query: the job fails rather than report an empty result."""
-
-
-def _name(value: object) -> str:
-    """A dnspython name as stored text: no final dot, lower-case."""
-    return str(value).rstrip(".").lower() or "."
 
 
 def _text(value: str) -> str:
@@ -137,10 +143,10 @@ class DnsShuttle(Shuttle):
         network=True,
         # Per resolver and job: a handful of queries per run, well within what
         # public resolvers expect from one client.
-        rate_limit=RateLimit(requests=10, period_seconds=1),
+        rate_limit=RESOLVER_RATE_LIMIT,
         timeout_seconds=60,
-        homepage="https://developers.cloudflare.com/1.1.1.1/",
-        terms_url="https://developers.cloudflare.com/1.1.1.1/privacy/public-dns-resolver/",
+        homepage=RESOLVER_HOMEPAGE,
+        terms_url=RESOLVER_TERMS_URL,
         # A recursive resolver's answer: usually reliable, probably true (not
         # DNSSEC-validated here, and it can change at any time).
         default_admiralty="B2",

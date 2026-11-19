@@ -175,6 +175,11 @@
       "pairs": [["domain", "domain"]]
     },
     {
+      "type": "HAS_PTR",
+      "note_required": false,
+      "pairs": [["ip_address", "domain"]]
+    },
+    {
       "type": "ALIAS_OF",
       "note_required": false,
       "pairs": [["domain", "domain"]]

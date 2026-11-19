@@ -454,7 +454,7 @@ describe("adding relationships", () => {
     await userEvent.click(screen.getByRole("button", { name: "Swap direction" }));
     expect(screen.getByRole("combobox", { name: "From" })).toHaveValue("192.0.2.1");
     expect(screen.getByRole("combobox", { name: "To" })).toHaveValue("example.org");
-    expect(relationOptions()).toEqual(["related to (needs a note)"]);
+    expect(relationOptions()).toEqual(["has ptr", "related to (needs a note)"]);
   });
 
   it("requires a note for related to, and both ends", async () => {

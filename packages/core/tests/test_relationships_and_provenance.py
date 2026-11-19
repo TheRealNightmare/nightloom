@@ -34,6 +34,7 @@ ALLOWED_CASES = [
     (R.HAS_MX, E.DOMAIN, E.DOMAIN),
     (R.HAS_NS, E.DOMAIN, E.DOMAIN),
     (R.ALIAS_OF, E.DOMAIN, E.DOMAIN),
+    (R.HAS_PTR, E.IP_ADDRESS, E.DOMAIN),
     (R.WITHIN, E.IP_ADDRESS, E.NETBLOCK),
     (R.WITHIN, E.NETBLOCK, E.NETBLOCK),
     (R.ANNOUNCED_BY, E.NETBLOCK, E.ASN),
@@ -70,6 +71,9 @@ REFUSED_CASES = [
     (R.HAS_EMAIL, E.ORGANIZATION, E.EMAIL),
     (R.ALIAS_OF, E.DOMAIN, E.IP_ADDRESS),  # a CNAME points to a name, never an address
     (R.ALIAS_OF, E.URL, E.DOMAIN),
+    (R.HAS_PTR, E.DOMAIN, E.IP_ADDRESS),  # wrong direction: that is RESOLVES_TO
+    (R.HAS_PTR, E.NETBLOCK, E.DOMAIN),
+    (R.HAS_PTR, E.IP_ADDRESS, E.URL),
 ]
 
 
@@ -103,6 +107,12 @@ def test_alias_of_is_a_cname_between_two_domains() -> None:
     assert ALLOWED[R.ALIAS_OF] == {(E.DOMAIN, E.DOMAIN)}
     assert R.ALIAS_OF.value == "ALIAS_OF"
     assert R.ALIAS_OF not in NOTE_REQUIRED
+
+
+def test_has_ptr_links_an_address_to_its_reverse_dns_name() -> None:
+    assert ALLOWED[R.HAS_PTR] == {(E.IP_ADDRESS, E.DOMAIN)}
+    assert R.HAS_PTR.value == "HAS_PTR"
+    assert R.HAS_PTR not in NOTE_REQUIRED
 
 
 @pytest.mark.parametrize("note", [None, "", "   "])
