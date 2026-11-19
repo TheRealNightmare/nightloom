@@ -29,7 +29,7 @@ flowchart LR
 | `apps/worker` | Celery worker that runs Shuttle jobs (see [Jobs](#jobs-and-the-worker)); auto-pivot scans later |
 | `packages/core` | Shared entity model (`nightloom-core`): entity types, canonical keys, relationship allow-list, provenance |
 | `packages/sdk` | Shuttle SDK (`nightloom-sdk`): the [Shuttle contract](#shuttle-contract), the guarded HTTP client, the registry, test helpers |
-| `shuttles/` | Built-in Shuttles, one package each: `registrable-domain` (no network), [`dns`](#the-dns-shuttle), [`crtsh`](#the-crtsh-shuttle), [`rdap`](#the-rdap-shuttle), [`ripestat`](#the-ripestat-shuttle), [`internetdb`](#the-internetdb-shuttle) and [`wayback`](#the-wayback-shuttle) |
+| `shuttles/` | Built-in Shuttles, one package each: `registrable-domain` (no network), [`dns`](#the-dns-shuttle) and [`reverse-dns`](#the-reverse-dns-shuttle) (one package), [`crtsh`](#the-crtsh-shuttle), [`rdap`](#the-rdap-shuttle), [`ripestat`](#the-ripestat-shuttle), [`internetdb`](#the-internetdb-shuttle) and [`wayback`](#the-wayback-shuttle) |
 | PostgreSQL | Users, cases, jobs, audit log, encrypted API keys |
 | Neo4j | Entities and relationships |
 | Valkey (Redis-compatible) | Celery broker, rate-limit counters, result cache |
@@ -272,7 +272,7 @@ Each type is a Pydantic model (`nightloom_core.entities`) with a canonical `valu
 | Type (`type`) | Neo4j label | Sensitivity | Properties |
 | --- | --- | --- | --- |
 | `domain` | `Domain` | infrastructure | DNS facts, written by the [DNS Shuttle](#the-dns-shuttle): `dns_txt`, `dns_spf`, `dns_dmarc`, `dns_mx`, `dns_caa` (lists of at most 50 records of at most 1,000 characters), `dns_soa_primary_ns`, `dns_soa_responsible`, `dns_soa_serial`, `dns_soa_refresh`, `dns_soa_retry`, `dns_soa_expire`, `dns_soa_minimum`; registration data, written by the [RDAP Shuttle](#the-rdap-shuttle): `registered`, `expires`, `last_changed` (ISO 8601 date-times), `status` (at most 30 EPP statuses), `dnssec_signed`, `registrar`, `registrar_iana_id`, `rdap_server`; archive data, written by the [Wayback Shuttle](#the-wayback-shuttle): `wayback_first_capture`, `wayback_last_capture`, `wayback_url_count` |
-| `ip_address` | `IPAddress` | infrastructure | `scope` (`public` or `private`: not globally routable); exposure data, written by the [InternetDB Shuttle](#the-internetdb-shuttle): `open_ports` (TCP ports, ascending, at most 200), `cpes` (CPE names, at most 100), `vulns` (CVE IDs, ascending, at most 500), `tags` (at most 50), `internetdb_checked_at` |
+| `ip_address` | `IPAddress` | infrastructure | `scope` (`public` or `private`: not globally routable); exposure data, written by the [InternetDB Shuttle](#the-internetdb-shuttle): `open_ports` (TCP ports, ascending, at most 200), `cpes` (CPE names, at most 100), `vulns` (CVE IDs, ascending, at most 500), `tags` (at most 50), `internetdb_checked_at`; from the [reverse DNS Shuttle](#the-reverse-dns-shuttle): `ptr_checked_at` |
 | `netblock` | `Netblock` | infrastructure | `name`, `country`, `registry` (the Regional Internet Registry); from RDAP also `handle`, `type` (as the registry names it, e.g. `DIRECT ALLOCATION`), `registered`, `last_changed`, `parent_handle`; from [RIPEstat](#the-ripestat-shuttle) `announced`, `bgp_first_seen`, `bgp_last_seen`, `iana_block`, `iana_block_description` |
 | `asn` | `ASN` | infrastructure | `name`, `country`, `registry`; from RDAP also `handle`, `registered`, `last_changed`; from [RIPEstat](#the-ripestat-shuttle) `as_name` (the network name in the AS holder), `announced`, `iana_block`, `iana_block_description` |
 | `certificate` | `Certificate` | infrastructure | `subject`, `subject_cn`, `issuer`, `serial_number`, `not_before`, `not_after`, `self_signed`, `san_count` (entries in the subjectAltName extension), `crtsh_id` (written by the [crt.sh Shuttle](#the-crtsh-shuttle)) |
@@ -322,6 +322,7 @@ Relationship types (`nightloom_core.relationships`) have an explicit allow-list 
 | `HAS_SUBDOMAIN`, `HAS_MX`, `HAS_NS` | Domain → Domain |
 | `ALIAS_OF` | Domain → Domain: the source name is a CNAME alias of the target name |
 | `RESOLVES_TO` | Domain → IPAddress |
+| `HAS_PTR` | IPAddress → Domain: the address's reverse DNS (PTR) records name that host; whether forward DNS confirms it is in the note (`forward_confirmed: true` or `false`) |
 | `WITHIN` | IPAddress → Netblock, or Netblock → Netblock (a network inside a larger one) |
 | `ANNOUNCED_BY` | Netblock → ASN |
 | `COVERS` | Certificate → Domain |
@@ -421,7 +422,7 @@ Every Shuttle subclasses `Shuttle` and declares a frozen `ShuttleMeta`, validate
 
 ### Findings
 
-`run(ctx, entity)` is an async generator. Before doing any work it may raise `InputRefusedError(RefusalReason.…)` for an input it will not handle (the DNS Shuttle refuses internal-only names): the job fails with that reason's fixed, user-safe message from the SDK, never the input or other text, and the reason code is recorded in `job.finish`. `entity` is an `EntityInput` (type, canonical value, key, properties) read from the case's graph. It yields:
+`run(ctx, entity)` is an async generator. Before doing any work it may raise `InputRefusedError(RefusalReason.…)` for an input it will not handle (the DNS Shuttle refuses internal-only names, the reverse DNS Shuttle netblocks over 256 addresses): the job fails with that reason's fixed, user-safe message from the SDK, never the input or other text, and the reason code is recorded in `job.finish`. `entity` is an `EntityInput` (type, canonical value, key, properties) read from the case's graph. It yields:
 
 - `EntityFinding(type, value, properties?, confidence?, admiralty?, note?)`
 - `RelationshipFinding(type, source, target, confidence?, admiralty?, note?)`, whose ends are `EntityRef(type, value)`
@@ -480,6 +481,23 @@ Records of a name that is a CNAME belong to its target, so MX, NS, TXT, SOA and 
 **Test-only mode.** `NIGHTLOOM_DNS_ALLOW_PRIVATE_RESOLVERS=true` allows private resolver addresses and lifts the refusal for the `nightloom-test.example` zone only. It exists for the integration tests, which run a local authoritative CoreDNS server ([`deploy/compose.test.yaml`](../deploy/compose.test.yaml), `make up TEST_DNS=1`) so that CI never queries the internet. The configuration check refuses it when `NIGHTLOOM_ENV=production`.
 
 Findings are rated **B2** (a recursive resolver's answer: usually reliable, probably true, not DNSSEC-validated here) with confidence 0.9.
+
+### The reverse DNS Shuttle
+
+[`shuttles/dns`](../shuttles/dns/) also provides `reverse-dns` (passive, infrastructure, `network=True`, a second entry point of the same package): the PTR names of an IPAddress, or of every address in a small Netblock, checked against forward DNS. It imports the DNS Shuttle's configuration and resolver client ([`reverse.py`](../shuttles/dns/src/nightloom_shuttle_dns/reverse.py)), so the [resolver policy](#the-dns-shuttle) is the same in every respect: only the resolvers in `NIGHTLOOM_DNS_RESOLVERS`, never `/etc/resolv.conf`, the same configuration check, 3 seconds and 2 tries per query, and the same rate limit (10 queries per second per resolver; one constant, `RESOLVER_RATE_LIMIT`, declared by both).
+
+| Input | Becomes |
+| --- | --- |
+| IPAddress | each name in its PTR records (at most 10, alphabetically) as a Domain with `HAS_PTR` from the address, and `ptr_checked_at` on the address |
+| Netblock | the same for every address in it, asked in order; each address that has PTR names becomes an IPAddress (`scope: public`, `ptr_checked_at`) with `WITHIN` to the netblock |
+
+**Forward confirmation and ratings.** A PTR record is published by whoever controls the reverse zone (usually the address's network operator), and nothing stops it from naming any host, including someone else's. So each name's A (for IPv4) or AAAA (for IPv6) records are asked for, once per name and run. If they contain the input address, the name is *forward-confirmed*: the `HAS_PTR` note says `forward_confirmed: true`, a `RESOLVES_TO` edge from the name back to the address is added, and the Domain and both edges are rated **B2** (0.9), like the DNS Shuttle's answers. If they do not (another address, no records, or a failed query), the note says `forward_confirmed: false. PTR not confirmed by forward DNS; anyone controlling the reverse zone can set any name.`, the Domain and `HAS_PTR` are rated **C3** (0.5: fairly reliable, possibly true), and there is no `RESOLVES_TO`. Relationships carry no typed properties, so, as with crt.sh's `wildcard` and RDAP's `role`, the result lives in the note. A forward answer through a CNAME still confirms, with the canonical name in the `RESOLVES_TO` note; a PTR answer through a CNAME (RFC 2317 classless delegation) is used as the address's own.
+
+**What is skipped.** An address that is not public (the SDK's `is_public_address`) gets a job note and no query at all: a public resolver cannot know its reverse zone, and asking would tell the resolver's operator about it. In a netblock such addresses are skipped and counted. PTR names that are not valid Domains (wildcards, single labels, a numeric last label) or are internal-only (the [DNS Shuttle's list](#the-dns-shuttle) plus `.arpa` reverse names) are dropped and counted in a note, never quoted, and never queried forward.
+
+**Sweep limits.** A netblock may hold at most 256 addresses: an IPv4 prefix of /24 or longer, an IPv6 prefix of /120 or longer. A larger one is refused before any query (`netblock_too_large`: *Reverse DNS sweeps are limited to 256 addresses; pick a /24 or smaller (for IPv6, a /120 or smaller). Nothing was queried.*). Every address is asked, network and broadcast addresses included, since PTR records often exist there too. Cancellation is checked before every query. The timeout is 300 seconds and no query starts after 240; a sweep stops adding names after 1,400 (`1,400 × 3 + 256 × 2` findings at most, under the worker's 5,000), each with a note.
+
+**Failures.** NXDOMAIN and empty answers are quiet. SERVFAIL and timeouts are counted, and every run ends with a note: *N address(es) queried, P with PTR names, C name(s) forward-confirmed, F quer(ies) failed.* The job fails with `source_unavailable` (findings so far kept) when no PTR query got an answer, or after 10 failed PTR queries in a row in a sweep. The tests use a fake resolver; one opt-in `network` test asks the real resolvers about `1.1.1.1` (`one.one.one.one`, forward-confirmed).
 
 ### The crt.sh Shuttle
 
@@ -624,7 +642,7 @@ stateDiagram-v2
 | `GET /cases/{id}/jobs/{job_id}` | member | one job, with `stats.entities_touched`; `404` for a job of another case |
 | `POST /cases/{id}/jobs/{job_id}/cancel` | editor, owner (also when the case is closed) | a queued job becomes `cancelled` at once; a running one gets `cancel_requested` and stops between findings; `409` once finished |
 
-The Compose stack runs the worker as the `worker` service (same image as the API, 4 processes by default, health-checked with `celery inspect ping`, with `NIGHTLOOM_DNS_RESOLVERS` for the [DNS Shuttle](#the-dns-shuttle)); `make worker` runs one on your machine against the stack's services.
+The Compose stack runs the worker as the `worker` service (same image as the API, 4 processes by default, health-checked with `celery inspect ping`, with `NIGHTLOOM_DNS_RESOLVERS` for the [DNS](#the-dns-shuttle) and [reverse DNS](#the-reverse-dns-shuttle) Shuttles); `make worker` runs one on your machine against the stack's services.
 
 ## Auto-pivot
 

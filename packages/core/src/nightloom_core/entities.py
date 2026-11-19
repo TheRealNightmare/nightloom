@@ -203,6 +203,9 @@ class IPAddressProperties(Properties):
     version, not verified), ``tags`` (Shodan's labels such as ``cdn`` or
     ``self-signed``, at most 50) and ``internetdb_checked_at`` (when the
     record was read).
+
+    From reverse DNS: ``ptr_checked_at`` (when the address's PTR records were
+    last looked up, whether or not it had any).
     """
 
     scope: Literal["public", "private"] | None = None
@@ -211,6 +214,7 @@ class IPAddressProperties(Properties):
     vulns: Annotated[list[CveId], Field(max_length=EXPOSURE_MAX_VULNS)] | None = None
     tags: Annotated[list[ShortText], Field(max_length=EXPOSURE_MAX_TAGS)] | None = None
     internetdb_checked_at: AwareDatetime | None = None
+    ptr_checked_at: AwareDatetime | None = None
 
 
 class NetblockProperties(Properties):

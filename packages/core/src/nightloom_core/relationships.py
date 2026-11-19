@@ -21,6 +21,8 @@ class RelationType(StrEnum):
     RESOLVES_TO = "RESOLVES_TO"
     HAS_MX = "HAS_MX"
     HAS_NS = "HAS_NS"
+    # Reverse DNS: the address's PTR records name the target host.
+    HAS_PTR = "HAS_PTR"
     # A CNAME: the source name is an alias of (points to) the target name.
     ALIAS_OF = "ALIAS_OF"
     WITHIN = "WITHIN"
@@ -51,6 +53,7 @@ ALLOWED: dict[RelationType, frozenset[Pair]] = {
     RelationType.RESOLVES_TO: _pairs([E.DOMAIN], [E.IP_ADDRESS]),
     RelationType.HAS_MX: _pairs([E.DOMAIN], [E.DOMAIN]),
     RelationType.HAS_NS: _pairs([E.DOMAIN], [E.DOMAIN]),
+    RelationType.HAS_PTR: _pairs([E.IP_ADDRESS], [E.DOMAIN]),
     RelationType.ALIAS_OF: _pairs([E.DOMAIN], [E.DOMAIN]),
     # An address in a network, or a network inside a larger one.
     RelationType.WITHIN: _pairs([E.IP_ADDRESS, E.NETBLOCK], [E.NETBLOCK]),

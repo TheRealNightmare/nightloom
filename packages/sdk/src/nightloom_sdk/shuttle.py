@@ -20,6 +20,7 @@ class RefusalReason(StrEnum):
 
     INTERNAL_NAME = "internal_name"
     NOT_REGISTRABLE = "not_registrable"
+    NETBLOCK_TOO_LARGE = "netblock_too_large"
 
 
 REFUSAL_MESSAGES: dict[RefusalReason, str] = {
@@ -32,6 +33,10 @@ REFUSAL_MESSAGES: dict[RefusalReason, str] = {
         "This Shuttle only looks up domains under a public suffix (such as example.org or "
         "shop.example.co.uk), not public suffixes themselves (such as co.uk) or internal-only "
         "names. Nothing was queried."
+    ),
+    RefusalReason.NETBLOCK_TOO_LARGE: (
+        "Reverse DNS sweeps are limited to 256 addresses; pick a /24 or smaller "
+        "(for IPv6, a /120 or smaller). Nothing was queried."
     ),
 }
 

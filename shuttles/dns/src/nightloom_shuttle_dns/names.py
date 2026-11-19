@@ -26,6 +26,11 @@ INTERNAL_SUFFIXES = (
 )
 
 
+def name_text(value: object) -> str:
+    """A dnspython name (or its text) as stored text: no final dot, lower-case."""
+    return str(value).rstrip(".").lower() or "."
+
+
 def _under(name: str, suffix: str) -> bool:
     return name == suffix or name.endswith(f".{suffix}")
 
@@ -40,4 +45,4 @@ def is_internal_name(name: str, *, allow_test_zone: bool = False) -> bool:
     return any(_under(name, suffix) for suffix in INTERNAL_SUFFIXES)
 
 
-__all__ = ["INTERNAL_SUFFIXES", "TEST_ZONE", "is_internal_name"]
+__all__ = ["INTERNAL_SUFFIXES", "TEST_ZONE", "is_internal_name", "name_text"]

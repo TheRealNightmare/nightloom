@@ -119,6 +119,8 @@ async def test_get_schema(signed_in_client: AsyncClient) -> None:
         "note_required": False,
         "pairs": [["domain", "domain"]],
     }
+    ptr = next(i for i in body["relationship_types"] if i["type"] == "HAS_PTR")
+    assert ptr == {"type": "HAS_PTR", "note_required": False, "pairs": [["ip_address", "domain"]]}
     assert body["manual_defaults"]["admiralty"] == "B2"
 
 

@@ -29,7 +29,8 @@ describe("schema-driven relationship filtering", () => {
   });
 
   it("is directional", () => {
-    expect(names(relationsFor(SCHEMA, "ip_address", "domain"))).toEqual(["RELATED_TO"]);
+    // An address names a host by reverse DNS (HAS_PTR), never RESOLVES_TO.
+    expect(names(relationsFor(SCHEMA, "ip_address", "domain"))).toEqual(["HAS_PTR", "RELATED_TO"]);
   });
 
   it("knows which types need a note", () => {

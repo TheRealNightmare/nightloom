@@ -23,10 +23,14 @@ import dns.rdata
 import dns.rdatatype
 import dns.resolver
 
+from nightloom_sdk.meta import RateLimit
 from nightloom_sdk.ratelimit import HostRateLimiter
 
 QUERY_TIMEOUT_SECONDS = 3.0
 TRIES = 2
+# The rate limit every Shuttle of this package declares, applied per resolver
+# and job: well within what public resolvers expect from one client.
+RESOLVER_RATE_LIMIT = RateLimit(requests=10, period_seconds=1)
 
 
 class DnsQueryError(Exception):
@@ -128,6 +132,7 @@ class ResolverClient:
 
 __all__ = [
     "QUERY_TIMEOUT_SECONDS",
+    "RESOLVER_RATE_LIMIT",
     "TRIES",
     "Answer",
     "DnsClient",

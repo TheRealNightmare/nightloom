@@ -247,6 +247,18 @@ def test_exposure_properties_of_ip_addresses() -> None:
     assert build_entity(EntityType.IP_ADDRESS, "192.0.2.10", full).stored_properties()
 
 
+def test_reverse_dns_property_of_ip_addresses() -> None:
+    ip = build_entity(
+        EntityType.IP_ADDRESS,
+        "2001:db8::1",
+        {"scope": "public", "ptr_checked_at": "2026-11-19T06:00:00+01:00"},
+    )
+    assert ip.stored_properties() == {
+        "scope": "public",
+        "ptr_checked_at": "2026-11-19T06:00:00+01:00",
+    }
+
+
 @pytest.mark.parametrize(
     "properties",
     [
@@ -261,6 +273,8 @@ def test_exposure_properties_of_ip_addresses() -> None:
         {"tags": [""]},
         {"tags": ["t"] * 51},
         {"internetdb_checked_at": "2026-11-19T06:00:00"},  # naive
+        {"ptr_checked_at": "2026-11-19T06:00:00"},  # naive
+        {"ptr_checked_at": "yesterday"},
     ],
 )
 def test_invalid_exposure_properties(properties: dict[str, Any]) -> None:
