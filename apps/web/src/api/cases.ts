@@ -221,7 +221,7 @@ function isMember(value: unknown): value is Member {
   );
 }
 
-function isAuditEvent(value: unknown): value is AuditEvent {
+export function isAuditEvent(value: unknown): value is AuditEvent {
   return (
     isRecord(value) &&
     typeof value["id"] === "number" &&

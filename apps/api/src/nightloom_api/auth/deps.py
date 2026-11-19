@@ -19,6 +19,16 @@ from nightloom_api.infra.db import get_session, get_sessionmaker
 NOT_AUTHENTICATED = "Not authenticated."
 CSRF_FAILED = "CSRF token missing or invalid."
 FORBIDDEN = "You do not have permission to do this."
+PASSWORD_CHANGE_REQUIRED = "Choose a new password before you continue."  # noqa: S105 - a message
+PASSWORD_CHANGE_REQUIRED_CODE = "password_change_required"  # noqa: S105 - an error code
+
+
+class PasswordChangeRequiredError(Exception):
+    """The user signed in with a temporary password and has not replaced it yet.
+
+    Answered with ``403 {"detail": ..., "code": "password_change_required"}``
+    by the handler that :func:`nightloom_api.main.create_app` registers.
+    """
 
 
 def client_ip(request: Request) -> str | None:
@@ -35,11 +45,13 @@ def get_login_rate_limiter(cache: Annotated[Redis, Depends(get_cache)]) -> Login
     return LoginRateLimiter(cache)
 
 
-async def current_session(
+async def any_session(
     request: Request, db: Annotated[AsyncSession, Depends(get_session)]
 ) -> AuthContext:
-    """The request's valid session, or 401.
+    """The request's valid session, or 401, even if the user must change their password.
 
+    Only ``GET /auth/me``, ``POST /auth/password`` and ``POST /auth/logout``
+    use this directly; everything else goes through :func:`current_session`.
     Requests with an unsafe method (POST, PUT, PATCH, DELETE) must also send
     the CSRF token in the ``X-CSRF-Token`` header, or they get 403.
     """
@@ -56,6 +68,19 @@ async def current_session(
         token,
     ):
         raise HTTPException(status.HTTP_403_FORBIDDEN, CSRF_FAILED)
+    return ctx
+
+
+async def current_session(ctx: Annotated[AuthContext, Depends(any_session)]) -> AuthContext:
+    """The request's valid session (401 without one), for a user who may use the app.
+
+    A user who still has to replace a temporary password gets 403 with the
+    code ``password_change_required`` (:class:`PasswordChangeRequiredError`).
+    Every authenticated route depends on this, through :func:`current_user`,
+    :func:`require_role` or the case access checks.
+    """
+    if ctx.user.must_change_password:
+        raise PasswordChangeRequiredError
     return ctx
 
 
@@ -122,6 +147,7 @@ def require_role(*roles: Role) -> Callable[..., Awaitable[User]]:
     return dependency
 
 
+AnySession = Annotated[AuthContext, Depends(any_session)]
 CurrentSession = Annotated[AuthContext, Depends(current_session)]
 CurrentUser = Annotated[User, Depends(current_user)]
 AdminUser = Annotated[User, Depends(require_role(Role.ADMIN))]

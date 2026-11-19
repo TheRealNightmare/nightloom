@@ -9,7 +9,14 @@ import uuid
 from datetime import datetime
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    model_validator,
+)
 
 from nightloom_api.auth.models import DISPLAY_NAME_MAX_LENGTH, EMAIL_MAX_LENGTH, Role
 
@@ -61,6 +68,7 @@ class UserOut(BaseModel):
     display_name: str
     role: Role
     is_active: bool
+    must_change_password: bool
     created_at: datetime
     updated_at: datetime
     last_login_at: datetime | None
@@ -73,14 +81,48 @@ class LoginResponse(BaseModel):
 
 
 class UserCreate(BaseModel):
-    """Body of ``POST /users`` (admin only)."""
+    """Body of ``POST /users`` (admin only).
+
+    By default the server generates a temporary password and returns it once
+    (``generate_password``). With ``generate_password: false`` the admin
+    supplies ``password`` instead. Either way the user must choose a new
+    password at their first sign-in unless ``must_change_password`` is false.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     email: Email
     display_name: DisplayName
     role: Role
-    password: str
+    generate_password: bool = True
+    password: str | None = None
+    must_change_password: bool = True
+
+    @model_validator(mode="after")
+    def _password_xor_generated(self) -> "UserCreate":
+        if self.generate_password and self.password is not None:
+            raise ValueError("Leave out the password when the server generates one.")
+        if not self.generate_password and self.password is None:
+            raise ValueError("Enter a password, or let the server generate one.")
+        return self
+
+
+class UserCreated(UserOut):
+    """Body of a successful ``POST /users``.
+
+    ``temporary_password`` is the generated password, shown this once and
+    never stored in plain text; ``null`` when the admin supplied the password.
+    """
+
+    temporary_password: str | None
+
+
+class PasswordResetOut(BaseModel):
+    """Body of ``POST /users/{id}/password-reset``: the new temporary password, once."""
+
+    user: UserOut
+    temporary_password: str
+    revoked_sessions: int
 
 
 class UserUpdate(BaseModel):

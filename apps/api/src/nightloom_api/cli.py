@@ -73,7 +73,7 @@ async def create_admin(settings: Settings, *, email: str, display_name: str, pas
     """Create the admin and return its normalized email."""
     try:
         # Same validation as POST /users.
-        body = UserCreate(email=email, display_name=display_name, role=Role.ADMIN, password="")
+        body = UserCreate(email=email, display_name=display_name, role=Role.ADMIN)
     except ValueError as exc:
         raise CommandError("Invalid email address or display name.") from exc
 

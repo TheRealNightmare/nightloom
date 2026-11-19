@@ -192,6 +192,8 @@ export interface User {
   display_name: string;
   role: Role;
   is_active: boolean;
+  /** Signed in with a temporary password: only a password change is allowed. */
+  must_change_password: boolean;
   created_at: string;
   updated_at: string;
   last_login_at: string | null;
@@ -219,6 +221,7 @@ export abstract class RequestError extends Error {
     | "rate_limited"
     | "validation"
     | "forbidden"
+    | "password_change_required"
     | "not_found"
     | "conflict"
     | "too_large"
@@ -285,6 +288,21 @@ export class ForbiddenError extends RequestError {
     super("You don't have permission to do this.");
     this.name = "ForbiddenError";
     this.detail = detail;
+  }
+}
+
+/** Mirrors `PASSWORD_CHANGE_REQUIRED_CODE` in apps/api/src/nightloom_api/auth/deps.py. */
+export const PASSWORD_CHANGE_REQUIRED_CODE = "password_change_required";
+
+/**
+ * `403` with the code `password_change_required`: the user signed in with a
+ * temporary password and must choose a new one before anything else.
+ */
+export class PasswordChangeRequiredError extends RequestError {
+  readonly kind = "password_change_required";
+  constructor() {
+    super("Choose a new password before you continue.");
+    this.name = "PasswordChangeRequiredError";
   }
 }
 
@@ -439,6 +457,20 @@ export function onSessionExpired(listener: SessionExpiredListener): () => void {
   };
 }
 
+type PasswordChangeRequiredListener = () => void;
+const passwordChangeRequiredListeners = new Set<PasswordChangeRequiredListener>();
+
+/**
+ * Called whenever a request answers `403` with the code
+ * `password_change_required`. Returns an unsubscribe function.
+ */
+export function onPasswordChangeRequired(listener: PasswordChangeRequiredListener): () => void {
+  passwordChangeRequiredListeners.add(listener);
+  return () => {
+    passwordChangeRequiredListeners.delete(listener);
+  };
+}
+
 export interface ApiRequestOptions extends RequestOptions {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   /** Serialized as JSON. */
@@ -539,6 +571,10 @@ export async function apiRequest(
       const messages = messagesFrom422(parsed);
       if (messages.length > 0) throw new ValidationError(messages);
     }
+    if (status === 403 && isRecord(parsed) && parsed["code"] === PASSWORD_CHANGE_REQUIRED_CODE) {
+      for (const listener of passwordChangeRequiredListeners) listener();
+      throw new PasswordChangeRequiredError();
+    }
     // Only these few statuses carry server text, and only for known, fixed
     // messages (last owner, unknown member email).
     if (status === 403) throw new ForbiddenError(detailText(parsed));
@@ -563,7 +599,8 @@ export function isUser(value: unknown): value is User {
     typeof value["email"] === "string" &&
     typeof value["display_name"] === "string" &&
     isRole(value["role"]) &&
-    typeof value["is_active"] === "boolean"
+    typeof value["is_active"] === "boolean" &&
+    typeof value["must_change_password"] === "boolean"
   );
 }
 

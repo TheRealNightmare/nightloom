@@ -63,8 +63,12 @@ The local stack is defined in [`deploy/compose.yaml`](../deploy/compose.yaml) (s
   | `/cases/:caseId/members` | members; owners add by email, change roles and remove; anyone can leave |
   | `/cases/:caseId/activity` | the case's audit events with readable labels (owners and editors) |
   | `/cases/:caseId/settings` | purpose, legal basis, person entities, retention (a dialog asks for the change reason where the API needs one), close / reopen / archive, delete by typing the title (owners) |
+  | `/admin/users` | admins only: every account (search, role and status filters); *New user* with a generated temporary password shown once; per row change the role, deactivate or activate, revoke sessions, reset the password (see [Temporary passwords](#temporary-passwords-and-the-forced-change)) |
+  | `/admin/audit` | admins only: the [audit log](#audit-log) with readable labels (case events reuse the *Activity* tab's wording), filters (action, outcome, actor, case ID, a range of whole UTC days), *Load more*, a details drawer per event (sanitized `details` as JSON, request ID, IP) and *Verify chain* |
   | `/demo` | the demo graph (loaded on demand, so sigma is not in the main bundle) |
   | anything else | "Page not found" |
+
+  *Users* and *Audit log* appear in the top bar only for global admins; anyone else who opens `/admin/...` gets "Page not found", and the API refuses them anyway.
 
   Tabs a role cannot use are hidden, mirroring the API's [capability table](#cases); opening one directly shows "You don't have permission". A case that does not exist and one you are not a member of both show the same "Case not found" page, as the API answers `404` for both.
 - **Demo data.** The `/demo` page shows a typed fixture ([`src/demo/sampleGraph.ts`](../apps/web/src/demo/sampleGraph.ts)) using the [data model](#data-model)'s entity types, with provenance on every node and edge. It is entirely fictional (`example.org`, RFC 5737 IP addresses, RFC 5398 AS numbers, no people) and labelled "Demo data" in the top bar. Case graphs never show that badge or any fixture data.
@@ -126,9 +130,10 @@ The API authenticates browsers with **server-side sessions** (code in [`nightloo
 | `POST /auth/logout` | signed in | `204`, clears the cookies |
 | `GET /auth/me` | signed in | the current user |
 | `POST /auth/password` | signed in | `{current_password, new_password}` → `204` |
-| `GET /users`, `POST /users` | admin | list; create with an initial password |
+| `GET /users`, `POST /users` | admin | list; create with a generated temporary password (`generate_password`, default `true`, returned once as `temporary_password`) or one the admin supplies |
 | `PATCH /users/{id}` | admin | `display_name`, `role`, `is_active` |
 | `DELETE /users/{id}/sessions` | admin | sign the user out everywhere |
+| `POST /users/{id}/password-reset` | admin | new temporary password (returned once), all the user's sessions revoked; `400` for your own account |
 | `GET /audit` | admin | the [audit log](#audit-log), newest first |
 | `POST /audit/verify` | admin | check the audit log's hash chain |
 
@@ -154,6 +159,14 @@ Both edge addresses are outside `NIGHTLOOM_NETWORK_IP_RANGE`, like the web addre
 
 **Accepted trade-off: email lockout.** Five failed attempts lock an email for the rest of its 15-minute window, whoever made them. Someone who knows a user's email can therefore keep that user from signing in by sending wrong passwords, for at most 15 minutes per five attempts, and must keep doing so to extend it. This is accepted because the per-email limit is the main protection against password guessing spread across many IPs, which the per-IP limit alone cannot stop; the window bounds the harm, and the lock clears by itself when it ends.
 
+#### Temporary passwords and the forced change
+
+Admins never choose or see a user's real password. `POST /users` generates a temporary one by default, and `POST /users/{id}/password-reset` generates a new one for an existing user (and revokes all of that user's sessions). The generator ([`passwords.generate_temporary_password`](../apps/api/src/nightloom_api/auth/passwords.py)) draws 24 symbols with `secrets.choice` from 55 letters and digits without look-alikes (`0 O o 1 l I i`), about 138 bits, shown in six groups of four (`Hk7q-Rmz3-…`, 29 characters), and redraws in the (astronomically unlikely) case that the result breaks the password policy. The password is returned **once**, in the response body with `Cache-Control: no-store`. The database keeps only its Argon2id hash, and it never appears in logs or audit `details`: those record only `credential: "generated"` or `"supplied"` and `change_required`.
+
+Such a user has `users.must_change_password` set (migration `0006_must_change_password`; `false` for existing users). An admin who supplies a password with `generate_password: false` gets the same flag unless they also send `must_change_password: false`. `make create-admin` sets no flag: that admin typed their own password. While the flag is set, `current_session`, which every authenticated route depends on (directly, through `current_user` and `require_role`, or through the case access checks), answers **`403 {"detail": "Choose a new password before you continue.", "code": "password_change_required"}`**. The only routes that use the session without that check (`any_session`) are `GET /auth/me`, `POST /auth/password` and `POST /auth/logout`. The CSRF check still applies to all three. A successful `POST /auth/password` clears the flag in the same transaction as the new hash. Both `/auth/me` and the login response include `must_change_password`, so the web UI knows before it asks for anything else. The refusals are not audited: they are expected on every request until the change, and the change itself is (`auth.password_change` with `change_required: true`).
+
+An admin cannot reset their own password this way (`400`, recorded as `user.password_reset` `failure` with `reason: self_reset`): they change it with their current one, which keeps the rate limit and the proof that it is really them.
+
 ### Web authentication flow
 
 The web UI ([`apps/web/src/auth/`](../apps/web/src/auth/), [`src/api/client.ts`](../apps/web/src/api/client.ts)) never sees the session token: it lives only in the `HttpOnly` cookie, which the browser sends on every same-origin request (`credentials: "same-origin"`).
@@ -164,6 +177,8 @@ The web UI ([`apps/web/src/auth/`](../apps/web/src/auth/), [`src/api/client.ts`]
 - **Session expiry.** A `401` on any request other than sign-in means the session ended (expired, revoked by an admin, or signed out by a password change elsewhere). The client notifies `AuthProvider`, which drops the user and shows the sign-in screen with *Your session has ended. Please sign in again.*
 - **Error types.** Besides the sign-in errors, the client turns `403` into `ForbiddenError`, `404` into `NotFoundError` and `409` into `ConflictError` (with the server's message, e.g. the last-owner rule), and `422` into `ValidationError` with one message per field (pydantic's "Value error, " prefix removed). Case calls live in [`src/api/cases.ts`](../apps/web/src/api/cases.ts), with types mirroring the API's schemas.
 - **Sign-out.** Calls `POST /auth/logout`, then clears the local state even if that call fails; an orphaned server session still expires on its own.
+- **Forced password change.** When `/auth/me` or the sign-in answer has `must_change_password`, or any request answers `403` with the code `password_change_required` (the client turns it into `PasswordChangeRequiredError` and notifies `AuthProvider`), the auth gate shows a full-page *Choose a new password* screen instead of the app. It reuses the password change form and its checks, asks for the temporary password, and cannot be dismissed; *Sign out* is the only other way out. The address is left alone, so after a successful change the app opens the page that was asked for, and pages that were refused load again.
+- **Temporary passwords in the UI.** The *Users* page keeps a generated password only in the state of the one-time panel that shows it (with *Copy* and *It will not be shown again. Share it through a secure channel.*); closing the panel drops it, and it is never logged.
 - **Password change.** A modal checks the policy locally (12–128 characters, confirmation matches, differs from the current one), then posts to `/auth/password`; the server checks again, and its validation messages are shown next to the fields. On success the other sessions are signed out and this one stays.
 
 ### Request IDs
@@ -180,9 +195,10 @@ The audit log (code in [`nightloom_api/audit/`](../apps/api/src/nightloom_api/au
 | --- | --- |
 | `auth.login` | a sign-in succeeds or fails (unknown email, wrong password, inactive user, over-long password) |
 | `auth.logout` | a user signs out |
-| `auth.password_change` | a password is changed, or the current password given was wrong (a new password that fails the policy is a validation error and is not recorded) |
+| `auth.password_change` | a password is changed (`revoked_sessions`, and `change_required: true` when it replaced a temporary password), or the current password given was wrong (a new password that fails the policy is a validation error and is not recorded) |
 | `auth.rate_limited` | a sign-in or password change is refused with `429` |
-| `user.create`, `user.update`, `user.sessions_revoke` | an admin creates or changes a user or signs them out everywhere, or tries to and fails (`409`, `404`, `422` on create); `user.update` lists each changed field's old and new value. `create-admin` on the command line is recorded with the actor `system:cli`. |
+| `user.create`, `user.update`, `user.sessions_revoke` | an admin creates or changes a user or signs them out everywhere, or tries to and fails (`409`, `404`, `422` on create); `user.create` records `credential` (`generated` or `supplied`) and `change_required`, never the password; `user.update` lists each changed field's old and new value. `create-admin` on the command line is recorded with the actor `system:cli`. |
+| `user.password_reset` | an admin gives a user a new temporary password: `revoked_sessions`; `failure` with `reason` `self_reset` (`400`) or `not_found` (`404`). Never the password |
 | `authz.denied` | a signed-in user is refused by a role check (`403`), with the method, route and roles; or a case request is refused (`404` for non-members, `403` for a missing case capability or a person-related entity in a case that does not allow them), with `case_id` set and a `reason` (`not_a_member`, `missing_capability` or `person_entities_disabled`, the last with the `entity_type`) |
 | `audit.verify` | an admin runs the chain verification, with its result |
 | `case.create` | a case is created: legal basis, `allow_person_entities`, retention, ethics version and, when person entities are allowed, the `person_entities_reason` |
@@ -275,7 +291,7 @@ The case's graph has its own endpoints, listed under [Per-case graphs](#per-case
 
 ### Migrations
 
-The PostgreSQL schema is managed by [Alembic](https://alembic.sqlalchemy.org/) in [`apps/api/alembic/`](../apps/api/alembic/). ORM models derive from `nightloom_api.infra.db.Base`, whose metadata has an explicit naming convention, so constraint and index names are stable across autogenerated revisions. The history starts at an empty `0001_baseline` revision; `0002_users_sessions` adds the `users` and `sessions` tables and the `user_role` enum; `0003_audit_events` adds the [audit log](#audit-log) and its append-only trigger; `0004_cases` adds [`cases` and `case_members`](#cases) with their enums (and intentionally no foreign key from `audit_events.case_id`); `0005_jobs` adds [`jobs`](#jobs-and-the-worker) and the `job_status` enum. In the Compose stack, a one-shot `migrate` service runs `alembic upgrade head` and then applies the [Neo4j schema](#per-case-graphs) (`python -m nightloom_api.graph.schema apply`) before the API starts; `make migrate` runs it again.
+The PostgreSQL schema is managed by [Alembic](https://alembic.sqlalchemy.org/) in [`apps/api/alembic/`](../apps/api/alembic/). ORM models derive from `nightloom_api.infra.db.Base`, whose metadata has an explicit naming convention, so constraint and index names are stable across autogenerated revisions. The history starts at an empty `0001_baseline` revision; `0002_users_sessions` adds the `users` and `sessions` tables and the `user_role` enum; `0003_audit_events` adds the [audit log](#audit-log) and its append-only trigger; `0004_cases` adds [`cases` and `case_members`](#cases) with their enums (and intentionally no foreign key from `audit_events.case_id`); `0005_jobs` adds [`jobs`](#jobs-and-the-worker) and the `job_status` enum; `0006_must_change_password` adds `users.must_change_password` (see [Temporary passwords](#temporary-passwords-and-the-forced-change)). In the Compose stack, a one-shot `migrate` service runs `alembic upgrade head` and then applies the [Neo4j schema](#per-case-graphs) (`python -m nightloom_api.graph.schema apply`) before the API starts; `make migrate` runs it again.
 
 ## Data model
 

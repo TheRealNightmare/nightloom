@@ -107,7 +107,7 @@ It never overwrites an existing `.env`. PostgreSQL, Neo4j and Valkey take their 
 make create-admin email=you@example.org name="Your Name"
 ```
 
-It prompts for a password (12–128 characters). There is no public sign-up: the admin creates everyone else's accounts. Sign in at your domain and create users through the API (`POST /api/v1/users`) until the user management screens are available.
+It prompts for a password (12–128 characters); this account is not asked to change it. There is no public sign-up: sign in at your domain, open **Users** in the top bar and create everyone else's accounts there (*New user*). Nightloom generates a temporary password for each new user and shows it once; pass it on through a secure channel, separate from the email address. The user must choose their own password at their first sign-in. *Reset password* on the same page does the same for a user who lost theirs, and signs them out everywhere. Give each person the lowest role that fits, and consider a second admin account so the first one is not the only way in.
 
 ## Backups
 

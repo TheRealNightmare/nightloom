@@ -3,14 +3,21 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nightloom_api.audit.actions import AuditAction, TargetType
 from nightloom_api.audit.service import Actor
-from nightloom_api.auth import service
+from nightloom_api.auth import passwords, service
 from nightloom_api.auth.deps import AdminUser, client_ip
-from nightloom_api.auth.schemas import UserCreate, UserOut, UserUpdate
+from nightloom_api.auth.schemas import (
+    PasswordResetOut,
+    UserCreate,
+    UserCreated,
+    UserOut,
+    UserUpdate,
+    normalize_email,
+)
 from nightloom_api.infra.db import get_session
 from nightloom_api.routers.auth import Sessionmaker, audit_failure, raise_http
 
@@ -19,30 +26,52 @@ router = APIRouter(prefix="/users", tags=["users"])
 DbSession = Annotated[AsyncSession, Depends(get_session)]
 
 
+def _no_store(response: Response) -> None:
+    """Keep a response that carries a temporary password out of every cache."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+
+
 @router.get("", response_model=list[UserOut])
 async def list_users(_admin: AdminUser, db: DbSession) -> list[UserOut]:
     """Every user, oldest first."""
     return [UserOut.model_validate(user) for user in await service.list_users(db)]
 
 
-@router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=UserCreated, status_code=status.HTTP_201_CREATED)
 async def create_user(
     body: UserCreate,
     request: Request,
+    response: Response,
     admin: AdminUser,
     db: DbSession,
     make_session: Sessionmaker,
-) -> UserOut:
-    """Create a user with an initial password (no public registration)."""
+) -> UserCreated:
+    """Create a user (there is no public registration).
+
+    By default the server generates a temporary password and returns it in
+    ``temporary_password``, this once (``Cache-Control: no-store``). The user
+    must replace it at their first sign-in unless ``must_change_password`` is
+    false.
+    """
     actor = Actor.for_user(admin, client_ip(request))
+    temporary = (
+        passwords.generate_temporary_password(normalize_email(body.email))
+        if body.generate_password
+        else None
+    )
+    password = temporary if temporary is not None else body.password
+    assert password is not None  # noqa: S101 - UserCreate requires one or the other
     try:
         user = await service.create_user(
             db,
             email=body.email,
             display_name=body.display_name,
             role=body.role,
-            password=body.password,
+            password=password,
             actor=actor,
+            must_change_password=body.must_change_password,
+            generated_password=temporary is not None,
         )
     except (service.AuthServiceError, service.PasswordPolicyError) as error:
         await audit_failure(
@@ -54,7 +83,8 @@ async def create_user(
             details={"role": body.role.value},
         )
         raise_http(error)
-    return UserOut.model_validate(user)
+    _no_store(response)
+    return UserCreated(**UserOut.model_validate(user).model_dump(), temporary_password=temporary)
 
 
 @router.patch("/{user_id}", response_model=UserOut)
@@ -112,3 +142,40 @@ async def revoke_sessions(
             target_id=user_id,
         )
         raise_http(error)
+
+
+@router.post("/{user_id}/password-reset", response_model=PasswordResetOut)
+async def reset_password(
+    user_id: uuid.UUID,
+    request: Request,
+    response: Response,
+    admin: AdminUser,
+    db: DbSession,
+    make_session: Sessionmaker,
+) -> PasswordResetOut:
+    """Give a user a new temporary password, returned this once.
+
+    Signs the user out everywhere, and they must choose a new password at
+    their next sign-in. 400 for your own account (change it instead).
+    """
+    ip = client_ip(request)
+    actor = Actor.for_user(admin, ip)
+    try:
+        result = await service.reset_password(db, admin, user_id, ip=ip)
+    except service.AuthServiceError as error:
+        await audit_failure(
+            db,
+            make_session,
+            action=AuditAction.USER_PASSWORD_RESET,
+            actor=actor,
+            error=error,
+            target_type=TargetType.USER,
+            target_id=user_id,
+        )
+        raise_http(error)
+    _no_store(response)
+    return PasswordResetOut(
+        user=UserOut.model_validate(result.user),
+        temporary_password=result.temporary_password,
+        revoked_sessions=result.revoked_sessions,
+    )

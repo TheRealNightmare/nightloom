@@ -15,7 +15,10 @@ export interface AuthProviderProps {
 /**
  * Holds who is signed in. Asks `GET /auth/me` on start (loading → signed in
  * or signed out) and signs out locally, with a notice, whenever any request
- * reports that the session has ended.
+ * reports that the session has ended. A request refused with
+ * `password_change_required` marks the user as having to change their
+ * password, which {@link AuthGate} turns into the forced-change screen; a
+ * successful change clears it.
  */
 export function AuthProvider({ children }: AuthProviderProps) {
   const [state, setState] = useState<AuthState>({ status: "loading" });
@@ -49,6 +52,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
     [],
   );
 
+  useEffect(
+    () =>
+      client.onPasswordChangeRequired(() => {
+        setState((current) => withPasswordChangeRequired(current, true));
+      }),
+    [],
+  );
+
   const login = useCallback(async (email: string, password: string) => {
     const user = await client.login(email, password);
     setState({ status: "signed_in", user });
@@ -66,6 +77,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
     await client.changePassword(currentPassword, newPassword);
+    setState((current) => withPasswordChangeRequired(current, false));
   }, []);
 
   const value = useMemo<AuthContextValue>(
@@ -73,4 +85,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     [state, login, logout, changePassword],
   );
   return <AuthContext value={value}>{children}</AuthContext>;
+}
+
+function withPasswordChangeRequired(state: AuthState, required: boolean): AuthState {
+  if (state.status !== "signed_in" || state.user.must_change_password === required) return state;
+  return { status: "signed_in", user: { ...state.user, must_change_password: required } };
 }

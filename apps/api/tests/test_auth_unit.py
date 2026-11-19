@@ -439,9 +439,51 @@ def test_user_repr_has_no_secrets() -> None:
 # --- schemas ---------------------------------------------------------------------
 
 
+def test_temporary_passwords_are_strong_and_readable() -> None:
+    drawn = {passwords.generate_temporary_password("someone@example.org") for _ in range(200)}
+
+    assert len(drawn) == 200
+    for password in drawn:
+        groups = password.split("-")
+        assert len(password) >= 20
+        assert [len(group) for group in groups] == [4] * 6
+        assert set("".join(groups)) <= set(passwords.TEMPORARY_ALPHABET)
+        passwords.validate_password(password, "someone@example.org")
+    # No look-alike characters, and enough of them for ~138 bits.
+    assert not set("0O1lIio") & set(passwords.TEMPORARY_ALPHABET)
+    assert len(set(passwords.TEMPORARY_ALPHABET)) == len(passwords.TEMPORARY_ALPHABET) == 55
+    # Every symbol turns up: the draw covers the whole alphabet.
+    assert set("".join(drawn).replace("-", "")) == set(passwords.TEMPORARY_ALPHABET)
+
+
+def test_temporary_passwords_come_from_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    def choice(alphabet: str) -> str:
+        calls.append(alphabet)
+        return alphabet[0]
+
+    monkeypatch.setattr("nightloom_api.auth.passwords.secrets.choice", choice)
+
+    assert passwords.generate_temporary_password("x@example.org") == "-".join(["AAAA"] * 6)
+    assert len(calls) == passwords.TEMPORARY_SYMBOLS
+
+
+def test_user_create_needs_exactly_one_password_source() -> None:
+    base = {"email": "a@example.org", "display_name": "A", "role": "viewer"}
+    assert UserCreate.model_validate(base).generate_password is True
+    assert UserCreate.model_validate(base).must_change_password is True
+    with pytest.raises(ValidationError, match="Leave out the password"):
+        UserCreate.model_validate({**base, "password": "x" * 20})
+    with pytest.raises(ValidationError, match="Enter a password"):
+        UserCreate.model_validate({**base, "generate_password": False})
+    body = UserCreate.model_validate({**base, "generate_password": False, "password": "p" * 12})
+    assert body.password == "p" * 12
+
+
 def test_emails_are_normalized() -> None:
     assert normalize_email("  Alice@Example.ORG ") == "alice@example.org"
-    body = UserCreate(email=" Bob@Example.org", display_name=" Bob ", role=Role.VIEWER, password="")
+    body = UserCreate(email=" Bob@Example.org", display_name=" Bob ", role=Role.VIEWER)
     assert body.email == "bob@example.org"
     assert body.display_name == "Bob"
 
@@ -449,7 +491,7 @@ def test_emails_are_normalized() -> None:
 @pytest.mark.parametrize("email", ["no-at-sign", "a@b", "two@@example.org", "sp ace@example.org"])
 def test_invalid_emails_are_rejected(email: str) -> None:
     with pytest.raises(ValidationError):
-        UserCreate(email=email, display_name="X", role=Role.VIEWER, password="")
+        UserCreate(email=email, display_name="X", role=Role.VIEWER)
 
 
 def test_user_update_rejects_unknown_fields() -> None:

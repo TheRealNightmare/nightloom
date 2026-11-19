@@ -8,6 +8,7 @@ time, so a flood of sign-ins can neither freeze other requests nor take every
 worker thread and CPU core. The synchronous functions remain for the CLI.
 """
 
+import secrets
 from functools import lru_cache
 
 import anyio
@@ -20,6 +21,13 @@ MAX_LENGTH = 128
 # Local parts shorter than this are not checked for containment: a one- or
 # two-letter local part would forbid most passwords for no real gain.
 MIN_LOCAL_PART_TO_CHECK = 3
+
+# Temporary passwords (admin create and reset): letters and digits without the
+# look-alikes 0/O/o, 1/l/I/i, so they can be read out or typed from a note.
+# 55 symbols, 24 of them: about 138 bits. Shown in groups of four.
+TEMPORARY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789"
+TEMPORARY_SYMBOLS = 24
+TEMPORARY_GROUP = 4
 
 # Argon2id with argon2-cffi's recommended parameters (RFC 9106 low-memory profile).
 _hasher = PasswordHash((Argon2Hasher(),))
@@ -62,6 +70,25 @@ def validate_password(password: str, email: str) -> None:
         or (len(local_part) >= MIN_LOCAL_PART_TO_CHECK and local_part in lowered)
     ):
         raise PasswordPolicyError("Password must not contain your email address.")
+
+
+def generate_temporary_password(email: str) -> str:
+    """A random temporary password for ``email``, e.g. ``Hk7q-Rmz3-...`` (29 characters).
+
+    Drawn with :mod:`secrets` from :data:`TEMPORARY_ALPHABET`; it always meets
+    the policy (a draw that happens to contain the email's local part is
+    discarded). Never log or store the result.
+    """
+    while True:
+        symbols = "".join(secrets.choice(TEMPORARY_ALPHABET) for _ in range(TEMPORARY_SYMBOLS))
+        password = "-".join(
+            symbols[i : i + TEMPORARY_GROUP] for i in range(0, TEMPORARY_SYMBOLS, TEMPORARY_GROUP)
+        )
+        try:
+            validate_password(password, email)
+        except PasswordPolicyError:  # pragma: no cover - astronomically unlikely
+            continue
+        return password
 
 
 def hash_password(password: str) -> str:

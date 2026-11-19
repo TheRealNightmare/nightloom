@@ -2225,3 +2225,166 @@ select.field__input {
   display: grid;
   gap: 2px;
 }
+
+/* --- Forced password change ---------------------------------------------- */
+
+.login__intro {
+  margin: -8px 0 12px;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.login__account {
+  margin: 0 0 18px;
+  color: var(--color-text-faint);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+.login__actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* --- Admin pages ---------------------------------------------------------- */
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.row-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.user-status {
+  color: var(--color-ok);
+}
+
+.user-status[data-active="false"] {
+  color: var(--color-text-faint);
+}
+
+tr[data-active="false"] td:first-child {
+  color: var(--color-text-muted);
+}
+
+.filters--audit .field--inline:first-child {
+  flex: 0 1 220px;
+}
+
+.filters__clear {
+  align-self: flex-end;
+}
+
+.temp-password {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.temp-password__value {
+  flex: 1;
+  padding: 10px 12px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-accent-strong);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  letter-spacing: 0.03em;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.temp-password__warning {
+  margin: 0 0 8px;
+  padding: 8px 12px;
+  background: rgb(242 184 102 / 10%);
+  border: 1px solid rgb(242 184 102 / 40%);
+  border-radius: var(--radius-sm);
+  color: var(--color-warn);
+  font-size: 13px;
+}
+
+.temp-password__status {
+  min-height: 1.4em;
+  margin: 0 0 12px;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.verify-result {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+}
+
+.verify-result--bad {
+  background: rgb(255 122 138 / 10%);
+  border: 1px solid rgb(255 122 138 / 45%);
+  color: var(--color-danger);
+}
+
+.audit-table__time {
+  white-space: nowrap;
+}
+
+.audit-table__action {
+  color: var(--color-text-faint);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.dialog-backdrop--drawer {
+  place-items: stretch end;
+  padding: 0;
+}
+
+.dialog--drawer {
+  width: min(520px, 100%);
+  height: 100%;
+  overflow-y: auto;
+  border-radius: 0;
+  border-width: 0 0 0 1px;
+}
+
+.event-details {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 16px;
+}
+
+.event-details__row {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 8px;
+}
+
+.event-details dt {
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.event-details dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.event-details__json {
+  max-height: 50vh;
+  margin: 0 0 16px;
+  padding: 12px;
+  overflow: auto;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}

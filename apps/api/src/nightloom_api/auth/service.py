@@ -76,6 +76,11 @@ class ConflictError(AuthServiceError):
     """The change would leave the system in a state that is not allowed."""
 
 
+class SelfPasswordResetError(AuthServiceError):
+    def __init__(self) -> None:
+        super().__init__("You cannot reset your own password. Use Change password instead.")
+
+
 __all__ = [
     "INVALID_CREDENTIALS",
     "AuthServiceError",
@@ -85,13 +90,16 @@ __all__ = [
     "InvalidCredentialsError",
     "LoginResult",
     "PasswordPolicyError",
+    "PasswordResetResult",
     "RateLimitedError",
+    "SelfPasswordResetError",
     "UserNotFoundError",
     "WrongPasswordError",
     "change_password",
     "create_user",
     "list_users",
     "login",
+    "reset_password",
     "revoke_sessions",
     "update_user",
 ]
@@ -101,6 +109,13 @@ __all__ = [
 class LoginResult:
     user: User
     token: str
+
+
+@dataclass(frozen=True)
+class PasswordResetResult:
+    user: User
+    temporary_password: str
+    revoked_sessions: int
 
 
 async def _get_user_by_email(db: AsyncSession, email: str) -> User | None:
@@ -205,6 +220,8 @@ async def change_password(
         raise PasswordPolicyError("New password must differ from the current one.")
 
     user.password_hash = await passwords.hash_password_async(new_password)
+    required = user.must_change_password
+    user.must_change_password = False
     revoked = await sessions.delete_user_sessions(db, user.id, keep=ctx.session.id)
     await audit.record(
         db,
@@ -213,7 +230,8 @@ async def change_password(
         actor=Actor.for_user(user, ip),
         target_type=TargetType.USER,
         target_id=user.id,
-        details={"revoked_sessions": revoked},
+        # "password" in a key would be dropped by the sanitizer.
+        details={"revoked_sessions": revoked, "change_required": required},
     )
     await db.commit()
     return revoked
@@ -227,10 +245,15 @@ async def create_user(
     role: Role,
     password: str,
     actor: Actor,
+    must_change_password: bool = False,
+    generated_password: bool = False,
 ) -> User:
     """Create a user. Raises :class:`EmailTakenError` or :class:`PasswordPolicyError`.
 
-    ``actor`` is who creates it, for the audit log.
+    ``actor`` is who creates it, for the audit log. ``generated_password``
+    says whether ``password`` came from
+    :func:`~nightloom_api.auth.passwords.generate_temporary_password` (audited
+    as the kind of credential; the password itself never is).
     """
     email = normalize_email(email)
     passwords.validate_password(password, email)
@@ -243,6 +266,7 @@ async def create_user(
         role=role,
         password_hash=await passwords.hash_password_async(password),
         is_active=True,
+        must_change_password=must_change_password,
     )
     db.add(user)
     try:
@@ -254,7 +278,14 @@ async def create_user(
             actor=actor,
             target_type=TargetType.USER,
             target_id=user.id,
-            details={"email": user.email, "role": role.value},
+            details={
+                "email": user.email,
+                "role": role.value,
+                # Which kind of credential, never the credential itself. Keys
+                # avoid "password", which the sanitizer drops.
+                "credential": "generated" if generated_password else "supplied",
+                "change_required": must_change_password,
+            },
         )
         await db.commit()
     except IntegrityError as exc:  # created concurrently
@@ -364,3 +395,35 @@ async def revoke_sessions(db: AsyncSession, user_id: uuid.UUID, *, actor: Actor)
     )
     await db.commit()
     return revoked
+
+
+async def reset_password(
+    db: AsyncSession, actor: User, user_id: uuid.UUID, *, ip: str | None = None
+) -> PasswordResetResult:
+    """Give a user a new temporary password and sign them out everywhere.
+
+    They must choose a new password at their next sign-in. An admin cannot
+    reset their own password (:class:`SelfPasswordResetError`): they change it
+    with their current one instead. ``ip`` is the admin's, for the audit log.
+    """
+    if user_id == actor.id:
+        raise SelfPasswordResetError
+    user = await db.get(User, user_id, with_for_update={"key_share": True}, populate_existing=True)
+    if user is None:
+        raise UserNotFoundError
+    temporary = passwords.generate_temporary_password(user.email)
+    user.password_hash = await passwords.hash_password_async(temporary)
+    user.must_change_password = True
+    revoked = await sessions.delete_user_sessions(db, user.id)
+    await audit.record(
+        db,
+        action=AuditAction.USER_PASSWORD_RESET,
+        outcome=AuditOutcome.SUCCESS,
+        actor=Actor.for_user(actor, ip),
+        target_type=TargetType.USER,
+        target_id=user.id,
+        details={"revoked_sessions": revoked},
+    )
+    await db.commit()
+    await db.refresh(user)
+    return PasswordResetResult(user=user, temporary_password=temporary, revoked_sessions=revoked)

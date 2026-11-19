@@ -33,11 +33,13 @@ pytestmark = pytest.mark.db
 UserFactory = Callable[..., Coroutine[Any, Any, User]]
 ClientFactory = Callable[[], AsyncClient]
 CLIENT_IP = "127.0.0.1"  # httpx's ASGI transport
-NEW_USER = {
+NEW_USER: dict[str, Any] = {
     "email": "new.analyst@example.org",
     "display_name": "New Analyst",
     "role": "analyst",
+    "generate_password": False,
     "password": "a sufficiently long password",
+    "must_change_password": False,
 }
 
 
@@ -252,7 +254,7 @@ async def test_password_change_is_recorded(
         actor=admin_user,
         request_id=response.headers[REQUEST_ID_HEADER],
         target=admin_user.id,
-        details={"revoked_sessions": 1},
+        details={"revoked_sessions": 1, "change_required": False},
     )
     assert "brand new" not in str(event.details)
 
@@ -338,7 +340,12 @@ async def test_user_create_is_recorded(admin: AsyncClient, admin_user: User, inf
         actor=admin_user,
         request_id=response.headers[REQUEST_ID_HEADER],
         target=response.json()["id"],
-        details={"email": NEW_USER["email"], "role": "analyst"},
+        details={
+            "email": NEW_USER["email"],
+            "role": "analyst",
+            "credential": "supplied",
+            "change_required": False,
+        },
     )
     assert NEW_USER["password"] not in str(event.details)
 
@@ -831,7 +838,12 @@ async def test_list_returns_the_recorded_fields(
     assert item["request_id"] == created.headers[REQUEST_ID_HEADER]
     assert item["target_type"] == "user"
     assert item["target_id"] == created.json()["id"]
-    assert item["details"] == {"email": NEW_USER["email"], "role": "analyst"}
+    assert item["details"] == {
+        "email": NEW_USER["email"],
+        "role": "analyst",
+        "credential": "supplied",
+        "change_required": False,
+    }
     assert "hash" not in item
 
 

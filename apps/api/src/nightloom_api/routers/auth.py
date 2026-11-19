@@ -9,7 +9,7 @@ from nightloom_api.audit import service as audit
 from nightloom_api.audit.actions import AuditAction, AuditOutcome, TargetType
 from nightloom_api.audit.service import Actor
 from nightloom_api.auth import service, sessions
-from nightloom_api.auth.deps import CurrentSession, client_ip, get_login_rate_limiter
+from nightloom_api.auth.deps import AnySession, client_ip, get_login_rate_limiter
 from nightloom_api.auth.ratelimit import LoginRateLimiter
 from nightloom_api.auth.schemas import LoginRequest, LoginResponse, PasswordChangeRequest, UserOut
 from nightloom_api.config import Settings, get_settings
@@ -36,7 +36,7 @@ def raise_http(error: service.AuthServiceError | service.PasswordPolicyError) ->
             ) from error
         case service.AuthUnavailableError():
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(error)) from error
-        case service.WrongPasswordError():
+        case service.WrongPasswordError() | service.SelfPasswordResetError():
             raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from error
         case service.PasswordPolicyError():
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
@@ -62,6 +62,8 @@ def failure_reason(error: service.AuthServiceError | service.PasswordPolicyError
             return "conflict"
         case service.UserNotFoundError():
             return "not_found"
+        case service.SelfPasswordResetError():
+            return "self_reset"
     return "error"
 
 
@@ -149,13 +151,16 @@ async def login(
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
-    ctx: CurrentSession,
+    ctx: AnySession,
     request: Request,
     response: Response,
     db: DbSession,
     settings: AppSettings,
 ) -> None:
-    """Sign out: delete this session and clear the cookies. Needs the CSRF header."""
+    """Sign out: delete this session and clear the cookies. Needs the CSRF header.
+
+    Allowed while a password change is required.
+    """
     await sessions.delete_session(db, ctx.session.id)
     await audit.record(
         db,
@@ -170,8 +175,8 @@ async def logout(
 
 
 @router.get("/me", response_model=UserOut)
-async def me(ctx: CurrentSession) -> UserOut:
-    """The signed-in user."""
+async def me(ctx: AnySession) -> UserOut:
+    """The signed-in user (allowed while a password change is required)."""
     return UserOut.model_validate(ctx.user)
 
 
@@ -179,12 +184,14 @@ async def me(ctx: CurrentSession) -> UserOut:
 async def change_password(
     body: PasswordChangeRequest,
     request: Request,
-    ctx: CurrentSession,
+    ctx: AnySession,
     db: DbSession,
     make_session: Sessionmaker,
     limiter: Limiter,
 ) -> None:
     """Change your password. Signs out all your other sessions; this one stays.
+
+    Allowed while a password change is required, and clears that requirement.
 
     A wrong current password is audited as a failure; a new password that
     fails the policy (422) is not.
