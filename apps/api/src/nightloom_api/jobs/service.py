@@ -9,7 +9,7 @@ Errors are :class:`JobError` subclasses whose message is safe to return.
 """
 
 import uuid
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
@@ -372,22 +372,74 @@ async def finish_job(
     job.error = error[:ERROR_MAX_LENGTH] if error else None
     if stats is not None:
         job.stats = dict(stats)
+    await _record_finish(db, job, actor=actor, reason=reason, denied=denied)
+    await db.commit()
+    return job
+
+
+async def finish_job_if(
+    db: AsyncSession,
+    job_id: uuid.UUID,
+    *,
+    only_if: Collection[JobStatus],
+    status: JobStatus,
+    actor: Actor,
+    stats: Mapping[str, Any] | None = None,
+    error: str | None = None,
+    reason: str | None = None,
+    denied: bool = False,
+) -> Job | None:
+    """Like :func:`finish_job`, but only while the job's status is one of ``only_if``; commits.
+
+    One conditional ``UPDATE ... WHERE status IN (...)``: of a worker
+    finishing the job and the reaper failing it at the same moment, exactly
+    one wins and records ``job.finish``. Returns the finished job, or None if
+    it no longer exists or its status was not in ``only_if`` (nothing changed).
+    """
+    if status not in FINISHED_STATUSES:
+        raise ValueError("finish_job_if needs a final status")
+    values: dict[str, Any] = {
+        "status": status,
+        "finished_at": clock.utcnow(),
+        "error": error[:ERROR_MAX_LENGTH] if error else None,
+    }
+    if stats is not None:
+        values["stats"] = dict(stats)
+    job = (
+        await db.execute(
+            update(Job)
+            .where(Job.id == job_id, Job.status.in_(list(only_if)))
+            .values(**values)
+            .returning(Job)
+            .execution_options(populate_existing=True, synchronize_session=False)
+        )
+    ).scalar_one_or_none()
+    if job is None:
+        await db.rollback()
+        return None
+    await _record_finish(db, job, actor=actor, reason=reason, denied=denied)
+    await db.commit()
+    return job
+
+
+async def _record_finish(
+    db: AsyncSession, job: Job, *, actor: Actor, reason: str | None, denied: bool
+) -> None:
+    """The ``job.finish`` event: counts and reason codes, never keys or notes."""
     audited = {k: v for k, v in (job.stats or {}).items() if k not in _UNAUDITED_STATS}
-    extra: dict[str, Any] = {"status": status.value, "stats": audited}
+    extra: dict[str, Any] = {"status": job.status.value, "stats": audited}
     if reason:
         extra["reason"] = reason
     await audit.record(
         db,
         action=AuditAction.JOB_FINISH,
-        outcome=AuditOutcome.DENIED if denied else _OUTCOMES[status],
+        outcome=AuditOutcome.DENIED if denied else _OUTCOMES[job.status],
         actor=actor,
         target_type=TargetType.JOB,
         target_id=job.id,
         case_id=job.case_id,
         details=job_details(job, **extra),
     )
-    await db.commit()
-    return job
 
 
 async def mark_running(db: AsyncSession, job_id: uuid.UUID) -> bool:
@@ -451,6 +503,7 @@ __all__ = [
     "count_active_jobs",
     "create_job",
     "finish_job",
+    "finish_job_if",
     "get_job",
     "get_shuttle_registry",
     "job_details",

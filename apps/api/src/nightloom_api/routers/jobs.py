@@ -173,13 +173,14 @@ async def create_job(
             reason="queue_unavailable",
         )
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, service.ERROR_QUEUE) from error
-    return JobOut.build(job)
+    return JobOut.build(job, registry)
 
 
 @router.get("", response_model=JobPage, responses=_ERRORS)
 async def list_jobs(
     access: Readable,
     db: DbSession,
+    registry: Registry,
     cursor: Annotated[str | None, Query(max_length=200)] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
     status_filter: Annotated[JobStatus | None, Query(alias="status")] = None,
@@ -192,18 +193,19 @@ async def list_jobs(
     except InvalidCursorError as error:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
     return JobPage(
-        items=[JobOut.build(job) for job in listing.items], next_cursor=listing.next_cursor
+        items=[JobOut.build(job, registry) for job in listing.items],
+        next_cursor=listing.next_cursor,
     )
 
 
 @router.get("/{job_id}", response_model=JobOut, responses=_ERRORS)
-async def get_job(job_id: uuid.UUID, access: Readable, db: DbSession) -> JobOut:
+async def get_job(job_id: uuid.UUID, access: Readable, db: DbSession, registry: Registry) -> JobOut:
     """One job of the case (any member)."""
     try:
         job = await service.get_job(db, access.case.id, job_id)
     except service.JobNotFoundError as error:
         raise HTTPException(error.status_code, str(error)) from error
-    return JobOut.build(job)
+    return JobOut.build(job, registry)
 
 
 @router.post(
@@ -211,7 +213,9 @@ async def get_job(job_id: uuid.UUID, access: Readable, db: DbSession) -> JobOut:
     response_model=JobOut,
     responses={**_ERRORS, status.HTTP_409_CONFLICT: {"description": "The job already finished"}},
 )
-async def cancel_job(job_id: uuid.UUID, access: Runner, db: DbSession) -> JobOut:
+async def cancel_job(
+    job_id: uuid.UUID, access: Runner, db: DbSession, registry: Registry
+) -> JobOut:
     """Cancel a job (editors and owners), also in a closed case.
 
     A queued job is cancelled at once; a running one is asked to stop and
@@ -223,4 +227,4 @@ async def cancel_job(job_id: uuid.UUID, access: Runner, db: DbSession) -> JobOut
     except service.JobError as error:
         await db.rollback()
         raise HTTPException(error.status_code, str(error)) from error
-    return JobOut.build(job)
+    return JobOut.build(job, registry)

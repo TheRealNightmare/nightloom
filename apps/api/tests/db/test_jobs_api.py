@@ -4,6 +4,7 @@ import hashlib
 import uuid
 from collections.abc import AsyncIterator, Callable, Coroutine
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -24,6 +25,7 @@ from nightloom_api.jobs.models import Job, JobStatus
 from nightloom_core.entities import EntityType, Sensitivity
 from nightloom_core.relationships import RelationType
 from nightloom_sdk import EntityInput, Finding, Mode, Shuttle, ShuttleContext, ShuttleMeta
+from nightloom_sdk.meta import MAX_TIMEOUT_SECONDS
 from nightloom_sdk.registry import ShuttleRegistry
 from nightloom_shuttle_registrable_domain import RegistrableDomain
 from support import PREFIX, csrf, login
@@ -242,6 +244,8 @@ async def test_owner_and_editor_queue_jobs_after_commit(
         assert body["stats"]["findings_rejected"] == 0
         assert body["cancel_requested"] is False
         assert body["finished_at"] is None
+        # Not started yet: the timeout is known, the deadline is not.
+        assert (body["timeout_seconds"], body["deadline"], body["overdue_at"]) == (30, None, None)
         # Queued with the job's ID and the Shuttle's timeout, and the row exists.
         job_id = uuid.UUID(body["id"])
         assert job_queue.sent[-1] == (job_id, 30)
@@ -492,6 +496,40 @@ async def test_get_job(world: World) -> None:
     assert (
         await world.clients["admin"].get(case_url(world.case_id, f"/jobs/{job_id}"))
     ).status_code == 404
+
+
+async def test_jobs_report_their_deadline_and_when_they_are_overdue(
+    world: World, infra: Infra
+) -> None:
+    owner = world.clients["owner"]
+    job_id = (await start(owner, world.case_id)).json()["id"]
+    started = datetime(2026, 11, 20, 12, 0, tzinfo=UTC)
+    async with infra.sessionmaker() as db:
+        await db.execute(
+            update(Job)
+            .where(Job.id == uuid.UUID(job_id))
+            .values(status=JobStatus.RUNNING, started_at=started)
+        )
+        await db.commit()
+    body = (await owner.get(case_url(world.case_id, f"/jobs/{job_id}"))).json()
+    # registrable-domain: 30 s timeout; soft limit +60 s, hard limit +30 s more.
+    assert body["timeout_seconds"] == 30
+    assert datetime.fromisoformat(body["deadline"]) == started + timedelta(seconds=30)
+    assert datetime.fromisoformat(body["overdue_at"]) == started + timedelta(seconds=120)
+    listed = (await owner.get(case_url(world.case_id, "/jobs"))).json()["items"]
+    assert listed[0]["overdue_at"] == body["overdue_at"]
+
+    # A Shuttle that is no longer installed: the largest allowed timeout.
+    async with infra.sessionmaker() as db:
+        await db.execute(
+            update(Job).where(Job.id == uuid.UUID(job_id)).values(shuttle_name="uninstalled")
+        )
+        await db.commit()
+    body = (await owner.get(case_url(world.case_id, f"/jobs/{job_id}"))).json()
+    assert body["timeout_seconds"] == MAX_TIMEOUT_SECONDS
+    assert datetime.fromisoformat(body["overdue_at"]) == started + timedelta(
+        seconds=MAX_TIMEOUT_SECONDS + 90
+    )
 
 
 # --- cancelling ----------------------------------------------------------------------

@@ -11,6 +11,15 @@
 
 name: nightloom
 
+# json-file logs, rotated: at most 5 x 10 MB per container, so the API's and
+# the worker's logs reach back far enough to diagnose a job afterwards. They
+# still go with the container when it is recreated (`make down` / `make up`).
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "5"
+
 services:
   postgres:
     image: postgres:18.7-alpine
@@ -161,6 +170,7 @@ services:
       context: ..
       dockerfile: apps/api/Dockerfile
     image: nightloom-api:dev
+    logging: *logging
     restart: unless-stopped
     depends_on:
       migrate:
@@ -214,6 +224,7 @@ services:
     image: nightloom-api:dev
     # Built by the `api` service (same image).
     pull_policy: never
+    logging: *logging
     restart: unless-stopped
     command:
       - celery
@@ -254,7 +265,8 @@ services:
       # Private addresses are refused at startup; see docs/ARCHITECTURE.md.
       NIGHTLOOM_DNS_RESOLVERS: ${NIGHTLOOM_DNS_RESOLVERS:-1.1.1.1,9.9.9.9}
     # A running job may take up to 10 minutes; on shutdown, jobs that do not
-    # finish in time are re-delivered and then recorded as failed.
+    # finish in time are re-delivered and then recorded as failed (or, if the
+    # worker does not come back, failed by another worker's reaper).
     stop_grace_period: 60s
     healthcheck:
       # Asks this worker (by its node name) to answer over the broker.

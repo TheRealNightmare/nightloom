@@ -41,6 +41,9 @@ PROJECT_URL = "https://github.com/TheRealNightmare/nightloom"
 ALLOWED_SCHEMES = frozenset({"http", "https"})
 # Seconds for connecting (DNS included) and for each read/write.
 CONNECT_TIMEOUT_SECONDS = 10.0
+# Seconds for one DNS lookup, whoever asks. The lookup runs in a thread
+# (getaddrinfo), which keeps waiting after this; the run does not.
+DNS_TIMEOUT_SECONDS = 10.0
 IO_TIMEOUT_SECONDS = 30.0
 
 IPAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
@@ -126,9 +129,15 @@ def is_public_address(address: IPAddress | str) -> bool:
 
 
 async def system_resolver(host: str, port: int) -> list[str]:
-    """Every address ``host`` resolves to (A and AAAA), in the resolver's order."""
+    """Every address ``host`` resolves to (A and AAAA), in the resolver's order.
+
+    Raises :class:`TimeoutError` after :data:`DNS_TIMEOUT_SECONDS`.
+    """
     loop = asyncio.get_running_loop()
-    infos = await loop.getaddrinfo(host, port, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP)
+    async with asyncio.timeout(DNS_TIMEOUT_SECONDS):
+        infos = await loop.getaddrinfo(
+            host, port, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP
+        )
     return list(dict.fromkeys(str(info[4][0]) for info in infos))
 
 
@@ -393,6 +402,7 @@ def create_http_client(
 
 
 __all__ = [
+    "DNS_TIMEOUT_SECONDS",
     "MAX_REDIRECTS",
     "MAX_RESPONSE_BYTES",
     "DestinationNotAllowedError",

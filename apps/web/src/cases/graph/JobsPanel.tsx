@@ -6,7 +6,9 @@ import {
   describeJobError,
   elapsedMs,
   formatDuration,
+  isOverdue,
   JOB_STATUS_LABELS,
+  OVERDUE_MESSAGE,
   statsText,
 } from "./jobText";
 
@@ -157,6 +159,11 @@ function JobRow({
         </span>{" "}
         · started <RelativeTime iso={job.created_at} /> · v{job.shuttle_version}
       </p>
+      {isOverdue(job, now) && (
+        <p className="job__overdue" title="Past the worker's time limit; it will be failed soon.">
+          {OVERDUE_MESSAGE}
+        </p>
+      )}
       {(job.status !== "queued" || job.stats.findings_rejected > 0) && (
         <p className="job__stats" title={statsTitle(job)}>
           {statsText(job)}

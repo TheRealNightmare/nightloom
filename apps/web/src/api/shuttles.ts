@@ -80,6 +80,15 @@ export interface Job {
   /** One of the API's fixed, user-safe messages; never raw error text. */
   error: string | null;
   stats: JobStats;
+  /** The Shuttle's timeout (the largest allowed one if it is no longer installed). */
+  timeout_seconds: number;
+  /** When the run must end (`started_at` + timeout); null until it starts. */
+  deadline: string | null;
+  /**
+   * When the worker's hard time limit has passed; null until it starts. A job
+   * still running after this has most likely lost its worker.
+   */
+  overdue_at: string | null;
 }
 
 /** Mirrors `JobPage`. */

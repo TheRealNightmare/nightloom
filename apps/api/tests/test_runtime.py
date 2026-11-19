@@ -40,6 +40,9 @@ def test_configure_logging_sets_level_and_single_handler(root_logger: logging.Lo
 
     assert root_logger.level == logging.DEBUG
     assert len(root_logger.handlers) == 1
+    # Request URLs (with their query strings) never reach the logs.
+    assert logging.getLogger("httpx").level == logging.WARNING
+    assert logging.getLogger("httpcore").level == logging.WARNING
 
 
 BLOCK_STUB_PACKAGES = """

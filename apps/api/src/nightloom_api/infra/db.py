@@ -1,7 +1,7 @@
 """PostgreSQL access through async SQLAlchemy (asyncpg driver)."""
 
 from collections.abc import AsyncIterator
-from typing import cast
+from typing import Any, cast
 
 from fastapi import Request
 from sqlalchemy import MetaData, text
@@ -35,12 +35,26 @@ class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
 
 
-def create_engine(settings: Settings) -> AsyncEngine:
-    """Create the async engine. No connection is opened until first use."""
+def create_engine(
+    settings: Settings, *, statement_timeout_seconds: float | None = None
+) -> AsyncEngine:
+    """Create the async engine. No connection is opened until first use.
+
+    ``statement_timeout_seconds`` makes PostgreSQL cancel any statement, or
+    wait for a lock, that takes longer (``statement_timeout`` and
+    ``lock_timeout``), so a session using it cannot hang on the database.
+    """
+    connect_args: dict[str, Any] = {"timeout": CONNECT_TIMEOUT_SECONDS}
+    if statement_timeout_seconds is not None:
+        milliseconds = str(max(1, round(statement_timeout_seconds * 1000)))
+        connect_args["server_settings"] = {
+            "statement_timeout": milliseconds,
+            "lock_timeout": milliseconds,
+        }
     return create_async_engine(
         settings.database_url.get_secret_value(),
         pool_pre_ping=True,
-        connect_args={"timeout": CONNECT_TIMEOUT_SECONDS},
+        connect_args=connect_args,
     )
 
 

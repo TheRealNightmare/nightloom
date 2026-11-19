@@ -7,36 +7,89 @@ Start it with::
 Configuration comes from the same ``NIGHTLOOM_*`` settings as the API and
 the same :func:`~nightloom_api.jobs.queue.create_celery`: Valkey as broker,
 JSON only (no pickle), late acknowledgement, one task per worker process at
-a time. Each task runs the job in a fresh event loop with its own database
-and Neo4j clients, closed when it ends.
+a time. Each task runs the job in a fresh event loop (:func:`run_bounded`)
+with its own database and Neo4j clients, closed when it ends.
+
+Every job reaches a final status (see :mod:`nightloom_api.jobs.deadlines`):
+
+- the runner ends the run at its deadline and records the outcome;
+- at Celery's **soft limit** the run is cancelled and the job recorded as
+  failed (``worker_time_limit``);
+- at the **hard limit** Celery kills the pool process; the worker's *main*
+  process gets ``task_failure`` and records the job as failed. A pool
+  process that dies otherwise (``WorkerLostError``) has its task re-delivered,
+  and the next run of it finds the job ``running`` and fails it;
+- the **reaper** runs in each worker's main process when it is ready and
+  every :data:`REAP_INTERVAL_SECONDS` after (one worker at a time, under a
+  Valkey lock), and fails jobs whose worker died with them;
+- a running job is noted in Valkey under the worker's node name
+  (:data:`RUNNING_KEY`); a worker that starts again under the same name
+  (``docker compose kill`` / ``start``) fails the jobs its previous run left,
+  at once, before taking new ones.
 """
 
 import asyncio
 import logging
+import threading
 import uuid
+from collections.abc import Callable, Coroutine
 from typing import Any
 
-from celery.exceptions import SoftTimeLimitExceeded
-from celery.signals import setup_logging, worker_init
+from billiard.exceptions import WorkerLostError
+from celery.exceptions import SoftTimeLimitExceeded, TimeLimitExceeded
+from celery.signals import setup_logging, task_failure, worker_init, worker_ready, worker_shutdown
+from redis import Redis as SyncRedis
+from redis.asyncio import Redis
+from redis.exceptions import LockError, RedisError
 
 from nightloom_api.config import Settings, get_settings
 from nightloom_api.graph.repository import GraphRepository
 from nightloom_api.infra import db as db_infra
 from nightloom_api.infra import graph as graph_infra
+from nightloom_api.jobs import deadlines
 from nightloom_api.jobs.models import JobStatus
 from nightloom_api.jobs.queue import TASK_NAME, create_celery
 from nightloom_api.logging import configure_logging
+from nightloom_sdk.meta import MAX_TIMEOUT_SECONDS
 from nightloom_sdk.registry import RegistryError, default_registry
+from nightloom_worker.loop import run_bounded
 from nightloom_worker.runner import (
+    ERROR_TIME_LIMIT,
     ERROR_WORKER_LOST,
     Outcome,
     RunnerConfig,
+    bounded,
     finish_abandoned,
     reap_stale_jobs,
     run_job,
 )
 
 logger = logging.getLogger(__name__)
+
+# Seconds for closing a run's database engine and Neo4j driver.
+CLOSE_SECONDS = 5.0
+# Recording a job from the main process (time limit, lost worker): each SQL
+# statement and lock wait, and the whole recording, are bounded.
+RECORD_STATEMENT_SECONDS = 5.0
+RECORD_SECONDS = 20.0
+# The reaper: how often, and the Valkey lock that lets one worker reap at a time.
+REAP_INTERVAL_SECONDS = 60.0
+REAPER_LOCK = "nightloom:worker:reaper"
+REAPER_LOCK_SECONDS = 50
+# Which worker runs a job: the node name, until the job ends or the longest
+# possible run is over.
+RUNNING_KEY = "nightloom:worker:running:{job_id}"
+RUNNING_KEY_SECONDS = (
+    deadlines.time_limits(MAX_TIMEOUT_SECONDS)[1] + deadlines.REAPER_MARGIN_SECONDS
+)
+VALKEY_SECONDS = 5.0
+# This run of the worker: set at import in the main process and inherited by
+# the pool processes it forks, so a restarted worker under the same node name
+# can tell its previous run's jobs from its own.
+BOOT_ID = uuid.uuid4().hex
+
+TIME_LIMIT_OUTCOME = Outcome(JobStatus.FAILED, error=ERROR_TIME_LIMIT, reason="worker_time_limit")
+WORKER_LOST_OUTCOME = Outcome(JobStatus.FAILED, error=ERROR_WORKER_LOST, reason="worker_lost")
 
 app = create_celery(get_settings(), name="nightloom-worker")
 
@@ -64,30 +117,58 @@ def _check_shuttles(**_: Any) -> None:
     logger.info("%d Shuttle(s) installed; configuration OK.", len(registry))
 
 
+# --- running a job (pool process) -----------------------------------------------------------
+
+
 async def _with_config(settings: Settings, job_id: uuid.UUID, *, abandoned: bool) -> str | None:
     engine = db_infra.create_engine(settings)
     driver = graph_infra.create_driver(settings)
     try:
+        if abandoned:
+            sessionmaker = db_infra.create_sessionmaker(engine)
+            await finish_abandoned(sessionmaker, job_id, TIME_LIMIT_OUTCOME)
+            return JobStatus.FAILED.value
         config = RunnerConfig(
             sessionmaker=db_infra.create_sessionmaker(engine),
             graph=GraphRepository(driver),
             registry=default_registry(),
         )
-        if abandoned:
-            await finish_abandoned(
-                config,
-                job_id,
-                Outcome(JobStatus.FAILED, error=ERROR_WORKER_LOST, reason="worker_time_limit"),
-            )
-            return JobStatus.FAILED.value
-        reaped = await reap_stale_jobs(config)
-        if reaped:
-            logger.warning("Failed %d abandoned job(s).", reaped)
         status = await run_job(job_id, config)
         return status.value if status is not None else None
     finally:
-        await driver.close()
-        await engine.dispose()
+        await bounded(driver.close(), CLOSE_SECONDS, "Closing the Neo4j driver")
+        await bounded(engine.dispose(), CLOSE_SECONDS, "Closing the database engine")
+
+
+def _valkey(settings: Settings) -> SyncRedis:
+    return SyncRedis.from_url(
+        settings.valkey_url.get_secret_value(),
+        socket_connect_timeout=VALKEY_SECONDS,
+        socket_timeout=VALKEY_SECONDS,
+    )
+
+
+def _note_running(settings: Settings, job_id: uuid.UUID, hostname: str | None) -> bool:
+    """Note that this worker runs the job; best effort (the reaper still covers it)."""
+    if not hostname:
+        return False
+    try:
+        with _valkey(settings) as client:
+            client.set(
+                RUNNING_KEY.format(job_id=job_id), f"{hostname} {BOOT_ID}", ex=RUNNING_KEY_SECONDS
+            )
+    except (RedisError, OSError) as error:
+        logger.warning("Job %s: could not note its worker: %s.", job_id, type(error).__name__)
+        return False
+    return True
+
+
+def _forget_running(settings: Settings, job_id: uuid.UUID) -> None:
+    try:
+        with _valkey(settings) as client:
+            client.delete(RUNNING_KEY.format(job_id=job_id))
+    except (RedisError, OSError) as error:
+        logger.warning("Job %s: could not clear its worker: %s.", job_id, type(error).__name__)
 
 
 @app.task(name=TASK_NAME, acks_late=True)
@@ -99,8 +180,221 @@ def run_job_task(job_id: str) -> str | None:
         logger.error("Ignoring a task with an invalid job ID.")
         return None
     settings = get_settings()
+    noted = _note_running(settings, parsed, run_job_task.request.hostname)
     try:
-        return asyncio.run(_with_config(settings, parsed, abandoned=False))
-    except SoftTimeLimitExceeded:
-        logger.error("Job %s hit the worker's time limit.", parsed)
-        return asyncio.run(_with_config(settings, parsed, abandoned=True))
+        try:
+            return run_bounded(
+                _with_config(settings, parsed, abandoned=False), catch_soft_limit=True
+            )
+        except SoftTimeLimitExceeded:
+            logger.error("Job %s hit the worker's soft time limit; recording it as failed.", parsed)
+            return run_bounded(_with_config(settings, parsed, abandoned=True))
+    finally:
+        if noted:
+            _forget_running(settings, parsed)
+
+
+# --- the main process: time limits and lost workers -----------------------------------------
+
+
+def _in_thread(name: str, func: Callable[[], Any], seconds: float) -> bool:
+    """Run ``func`` in a daemon thread for at most ``seconds``; False if it did not finish."""
+    thread = threading.Thread(target=func, name=name, daemon=True)
+    thread.start()
+    thread.join(seconds)
+    if thread.is_alive():
+        logger.error("%s did not finish within %.0f s; left behind.", name, seconds)
+        return False
+    return True
+
+
+async def _record(settings: Settings, job_id: uuid.UUID, outcome: Outcome) -> bool:
+    engine = db_infra.create_engine(settings, statement_timeout_seconds=RECORD_STATEMENT_SECONDS)
+    try:
+        return await finish_abandoned(db_infra.create_sessionmaker(engine), job_id, outcome)
+    finally:
+        await bounded(engine.dispose(), CLOSE_SECONDS, "Closing the database engine")
+
+
+def record_abandoned(job_id: uuid.UUID, outcome: Outcome) -> None:
+    """Fail a running job from the main process; bounded, never raises."""
+    settings = get_settings()
+
+    def record() -> None:
+        try:
+            if run_bounded(_record(settings, job_id, outcome)):
+                logger.error("Job %s recorded as failed (%s).", job_id, outcome.reason)
+        except Exception as error:  # never let a signal handler fail
+            logger.error("Job %s could not be recorded: %s.", job_id, type(error).__name__)
+
+    _in_thread(f"Recording job {job_id}", record, RECORD_SECONDS)
+
+
+@task_failure.connect
+def _on_task_failure(
+    sender: Any = None,
+    task_id: str | None = None,
+    exception: BaseException | None = None,
+    args: Any = None,
+    **_: Any,
+) -> None:
+    """A pool process was killed at the hard limit (or lost) while running a job: record it.
+
+    Celery sends ``task_failure`` from the main process in those cases, where
+    the pool process had no chance to record anything itself.
+    """
+    if getattr(sender, "name", None) != TASK_NAME:
+        return
+    if isinstance(exception, TimeLimitExceeded):
+        outcome = TIME_LIMIT_OUTCOME
+    elif isinstance(exception, WorkerLostError):
+        outcome = WORKER_LOST_OUTCOME
+    else:
+        return  # the pool process ran the task and recorded the job itself
+    raw = args[0] if args else task_id
+    try:
+        job_id = uuid.UUID(str(raw))
+    except ValueError:
+        logger.error("A task with an invalid job ID failed: %s.", type(exception).__name__)
+        return
+    logger.error("Job %s: the worker process was stopped (%s).", job_id, type(exception).__name__)
+    record_abandoned(job_id, outcome)
+
+
+# --- the main process: the reaper -------------------------------------------------------------
+
+
+async def reap_once(settings: Settings) -> int | None:
+    """Fail stale jobs unless another worker holds the reaper lock. None if it did."""
+    client = Redis.from_url(
+        settings.valkey_url.get_secret_value(),
+        socket_connect_timeout=RECORD_STATEMENT_SECONDS,
+        socket_timeout=RECORD_STATEMENT_SECONDS,
+    )
+    engine = db_infra.create_engine(settings, statement_timeout_seconds=RECORD_STATEMENT_SECONDS)
+    try:
+        lock = client.lock(REAPER_LOCK, timeout=REAPER_LOCK_SECONDS, blocking=False)
+        if not await lock.acquire():
+            return None
+        try:
+            return await reap_stale_jobs(db_infra.create_sessionmaker(engine), default_registry())
+        finally:
+            try:
+                await lock.release()
+            except LockError:  # expired meanwhile: another worker may hold it now
+                logger.warning("The reaper lock expired before the reaper finished.")
+    finally:
+        await bounded(engine.dispose(), CLOSE_SECONDS, "Closing the database engine")
+        await bounded(client.aclose(), CLOSE_SECONDS, "Closing the Valkey client")
+
+
+async def reap_own(settings: Settings, hostname: str) -> int:
+    """Fail the jobs this worker's previous run (same node name) left running. Returns how many.
+
+    Nothing of a previous run can still be running once the worker has
+    started again; jobs noted by this run (same :data:`BOOT_ID`) are left alone.
+    """
+    client = Redis.from_url(
+        settings.valkey_url.get_secret_value(),
+        socket_connect_timeout=VALKEY_SECONDS,
+        socket_timeout=VALKEY_SECONDS,
+    )
+    engine = db_infra.create_engine(settings, statement_timeout_seconds=RECORD_STATEMENT_SECONDS)
+    reaped = 0
+    try:
+        sessionmaker = db_infra.create_sessionmaker(engine)
+        prefix = RUNNING_KEY.format(job_id="")
+        async for raw in client.scan_iter(match=f"{prefix}*", count=100):
+            key = raw.decode() if isinstance(raw, bytes) else str(raw)
+            value = await client.get(key)
+            text = value.decode() if isinstance(value, bytes) else str(value or "")
+            owner, _, boot = text.partition(" ")
+            if owner != hostname or boot == BOOT_ID:
+                continue  # another worker's, or this run's own
+            try:
+                job_id = uuid.UUID(key.removeprefix(prefix))
+            except ValueError:
+                continue
+            if await finish_abandoned(sessionmaker, job_id, WORKER_LOST_OUTCOME):
+                logger.warning("Job %s: its worker stopped while running it; failed.", job_id)
+                reaped += 1
+            await client.delete(key)
+    finally:
+        await bounded(engine.dispose(), CLOSE_SECONDS, "Closing the database engine")
+        await bounded(client.aclose(), CLOSE_SECONDS, "Closing the Valkey client")
+    return reaped
+
+
+class Reaper(threading.Thread):
+    """Calls :func:`reap_once` now and every ``interval`` seconds until stopped.
+
+    With a ``hostname``, it first fails what this worker's previous run left
+    (:func:`reap_own`).
+    """
+
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        hostname: str | None = None,
+        interval: float = REAP_INTERVAL_SECONDS,
+        reap: Callable[[Settings], Coroutine[Any, Any, int | None]] = reap_once,
+        reap_own: Callable[[Settings, str], Coroutine[Any, Any, int]] = reap_own,
+    ) -> None:
+        super().__init__(name="nightloom-reaper", daemon=True)
+        self.settings = settings
+        self.hostname = hostname
+        self.interval = interval
+        self._reap = reap
+        self._reap_own = reap_own
+        self.stopped = threading.Event()
+
+    def reap_previous_run(self) -> int | None:
+        if not self.hostname:
+            return None
+        try:
+            return run_bounded(
+                asyncio.wait_for(self._reap_own(self.settings, self.hostname), RECORD_SECONDS)
+            )
+        except Exception as error:  # the reaper keeps going
+            logger.warning("Reaping this worker's previous jobs failed: %s.", type(error).__name__)
+            return None
+
+    def reap(self) -> int | None:
+        try:
+            reaped = run_bounded(asyncio.wait_for(self._reap(self.settings), REAPER_LOCK_SECONDS))
+        except Exception as error:  # the reaper keeps going
+            logger.warning("Reaping stale jobs failed: %s.", type(error).__name__)
+            return None
+        if reaped:
+            logger.warning("Failed %d abandoned job(s).", reaped)
+        return reaped
+
+    def run(self) -> None:
+        self.reap_previous_run()
+        while not self.stopped.is_set():
+            self.reap()
+            self.stopped.wait(self.interval)
+
+    def stop(self) -> None:
+        self.stopped.set()
+
+
+_reaper: Reaper | None = None
+
+
+@worker_ready.connect
+def _start_reaper(sender: Any = None, **_: Any) -> None:
+    global _reaper  # one reaper per worker process
+    if _reaper is None:
+        _reaper = Reaper(get_settings(), hostname=getattr(sender, "hostname", None))
+        _reaper.start()
+        logger.info("Reaper started (every %.0f s).", REAP_INTERVAL_SECONDS)
+
+
+@worker_shutdown.connect
+def _stop_reaper(**_: Any) -> None:
+    global _reaper
+    if _reaper is not None:
+        _reaper.stop()
+        _reaper = None

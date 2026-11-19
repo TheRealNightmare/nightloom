@@ -29,6 +29,10 @@ frequent 502/503s and timeouts are retried (see
 :mod:`nightloom_shuttle_crtsh.client`) before the job fails with a clear
 message. Public suffixes (``co.uk``) and internal-only names are refused
 before anything is sent.
+
+Each phase (search, writing the subdomains, certificate downloads) logs how
+long it took, and a warning when its time budget cut it short; never a name,
+a response or an ID.
 """
 
 import asyncio
@@ -227,10 +231,24 @@ class _Run:
 
     async def entries(self) -> list[CrtShEntry]:
         self.ctx.progress("Searching Certificate Transparency logs (crt.sh)...")
-        rows = [
-            *await self.search(self.scope),
-            *await self.search(f"%.{self.scope}"),
-        ]
+        began = self.clock()
+        try:
+            rows = [
+                *await self.search(self.scope),
+                *await self.search(f"%.{self.scope}"),
+            ]
+        except SourceUnavailableError:
+            if self.client.out_of_time:
+                self.ctx.logger.warning(
+                    "phase search: cut by its time budget after %.1f s", self.clock() - began
+                )
+            raise
+        self.ctx.logger.info(
+            "phase search: %.1f s, %d request(s), %d row(s)",
+            self.clock() - began,
+            self.client.requests,
+            len(rows),
+        )
         entries, malformed = parse_entries(rows)
         if malformed:
             self.ctx.note(NOTE_MALFORMED.format(count=malformed))
@@ -264,6 +282,7 @@ class _Run:
         self.ctx.progress(
             f"{len(entries):,} certificates, {len(subdomains):,} subdomains; adding them."
         )
+        began = self.clock()
         for name in subdomains:
             yield EntityFinding(type=D, value=name)
             yield RelationshipFinding(
@@ -272,6 +291,10 @@ class _Run:
                 target=_domain(name),
                 note=WILDCARD_NOTE.format(name=name) if names[name] else None,
             )
+        # The runner writes each finding before asking for the next one.
+        self.ctx.logger.info(
+            "phase write: %.1f s for %d subdomain(s)", self.clock() - began, len(subdomains)
+        )
         coverable = {*subdomains, self.scope}
         async for finding in self.certificates(entries[:MAX_CERTIFICATES], coverable):
             yield finding
@@ -281,10 +304,17 @@ class _Run:
         self, recent: list[CrtShEntry], coverable: set[str]
     ) -> AsyncIterator[Finding]:
         downloaded = failed = failed_in_a_row = 0
+        began = self.clock()
         for index, entry in enumerate(recent):
             self.ctx.raise_if_cancelled()
             if self.clock() - self.started >= DOWNLOAD_BUDGET_SECONDS:
                 self.ctx.note(NOTE_DOWNLOADS_STOPPED.format(done=index, planned=len(recent)))
+                self.ctx.logger.warning(
+                    "phase downloads: cut by its time budget after %d of %d, %.1f s",
+                    index,
+                    len(recent),
+                    self.clock() - began,
+                )
                 break
             if failed_in_a_row >= MAX_DOWNLOAD_FAILURES_IN_A_ROW:
                 failed += len(recent) - index
@@ -305,6 +335,12 @@ class _Run:
                 yield finding
         if failed:
             self.ctx.note(NOTE_DOWNLOADS_FAILED.format(failed=failed))
+        self.ctx.logger.info(
+            "phase downloads: %.1f s, %d downloaded, %d failed (incl. writes)",
+            self.clock() - began,
+            downloaded,
+            failed,
+        )
         self.ctx.progress(f"Downloaded {downloaded} certificate(s).")
 
     def certificate(

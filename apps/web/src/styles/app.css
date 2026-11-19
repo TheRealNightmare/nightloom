@@ -2507,6 +2507,13 @@ button.admiralty__code {
   font-size: 14px;
 }
 
+/* Running past the worker's hard time limit: its worker most likely stopped. */
+.job__overdue {
+  margin: 0;
+  color: var(--copper);
+  font-size: 13px;
+}
+
 .job-status {
   font-family: var(--font-mono);
   font-weight: 400;
