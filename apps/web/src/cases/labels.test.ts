@@ -92,6 +92,16 @@ describe("describeEvent", () => {
     ],
     ["authz.denied", "denied", { reason: "missing_capability" }, {}, "was refused an action"],
     ["authz.denied", "denied", { reason: "not_a_member" }, {}, "was refused access (not a member)"],
+    [
+      "authz.denied",
+      "denied",
+      { reason: "not_view_creator" },
+      {},
+      "was refused: only a view's creator or an owner may change it",
+    ],
+    ["view.create", "success", {}, {}, "saved a graph view"],
+    ["view.update", "success", {}, {}, "changed a saved graph view"],
+    ["view.delete", "success", {}, {}, "deleted a saved graph view"],
     ["user.update", "success", {}, {}, "user.update"],
   ] as const)("%s (%s) %j", (action, outcome, details, extra, expected) => {
     expect(describeEvent(makeEvent({ action, outcome, details, ...extra }), members)).toBe(

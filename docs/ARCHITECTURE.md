@@ -245,6 +245,7 @@ The audit log (code in [`nightloom_api/audit/`](../apps/api/src/nightloom_api/au
 | `entity.create`, `entity.delete` | an entity is added (or a new observation merged into it) or deleted: its `type` and `key`; a graph commit that fails after the event is followed by a `failure` event (`graph_commit_failed`) |
 | `relationship.create` | a relationship is added or observed again: its `type`, `source_key` and `target_key` |
 | `job.create` | a Shuttle job is queued: `shuttle`, `version`, `mode`, `sensitivity`, the input's `entity_type` and key (hashed for person-related types); `failure` with `too_many_jobs` when the per-user limit refuses it (`429`) |
+| `view.create`, `view.update`, `view.delete` | a [saved view](#saved-views) is saved, renamed or replaced, or deleted: the view's ID as the target and the case's ID only, never its name (names may be person-related) or its state |
 | `job.cancel` | a job is cancelled: `status_before` and `status` |
 | `job.finish` | a job ends, recorded by the worker (`system:worker`) in the transaction that sets its final state: `status`, `stats` and a `reason` code; `success` (succeeded or cancelled), `failure`, or `denied` when a guardrail re-checked at execution time stopped it. Never a response, a finding's value or an exception's text |
 
@@ -336,9 +337,50 @@ Each member arranges their own view of a case's graph: the entities they pinned,
 - **Validation.** Keys must be canonical entity keys (the same `parse_key` check as the graph routes; group nodes are therefore never saved), each value exactly two finite numbers within ±1,000,000 (strict: no strings or booleans), at most 10,000 entries, and no other fields (`422`, without echoing the input, since a key can be person-related). The body is read with a 1 MiB cap and refused with `413` as soon as it is larger, with or without a `Content-Length`.
 - **Rate limit.** At most 60 saves per user per minute, across cases and sessions (a fixed window in Valkey, `nightloom:layout:user:<id>`), then `429` with `Retry-After`. The web client debounces its saves and stays far below this. Reads are not limited.
 
+#### Saved views
+
+Named snapshots of how a case's graph looks, shared with the case's members (code in [`nightloom_api/views/`](../apps/api/src/nightloom_api/views/) and [`routers/views.py`](../apps/api/src/nightloom_api/routers/views.py), migration `0008_saved_views`; the web side is [`SavedViews.tsx`](../apps/web/src/cases/graph/SavedViews.tsx) and [`viewSnapshot.ts`](../apps/web/src/graph/viewSnapshot.ts)). One row per view in `saved_views`: `id`, `case_id` (`ON DELETE CASCADE`, indexed), `name`, `created_by` and `updated_by` (`ON DELETE SET NULL`: a view outlives its author, shown as "a former member"), `state` (JSONB), `created_at`, `updated_at`; a unique index on `(case_id, lower(name))` makes names unique per case ignoring case.
+
+| Endpoint (under `/api/v1`) | Who | Notes |
+| --- | --- | --- |
+| `GET /cases/{id}/views` | member | `[{id, name, created_by, updated_by, created_at, updated_at}]` by name (authors as `{id, display_name}` or `null`); no state, so the list stays light |
+| `GET /cases/{id}/views/{view_id}` | member | the view with its `state`; positions of entities the case no longer has are left out (checked against Neo4j, `503` if it is down) |
+| `POST /cases/{id}/views` | `edit` (editors, owners), open case | `{name, state}` → `201` with the view |
+| `PATCH /cases/{id}/views/{view_id}` | `edit`, open case, and the view's creator or a case owner | `{name}`, `{state}` or both → the view |
+| `DELETE /cases/{id}/views/{view_id}` | as `PATCH` | `204` |
+
+- **Permissions.** Like every case route: non-members get `404` for everything; a member without `edit` (viewers, and global viewers whatever their stored role) gets `403`, recorded as `authz.denied`. Changing someone else's view as an editor is `403` too, recorded with the reason `not_view_creator` and the view's ID; owners may change any view. A creator demoted to viewer can no longer change their views. Writes to a closed or archived case get `409`, as for the graph; reading works whatever the status. A view ID of another case is `404` (`View not found.`). Write routes take the case row lock, so a case cannot be closed or deleted half-way through, and saves in one case are serialized (the count and name checks are exact).
+- **State, version 1.** Validated with pydantic, unknown fields refused at every level (`422`, without echoing the input):
+
+  ```json
+  {
+    "version": 1,
+    "mode": "2d",
+    "camera": {"x": 12.5, "y": -40.0, "ratio": 0.35, "angle": 0.5236},
+    "filters": {
+      "hidden_types": ["url"],
+      "hidden_sources": ["wayback"],
+      "hidden_sensitivities": [],
+      "seen": {"kind": "range", "from": "2026-11-01", "to": null},
+      "min_confidence": 0.5,
+      "min_reliability": "B",
+      "min_credibility": 3,
+      "focus": {"key": "domain:example.org", "hops": 2},
+      "hide_isolated": false
+    },
+    "groups": {"expanded": ["group:domain:www.example.org|url"]},
+    "positions": {"domain:example.org": [0.0, 0.0], "domain:www.example.org": [120.0, 60.0]}
+  }
+  ```
+
+  `camera` is in graph terms, so it means the same on every screen and whatever the layout of unpinned entities: `x`, `y` are the graph coordinates at the center of the view (finite, ±1,000,000), `ratio` is graph units per screen pixel (1e-6 to 10,000) and `angle` the rotation in radians (±2π). `filters` is the web's URL filter state as JSON (`seen` is `{"kind": "all"}`, a `preset` of `24h`, `7d` or `30d`, or a `range` of `YYYY-MM-DD` days with open ends; `min_confidence` 0–1; `min_reliability` A–F; `min_credibility` 1–6; `focus.key` a canonical key, `hops` 1–3; at most 100 sources of up to 100 characters; every field defaults to "no filter"). `groups.expanded` holds up to 500 group ids (`group:<canonical key>|<entity type>`). `positions` follows the [personal layout](#personal-layouts) rules (canonical keys, finite, ±1,000,000, at most 10,000). Lists are de-duplicated. A future version adds a model and a `version` value; stored version-1 states stay readable.
+- **Limits.** `name` is trimmed, 1–80 characters, without control characters (including line and paragraph separators). The body is read with a 1 MiB cap (`413`). At most 50 views per case (`409`, with a message saying to delete one). Writes (save, change, delete) are limited to 30 per user per minute across cases (a fixed window in Valkey, `nightloom:views:user:<id>`, the layout limiter with its own key), then `429` with `Retry-After`; reads are not limited.
+- **Audit.** `view.create`, `view.update` and `view.delete`, in the same transaction as the change, with the view's ID as the target and the case's ID; `details` is empty. The name and state are never recorded.
+- **Web.** The case Graph tab gives `GraphView` a *Views* menu (through a React context, so the demo has none). `GraphView` captures a snapshot (camera from sigma, the filters, the expanded groups, the pin store's entities) and applies one: filters through the URL like any filter change, the expanded groups, `PinStore.replace` (which the [layout](#personal-layouts) saver then saves as the user's own pins) and, once that is drawn, the camera, animated over 400 ms (at once with `prefers-reduced-motion`). Applying freezes sigma's frame, so the picture stays put while unpinned entities settle. The message after applying offers *Undo* (the snapshot taken just before) until it is dismissed. `?view=<id>` is applied once the graph is drawn and then removed from the URL with a history replace; an unknown or foreign ID only shows a quiet notice.
+
 ### Migrations
 
-The PostgreSQL schema is managed by [Alembic](https://alembic.sqlalchemy.org/) in [`apps/api/alembic/`](../apps/api/alembic/). ORM models derive from `nightloom_api.infra.db.Base`, whose metadata has an explicit naming convention, so constraint and index names are stable across autogenerated revisions. The history starts at an empty `0001_baseline` revision; `0002_users_sessions` adds the `users` and `sessions` tables and the `user_role` enum; `0003_audit_events` adds the [audit log](#audit-log) and its append-only trigger; `0004_cases` adds [`cases` and `case_members`](#cases) with their enums (and intentionally no foreign key from `audit_events.case_id`); `0005_jobs` adds [`jobs`](#jobs-and-the-worker) and the `job_status` enum; `0006_must_change_password` adds `users.must_change_password` (see [Temporary passwords](#temporary-passwords-and-the-forced-change)); `0007_graph_layouts` adds [`graph_layouts`](#personal-layouts). In the Compose stack, a one-shot `migrate` service runs `alembic upgrade head` and then applies the [Neo4j schema](#per-case-graphs) (`python -m nightloom_api.graph.schema apply`) before the API starts; `make migrate` runs it again.
+The PostgreSQL schema is managed by [Alembic](https://alembic.sqlalchemy.org/) in [`apps/api/alembic/`](../apps/api/alembic/). ORM models derive from `nightloom_api.infra.db.Base`, whose metadata has an explicit naming convention, so constraint and index names are stable across autogenerated revisions. The history starts at an empty `0001_baseline` revision; `0002_users_sessions` adds the `users` and `sessions` tables and the `user_role` enum; `0003_audit_events` adds the [audit log](#audit-log) and its append-only trigger; `0004_cases` adds [`cases` and `case_members`](#cases) with their enums (and intentionally no foreign key from `audit_events.case_id`); `0005_jobs` adds [`jobs`](#jobs-and-the-worker) and the `job_status` enum; `0006_must_change_password` adds `users.must_change_password` (see [Temporary passwords](#temporary-passwords-and-the-forced-change)); `0007_graph_layouts` adds [`graph_layouts`](#personal-layouts); `0008_saved_views` adds [`saved_views`](#saved-views). In the Compose stack, a one-shot `migrate` service runs `alembic upgrade head` and then applies the [Neo4j schema](#per-case-graphs) (`python -m nightloom_api.graph.schema apply`) before the API starts; `make migrate` runs it again.
 
 ## Data model
 

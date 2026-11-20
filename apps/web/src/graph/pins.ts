@@ -114,6 +114,22 @@ export class PinStore {
     this.emit();
   }
 
+  /**
+   * Replaces every pin with `positions` (applying a saved view). Before the
+   * saved layout arrives, it is discarded when it does, as after {@link clear}.
+   */
+  replace(positions: Readonly<Positions>): void {
+    if (!this.loaded) {
+      this.cleared = true;
+      this.touched.clear();
+    }
+    this.pins = new Map();
+    for (const [id, xy] of Object.entries(positions)) {
+      if (isFinitePosition(xy)) this.pins.set(id, [xy[0], xy[1]]);
+    }
+    this.emit();
+  }
+
   /** The pins to save (entities only). */
   saved(): Positions {
     const result: Positions = {};

@@ -34,6 +34,10 @@ class AuditAction(StrEnum):
     ENTITY_CREATE = "entity.create"
     ENTITY_DELETE = "entity.delete"
     RELATIONSHIP_CREATE = "relationship.create"
+    # Saved graph views: only the case and the view's ID (names may be person-related).
+    VIEW_CREATE = "view.create"
+    VIEW_UPDATE = "view.update"
+    VIEW_DELETE = "view.delete"
     # Shuttle jobs: queued by a user, cancelled by a user, finished by the worker.
     JOB_CREATE = "job.create"
     JOB_CANCEL = "job.cancel"
@@ -56,3 +60,4 @@ class TargetType(StrEnum):
     ENTITY = "entity"
     RELATIONSHIP = "relationship"
     JOB = "job"
+    VIEW = "view"

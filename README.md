@@ -68,6 +68,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md#development-setup) for the full developmen
 6. **Export.** *Export* (on the graph) downloads the case as JSON (everything, with provenance), GraphML (for Gephi, yEd or Cytoscape) or CSV (a ZIP with `entities.csv`, `relationships.csv` and a README). Any member may export. Person-related data is **redacted by default**: people, email addresses and the other person-related types keep their type, but their values become `[redacted]` and their keys pseudonyms that still connect their relationships. Case owners can include person-related data by giving a reason, which is recorded in the case's activity. Exports are limited to 100,000 entities and to 10 per user every 10 minutes; see [Exports](docs/ARCHITECTURE.md#exports).
 7. **Work in the case.** Owners add colleagues by email as owner, editor or viewer (*Members*), editors and owners see who did what (*Activity*), and owners change the purpose or legal basis (which asks for a reason) and close, archive or delete the case (*Settings*).
 
+### Saved views
+
+A saved view is a named snapshot of how a case's graph looks: the camera (position, zoom and rotation), the filters, the expanded groups and the pinned entities. *Views* on the graph toolbar (or <kbd>V</kbd> with the graph focused) lists the case's views with who saved them and when; *Apply* shows one. Applying replaces your own pins with the view's (they become your layout), sets its filters and moves the camera there; *Undo* in the message that follows brings back what you had. Entities the case no longer has are skipped.
+
+Editors and owners of an open case save the current view (*Save current view…*, a name of up to 80 characters, unique in the case) and a view's creator or an owner can *Update with current view*, *Rename* or *Delete* it from its *⋯* menu. *Copy link* copies an address that opens the case graph with the view applied (`…/graph?view=<id>`); it works for every member of the case, viewers included. A case has at most 50 views.
+
 Only members can see a case, admins included. The rules are described in [Cases](docs/ARCHITECTURE.md#cases).
 
 ### Graph controls
@@ -87,6 +93,7 @@ Drag an entity to move it: it stays **pinned** where you drop it (a thin brass r
 | Reset zoom, position and rotation | *Reset view* button | *Reset view* | *Reset view* | <kbd>0</kbd> |
 | Leave the entity, then clear the selection | click empty space | | tap empty space | <kbd>Esc</kbd> |
 | Entity menu (pin, select neighbours, hide its type) | right-click | two-finger click | long press | |
+| Saved views of the case | *Views* button | | | <kbd>V</kbd> |
 | All shortcuts | *?* button | | | <kbd>?</kbd> |
 
 A trackpad's two-finger scroll pans and a mouse wheel zooms. Browsers do not say which device sent a scroll, so Nightloom guesses from the scroll's shape; if it guesses wrong for your device, choose *View → Scroll wheel → Zoom* or *Pan*. *View → Minimap* shows an overview in the bottom-right corner (on by default above 60 entities): click or drag in it to move there. Keyboard focus moves through the entities in reading order (top-left to bottom-right) and a screen reader hears each one ("Domain www.example.org, 3 neighbours, pinned"); <kbd>Tab</kbd> past the last one leaves the graph.

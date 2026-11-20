@@ -16,16 +16,24 @@ KEY_PREFIX = "nightloom:layout:user"
 
 
 class LayoutRateLimiter:
+    """A fixed-window counter per user; other write limits reuse it with their own prefix."""
+
     def __init__(
-        self, cache: Redis, *, max_writes: int = MAX_WRITES, window_seconds: int = WINDOW_SECONDS
+        self,
+        cache: Redis,
+        *,
+        max_writes: int = MAX_WRITES,
+        window_seconds: int = WINDOW_SECONDS,
+        key_prefix: str = KEY_PREFIX,
     ) -> None:
         self._cache = cache
         self.max_writes = max_writes
         self.window_seconds = window_seconds
+        self.key_prefix = key_prefix
 
     async def hit(self, user_id: uuid.UUID) -> int | None:
         """Count one save; seconds to wait if it is over the limit (then it is not counted)."""
-        key = f"{KEY_PREFIX}:{user_id}"
+        key = f"{self.key_prefix}:{user_id}"
         async with self._cache.pipeline(transaction=True) as pipe:
             pipe.incr(key)
             pipe.expire(key, self.window_seconds, nx=True)

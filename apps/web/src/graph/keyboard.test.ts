@@ -47,6 +47,8 @@ describe("graph keyboard map", () => {
     expect(keyAction(key("p"), false)).toBeNull();
     expect(keyAction(key("Escape"), false)).toEqual({ kind: "escape" });
     expect(keyAction(key("?", { shiftKey: true }), false)).toEqual({ kind: "help" });
+    expect(keyAction(key("v"), false)).toEqual({ kind: "views" });
+    expect(keyAction(key("V", { shiftKey: true }), true)).toEqual({ kind: "views" });
   });
 
   it("leaves browser and system shortcuts alone", () => {
@@ -58,7 +60,7 @@ describe("graph keyboard map", () => {
 
   it("documents every action in the shortcuts list", () => {
     const listed = SHORTCUTS.flatMap((group) => group.shortcuts.flatMap((s) => s.keys));
-    for (const keyName of ["Q", "E", "0", "P", "Enter", "Esc", "Tab", "?", "Shift+drag"]) {
+    for (const keyName of ["Q", "E", "0", "P", "V", "Enter", "Esc", "Tab", "?", "Shift+drag"]) {
       expect(listed).toContain(keyName);
     }
   });

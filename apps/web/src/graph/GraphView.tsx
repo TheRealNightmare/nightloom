@@ -59,8 +59,21 @@ import { ShortcutsDialog } from "./ShortcutsDialog";
 import { usePins, type LayoutPersistence } from "./usePins";
 import { useNow, type FiltersUpdate } from "./useUrlFilters";
 import { connectionsOf, countByType, isNodeVisible } from "./view";
+import { SavedViewContext, type SavedViewControls } from "./savedViewContext";
 import { ViewMenu } from "./ViewMenu";
+import type { CameraSnapshot, ViewSnapshot } from "./viewSnapshot";
+
+export type { SavedViewControls } from "./savedViewContext";
 import type { WheelSetting } from "./wheel";
+
+/** How long the camera takes to reach a saved view (at once with reduced motion). */
+export const VIEW_CAMERA_MS = 400;
+
+function prefersReducedMotion(): boolean {
+  return typeof window.matchMedia === "function"
+    ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    : false;
+}
 
 /** Up to this many nodes, every node is labelled. */
 const SMALL_GRAPH = 200;
@@ -105,6 +118,11 @@ export interface GraphViewProps {
    * Without it, pins last as long as the page.
    */
   layout?: LayoutPersistence;
+  /**
+   * A saved-views control for the toolbar (the case Graph tab's Views menu);
+   * it reads the view's controls with `useSavedViewControls` (./savedViewContext).
+   */
+  savedViews?: ReactNode;
   ref?: Ref<GraphViewHandle>;
 }
 
@@ -139,6 +157,7 @@ export function GraphView({
   grades,
   className,
   layout,
+  savedViews,
   ref,
 }: GraphViewProps) {
   const [graph] = useState(createGraph);
@@ -474,6 +493,46 @@ export function GraphView({
     canvasRef.current?.resetCamera();
   }, [resetView]);
 
+  // --- saved views ----------------------------------------------------------------------
+  const [ready, setReady] = useState(false);
+  const [viewsRequest, setViewsRequest] = useState(0);
+  // A camera to move to once what a view changed is drawn (each request applied once).
+  const pendingCameraRef = useRef<CameraSnapshot | null>(null);
+  const [cameraRequest, setCameraRequest] = useState(0);
+  const capture = useCallback(
+    (): ViewSnapshot => ({
+      camera: canvasRef.current?.getCamera() ?? null,
+      filters,
+      expanded: [...expanded],
+      pins: pinStore.saved(),
+    }),
+    [filters, expanded, pinStore],
+  );
+  const applySnapshot = useCallback(
+    (next: ViewSnapshot) => {
+      setMenu(null);
+      setMulti(NO_SELECTION);
+      updateFilters(() => next.filters);
+      setExpanded(new Set(next.expanded));
+      pinStore.replace(next.pins);
+      if (next.camera) {
+        pendingCameraRef.current = next.camera;
+        setCameraRequest((n) => n + 1);
+      }
+    },
+    [updateFilters, pinStore],
+  );
+  useEffect(() => {
+    const camera = pendingCameraRef.current;
+    if (camera === null || !ready) return;
+    pendingCameraRef.current = null;
+    canvasRef.current?.setCamera(camera, prefersReducedMotion() ? 0 : VIEW_CAMERA_MS);
+  }, [cameraRequest, ready, snapshot]);
+  const savedViewControls = useMemo<SavedViewControls>(
+    () => ({ ready, capture, apply: applySnapshot, openRequest: viewsRequest }),
+    [ready, capture, applySnapshot, viewsRequest],
+  );
+
   const clearFilters = useCallback(() => {
     updateFilters(() => EMPTY_FILTERS);
   }, [updateFilters]);
@@ -575,6 +634,9 @@ export function GraphView({
               setConfirmUnpinAll(true);
             }}
           />
+          {savedViews !== undefined && (
+            <SavedViewContext value={savedViewControls}>{savedViews}</SavedViewContext>
+          )}
           {toolbar}
         </div>
         <div className="stage__canvas" ref={stageRef}>
@@ -595,6 +657,10 @@ export function GraphView({
             onShowShortcuts={() => {
               setShortcutsOpen(true);
             }}
+            onOpenViews={() => {
+              setViewsRequest((n) => n + 1);
+            }}
+            onReadyChange={setReady}
             wheelSetting={wheel}
             showMinimap={minimapShown}
             showAllLabels={snapshot.order <= SMALL_GRAPH}

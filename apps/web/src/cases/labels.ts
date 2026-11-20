@@ -134,8 +134,18 @@ export function describeEvent(event: AuditEvent, members: readonly Member[] = []
       return details["self"] === true
         ? "left the case"
         : `removed ${member()} (${roleLabel(details["role"])})`;
+    // Only the view's ID is recorded (names may be person-related).
+    case "view.create":
+      return "saved a graph view";
+    case "view.update":
+      return "changed a saved graph view";
+    case "view.delete":
+      return "deleted a saved graph view";
     case "authz.denied": {
       if (details["reason"] === "not_a_member") return "was refused access (not a member)";
+      if (details["reason"] === "not_view_creator") {
+        return "was refused: only a view's creator or an owner may change it";
+      }
       const required = text(details["required"]);
       const what = required === null ? null : (CAPABILITY_LABELS[required] ?? required);
       return what === null ? "was refused an action" : `was refused: needs permission to ${what}`;
