@@ -13,6 +13,7 @@ import {
   easeInOut,
   flyTo,
   frameSphere,
+  frameSphereInArea,
   inView2d,
   interpolateCamera,
   isCamera3D,
@@ -219,5 +220,69 @@ describe("2D ↔ 3D cameras", () => {
     expect(flat.angle).toBeCloseTo(0, 6);
     expect(flat.ratio).toBeCloseTo(1, 6);
     expect(camera3dTo2d({ ...orbited, up: [0, 0, 1] }, 600).angle).toBe(0);
+  });
+});
+
+describe("frameSphereInArea", () => {
+  const sphere = { center: [100, 50, 20] as Vec3, radius: 300 };
+  const W = 1000;
+  const H = 700;
+
+  /** Screen points of the sphere's center and of many points on its surface. */
+  function shown(camera: Camera3D) {
+    const m = viewProjection(camera, W / H, 1, 1e5);
+    const viewport = { width: W, height: H };
+    const surface = [];
+    for (let i = 0; i < 24; i += 1) {
+      for (let j = 1; j < 12; j += 1) {
+        const theta = (i / 24) * 2 * Math.PI;
+        const phi = (j / 12) * Math.PI;
+        const offset: Vec3 = [
+          Math.sin(phi) * Math.cos(theta),
+          Math.cos(phi),
+          Math.sin(phi) * Math.sin(theta),
+        ];
+        surface.push(
+          project(
+            m,
+            [
+              sphere.center[0] + offset[0] * sphere.radius,
+              sphere.center[1] + offset[1] * sphere.radius,
+              sphere.center[2] + offset[2] * sphere.radius,
+            ],
+            viewport,
+          ),
+        );
+      }
+    }
+    return { center: project(m, sphere.center, viewport), surface };
+  }
+
+  it("is frameSphere when nothing is covered", () => {
+    const plain = frameSphere(sphere, W / H);
+    const area = frameSphereInArea(sphere, W, H);
+    for (let k = 0; k < 3; k += 1) {
+      expect(area.position[k]).toBeCloseTo(plain.position[k] ?? 0, 6);
+      expect(area.target[k]).toBeCloseTo(plain.target[k] ?? 0, 6);
+    }
+  });
+
+  it("centers the sphere in the uncovered area and keeps all of it there", () => {
+    const insets = { top: 0, right: 0, bottom: 140, left: 72 };
+    const { center, surface } = shown(frameSphereInArea(sphere, W, H, insets));
+    expect(center.x).toBeCloseTo(72 + (W - 72) / 2, 3);
+    expect(center.y).toBeCloseTo((H - 140) / 2, 3);
+    for (const point of surface) {
+      expect(point.x).toBeGreaterThanOrEqual(72);
+      expect(point.x).toBeLessThanOrEqual(W);
+      expect(point.y).toBeGreaterThanOrEqual(0);
+      expect(point.y).toBeLessThanOrEqual(H - 140);
+    }
+  });
+
+  it("ignores insets that would leave too little room", () => {
+    const covered = frameSphereInArea(sphere, W, H, { top: 0, right: 0, bottom: 600, left: 0 });
+    const plain = frameSphere(sphere, W / H);
+    expect(distanceOf(covered)).toBeCloseTo(distanceOf(plain), 6);
   });
 });

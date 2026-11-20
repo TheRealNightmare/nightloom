@@ -11,6 +11,7 @@ import {
 } from "react";
 import type { Attributes } from "graphology-types";
 import Sigma from "sigma";
+import type { CameraState } from "sigma/types";
 
 import type { EdgeAttributes, NightloomGraph, NodeAttributes } from "./buildGraph";
 import { DEFAULT_GRAPH_PALETTE, type GraphPalette } from "../theme/graphPalette";
@@ -30,6 +31,7 @@ import {
   zoomStep,
   type GraphCamera,
   type InteractionHandlers,
+  fittedCameraState,
 } from "./interactions";
 import { keyAction } from "./keyboard";
 import { waitForLabelFont } from "./labelFont";
@@ -110,6 +112,11 @@ export interface GraphCanvasProps {
    */
   palette?: GraphPalette;
   theme?: Theme;
+  /**
+   * What the overlays (legend, controls) cover at the canvas's edges
+   * (pixels): the initial view and Reset view fit the graph above them.
+   */
+  frameInsets?: { bottom: number };
   ref?: Ref<GraphCanvasHandle>;
 }
 
@@ -117,6 +124,8 @@ export interface GraphCanvasProps {
 type CanvasSigma = Sigma<NodeAttributes, EdgeAttributes, Attributes, {}, {}, {}, GraphPrimitives>;
 
 const CAMERA_DURATION_MS = 450;
+/** Room sigma keeps around the whole graph when it fits it (pixels). */
+const STAGE_PADDING = 64;
 const FOCUS_RETRY_FRAMES = 10;
 const FOCUS_RATIO = 0.7;
 /** Only knots drawn at least this many pixels wide get a label (all of them in small graphs). */
@@ -164,6 +173,7 @@ export function GraphCanvas({
   pulse = NO_PULSE,
   palette = DEFAULT_GRAPH_PALETTE,
   theme = "dark",
+  frameInsets,
   ref,
 }: GraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -187,6 +197,24 @@ export function GraphCanvas({
   const callbacksRef = useRef(handlers);
   const wheelRef = useRef(wheelSetting);
   const showAllLabelsRef = useRef(showAllLabels);
+  // The whole graph is fitted above what the overlays cover (see fittedCameraState).
+  const bottomInset = frameInsets?.bottom ?? 0;
+  const insetRef = useRef(bottomInset);
+  const fittedRef = useRef<CameraState | null>(null);
+  /** Shows the whole graph above the overlays (animated unless `duration` is 0). */
+  const fit = useCallback((sigma: CanvasSigma, duration: number) => {
+    const camera = sigma.getCamera();
+    const state = fittedCameraState(sigma, insetRef.current, STAGE_PADDING);
+    if (state === null) {
+      if (duration > 0) void camera.reset({ duration });
+      else camera.setState({ x: 0.5, y: 0.5, ratio: 1, angle: 0 });
+      fittedRef.current = null;
+      return;
+    }
+    fittedRef.current = state;
+    if (duration > 0) void camera.animate(state, { duration });
+    else camera.setState(state);
+  }, []);
   // The sigma instance once it exists (it may wait for the label font).
   const [sigmaInstance, setSigmaInstance] = useState<CanvasSigma | null>(null);
   // The node with the keyboard focus ring.
@@ -203,6 +231,23 @@ export function GraphCanvas({
   });
 
   // The focus ring follows its node through camera moves, drags and layouts.
+  // The overlays changed size: refit if the camera is still where the last fit put it.
+  useEffect(() => {
+    if (insetRef.current === bottomInset) return;
+    insetRef.current = bottomInset;
+    const sigma = sigmaInstance;
+    const fitted = fittedRef.current;
+    if (!sigma || !fitted) return;
+    const now = sigma.getCamera().getState();
+    const untouched =
+      Math.abs(now.x - fitted.x) < 1e-6 &&
+      Math.abs(now.y - fitted.y) < 1e-6 &&
+      Math.abs(now.ratio - fitted.ratio) < 1e-6 &&
+      Math.abs(now.angle - fitted.angle) < 1e-6;
+    if (untouched) fit(sigma, 0);
+  }, [bottomInset, sigmaInstance, fit]);
+  // (Before sigma exists the inset is only remembered: creation fits with it.)
+
   const placeRing = useCallback(() => {
     const ring = ringRef.current;
     const sigma = sigmaRef.current;
@@ -243,7 +288,7 @@ export function GraphCanvas({
           labelDensity: LABEL_DENSITY,
           labelGridCellSize: LABEL_GRID_CELL_SIZE,
           labelRenderedSizeThreshold: showAllLabelsRef.current ? 0 : LABEL_SIZE_THRESHOLD,
-          stagePadding: 64,
+          stagePadding: STAGE_PADDING,
           minCameraRatio: 0.08,
           maxCameraRatio: 4,
           // Dragging moves nodes (see ./interactions); a drag of a selected
@@ -329,6 +374,8 @@ export function GraphCanvas({
       // Threads get a little wider as the camera zooms in; repaint only when
       // the rounded width changes, not on every frame of a zoom.
       const camera = created.getCamera();
+      if (insetRef.current > 0) fit(created, 0);
+      fittedRef.current ??= camera.getState();
       let step = threadWidthStep(camera.ratio);
       camera.on("updated", ({ ratio }) => {
         const next = threadWidthStep(ratio);
@@ -352,7 +399,7 @@ export function GraphCanvas({
       sigmaRef.current = null;
       setSigmaInstance(null);
     };
-  }, [graph, placeRing]);
+  }, [graph, placeRing, fit]);
 
   const readyRef = useRef(onReadyChange);
   useEffect(() => {
@@ -506,7 +553,7 @@ export function GraphCanvas({
         return;
       case "reset":
         releaseFrame(sigma);
-        void sigma.getCamera().reset({ duration: CAMERA_DURATION_MS });
+        fit(sigma, CAMERA_DURATION_MS);
         return;
       case "moveNode": {
         if (!focusValid) return;
@@ -555,7 +602,7 @@ export function GraphCanvas({
         if (!sigma) return;
         // Fit the whole graph again, wherever nodes were dragged.
         releaseFrame(sigma);
-        void sigma.getCamera().reset({ duration: CAMERA_DURATION_MS });
+        fit(sigma, CAMERA_DURATION_MS);
       },
       zoomIn() {
         const sigma = sigmaRef.current;
@@ -578,7 +625,7 @@ export function GraphCanvas({
         if (sigma) moveCamera(sigma, camera, durationMs);
       },
     }),
-    [],
+    [fit],
   );
 
   return (

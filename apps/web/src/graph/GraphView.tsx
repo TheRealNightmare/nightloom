@@ -473,6 +473,7 @@ export function GraphView({
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [confirmUnpinAll, setConfirmUnpinAll] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
+  const frameInsets = useOverlayInsets(stageRef);
   const openMenu = useCallback(
     (node: string, at: Point) => {
       if (!graph.hasNode(node)) return;
@@ -738,6 +739,7 @@ export function GraphView({
     pinRevision: pins.version,
     palette: painted,
     theme,
+    frameInsets,
     ...(pulse ? { pulse } : {}),
   };
 
@@ -1017,6 +1019,52 @@ export function GraphView({
       )}
     </div>
   );
+}
+
+/** Room kept between the framed graph and the overlays over it (pixels). */
+const OVERLAY_CLEARANCE = 8;
+
+interface OverlayInsets {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+const NO_OVERLAY_INSETS: OverlayInsets = { top: 0, right: 0, bottom: 0, left: 0 };
+
+/**
+ * How much of the stage's bottom edge the legend and the zoom controls
+ * cover (pixels, with some clearance), kept up to date as they and the stage
+ * change size. The 3D view frames the graph in the rest.
+ */
+function useOverlayInsets(stageRef: { current: HTMLDivElement | null }): OverlayInsets {
+  const [insets, setInsets] = useState<OverlayInsets>(NO_OVERLAY_INSETS);
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage || typeof ResizeObserver === "undefined") return;
+    const overlays = () =>
+      Array.from(stage.querySelectorAll<HTMLElement>(":scope > .legend, :scope > .zoom-controls"));
+    const measure = () => {
+      const box = stage.getBoundingClientRect();
+      let top = box.bottom;
+      for (const element of overlays()) {
+        top = Math.min(top, element.getBoundingClientRect().top);
+      }
+      const bottom = top < box.bottom ? Math.round(box.bottom - top + OVERLAY_CLEARANCE) : 0;
+      setInsets((previous) =>
+        previous.bottom === bottom ? previous : { ...NO_OVERLAY_INSETS, bottom },
+      );
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(stage);
+    for (const element of overlays()) observer.observe(element);
+    measure();
+    return () => {
+      observer.disconnect();
+    };
+  }, [stageRef]);
+  return insets;
 }
 
 /** The side panel while several entities are selected. */

@@ -52,7 +52,9 @@ import {
   dollyToward,
   easeInOut,
   flyTo,
-  frameSphere,
+  frameSphereInArea,
+  NO_INSETS,
+  type FrameInsets,
   interpolateCamera,
   moveTarget,
   orbit,
@@ -63,7 +65,7 @@ import {
 import { depthAnimationMs, type RulerTick } from "./depth";
 import { attachInteractions3d } from "./interactions3d";
 import { GRAPH_HELP_3D, keyAction3d, TURN_STEP } from "./keyboard3d";
-import { MAX_LABELS, selectLabels, type LabelCandidate } from "./labels3d";
+import { MAX_LABELS, selectLabels, type KnotMark, type LabelCandidate } from "./labels3d";
 import { lookAtOnMap } from "./minimap3d";
 import { dragDelta, focusOrder3d, knotScreenRadius, nodesInScreenRect, pickNode } from "./picking";
 import { clipPlanes, projectAll, viewProjection, type Viewport } from "./projection";
@@ -125,6 +127,11 @@ export interface GraphCanvas3DProps {
   pulse?: ReadonlySet<string>;
   palette?: GraphPalette;
   theme?: Theme;
+  /**
+   * What the overlays (legend, controls) cover at the canvas's edges: the
+   * initial view and Reset view frame the graph in the rest.
+   */
+  frameInsets?: FrameInsets;
   ref?: Ref<GraphCanvas3DHandle>;
 }
 
@@ -138,6 +145,8 @@ const FLY_DISTANCE_RATIO = 0.6;
 const RESET_MS = 450;
 /** Knots are labelled beside them, group counts over them; labels this far beyond a group count. */
 const RULER_OFFSET = 0.08;
+/** Room kept left of the depth ruler's marks for their text (pixels). */
+const RULER_TEXT_PX = 72;
 const WARP_THREADS = 9;
 
 function prefersReducedMotion(): boolean {
@@ -187,6 +196,8 @@ interface Runtime {
   depthDuration: number;
   extent: Extent;
   autoFrame: boolean;
+  /** The viewport and insets the automatic framing last fitted. */
+  frameKey: string;
   animation: Animation | null;
   drag: Drag | null;
   frozenSpan: number | null;
@@ -195,6 +206,8 @@ interface Runtime {
   depthScratch: Float32Array;
   viewport: Viewport;
   candidates: LabelCandidate[];
+  /** Every knot in front of the camera: labels keep clear of them. */
+  knots: KnotMark[];
   frame: number;
   /** A 2D camera just applied: what it showed must stay on screen (see onFrame). */
   keepInView: GraphCamera | null;
@@ -287,6 +300,17 @@ function placeLabels(
   const anyFocus = computeHighlight(graph, state).focus !== null;
   const candidates = r.candidates;
   candidates.length = 0;
+  const knots = r.knots;
+  knots.length = 0;
+  for (let i = 0; i < model.count; i += 1) {
+    if ((r.projected[i * 3 + 2] ?? 0) > 0) {
+      knots.push({
+        x: r.projected[i * 3] ?? 0,
+        y: r.projected[i * 3 + 1] ?? 0,
+        radius: r.radii[i] ?? 0,
+      });
+    }
+  }
   for (let i = 0; i < model.count; i += 1) {
     const id = model.ids[i] ?? "";
     const group = model.isGroup[i] === 1;
@@ -306,7 +330,7 @@ function placeLabels(
       centered: group,
     });
   }
-  const placed = selectLabels(candidates, viewport, MAX_LABELS);
+  const placed = selectLabels(candidates, viewport, MAX_LABELS, knots);
   while (pool.length < placed.length) {
     const element = document.createElement("span");
     element.className = "graph3d-label";
@@ -427,6 +451,7 @@ export function GraphCanvas3D({
   pulse = NO_PULSE,
   palette = DEFAULT_GRAPH_PALETTE,
   theme = "dark",
+  frameInsets = NO_INSETS,
   ref,
 }: GraphCanvas3DProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -448,6 +473,7 @@ export function GraphCanvas3D({
     depthDuration: 0,
     extent: { cx: 0, cy: 0, radius: 1 },
     autoFrame: initialCamera === null,
+    frameKey: "",
     animation: null,
     drag: null,
     frozenSpan: null,
@@ -456,6 +482,7 @@ export function GraphCanvas3D({
     depthScratch: new Float32Array(0),
     viewport: { width: 1, height: 1 },
     candidates: [],
+    knots: [],
     frame: 0,
     keepInView: null,
   });
@@ -485,6 +512,7 @@ export function GraphCanvas3D({
     onFocusChange,
     onContextLost,
     onContextRestored,
+    frameInsets,
   };
   const propsRef = useRef(props);
   useEffect(() => {
@@ -539,12 +567,35 @@ export function GraphCanvas3D({
   );
   const framed = useCallback(
     (direction: Vec3 = RESET_DIRECTION, up: Vec3 = [0, 1, 0]): Camera3D | null => {
-      const model = runtime.current.model;
+      const r = runtime.current;
+      const model = r.model;
       if (!model || model.count === 0) return null;
-      const { width, height } = runtime.current.viewport;
-      return frameSphere(
-        boundingSphere(model.positions, model.count),
-        width / Math.max(height, 1),
+      const { width, height } = r.viewport;
+      const p = propsRef.current;
+      // The depth ruler's marks are part of the picture: frame them too, and
+      // keep room on the left for their text (drawn left of each mark).
+      const ruler = p.depth === "flat" ? [] : model.ticks;
+      let points: ArrayLike<number> = model.positions;
+      let insets = p.frameInsets;
+      if (ruler.length > 0) {
+        const { cx, cy, radius } = r.extent;
+        const margin = radius * RULER_OFFSET;
+        const all = new Float32Array((model.count + ruler.length) * 3);
+        all.set(model.positions.subarray(0, model.count * 3));
+        ruler.forEach((tick, n) => {
+          all.set(
+            [cx - radius - margin, cy - radius - margin, tick.z * model.span],
+            (model.count + n) * 3,
+          );
+        });
+        points = all;
+        insets = { ...insets, left: insets.left + RULER_TEXT_PX };
+      }
+      return frameSphereInArea(
+        boundingSphere(points, model.count + ruler.length),
+        width,
+        height,
+        insets,
         direction,
         up,
       );
@@ -636,6 +687,12 @@ export function GraphCanvas3D({
       for (const event of structural) graph.off(event, changed);
     };
   }, [graph, invalidate]);
+
+  // The overlays changed size: the automatic framing fits the new area.
+  const insetsKey = `${String(frameInsets.top)},${String(frameInsets.right)},${String(frameInsets.bottom)},${String(frameInsets.left)}`;
+  useEffect(() => {
+    invalidate();
+  }, [insetsKey, invalidate]);
 
   // What is drawn, and how, changed.
   useEffect(() => {
@@ -739,9 +796,19 @@ export function GraphCanvas3D({
         writeThreadPositions(model, buffers.threads);
         writeWarp(buffers, model, r.extent, p.depth);
         buffers.positionVersion += 1;
-        if (r.autoFrame) {
+        if (r.autoFrame) r.frameKey = "";
+      }
+      // Until the camera is moved, keep the whole graph framed: after a
+      // layout change, and when the viewport or the overlays change size.
+      if (r.autoFrame) {
+        const insets = p.frameInsets;
+        const key = `${String(viewport.width)}x${String(viewport.height)}:${String(insets.top)},${String(insets.right)},${String(insets.bottom)},${String(insets.left)}`;
+        if (r.frameKey !== key) {
           const next = framed();
-          if (next) write(next);
+          if (next) {
+            r.frameKey = key;
+            write(next);
+          }
         }
       }
 

@@ -122,6 +122,37 @@ export function releaseFrame(sigma: AnySigma): void {
   if (sigma.getCustomBBox()) sigma.setCustomBBox(null);
 }
 
+/** Insets are ignored when they would leave less than this share of the viewport's height. */
+const MIN_FIT_SHARE = 0.4;
+
+/**
+ * The camera state that shows the whole graph (as sigma's reset does) in
+ * the part of the viewport above `bottomInset` pixels (what the legend and
+ * zoom controls cover), centered there with the same `padding` (sigma's
+ * stagePadding) all round: zoomed out so the graph's height at reset,
+ * height − 2 × padding, becomes height − inset − 2 × padding, and moved
+ * down so the graph's center sits mid-way above the inset. Null when no
+ * inset applies: sigma's own reset is the fit then.
+ */
+export function fittedCameraState(
+  sigma: AnySigma,
+  bottomInset: number,
+  padding = 0,
+): { x: number; y: number; ratio: number; angle: number } | null {
+  const { width, height } = sigma.getDimensions();
+  const room = height - bottomInset - 2 * padding;
+  if (!(bottomInset > 0) || height - bottomInset < height * MIN_FIT_SHARE || room <= 0) {
+    return null;
+  }
+  const ratio = (height - 2 * padding) / room;
+  const reset = { x: 0.5, y: 0.5, ratio: 1, angle: 0 };
+  const center = sigma.viewportToFramedGraph(
+    { x: width / 2, y: height / 2 + (ratio * bottomInset) / 2 },
+    { cameraState: reset },
+  );
+  return { x: center.x, y: center.y, ratio, angle: 0 };
+}
+
 /** The camera in graph terms: the point at the center, graph units per pixel, the rotation. */
 export interface GraphCamera {
   x: number;

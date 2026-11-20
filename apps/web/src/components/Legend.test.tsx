@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -55,6 +55,21 @@ describe("Legend", () => {
     expect(marks).toHaveTextContent("Low confidence");
     expect(marks).toHaveTextContent("Pinned");
     // A key, not more toggles.
-    expect(screen.getAllByRole("button")).toHaveLength(types.length);
+    expect(within(marks).queryAllByRole("button")).toHaveLength(0);
+  });
+
+  it("folds into a Legend button that opens and closes it (shown on narrow stages)", async () => {
+    renderLegend();
+    const toggle = screen.getByRole("button", { name: "Legend" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    const body = document.getElementById(toggle.getAttribute("aria-controls") ?? "");
+    expect(body).toContainElement(screen.getByRole("button", { name: /Domain/ }));
+    const legend = screen.getByRole("region", { name: "Entity types" });
+    expect(legend).not.toHaveClass("legend--open");
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(legend).toHaveClass("legend--open");
+    await userEvent.click(toggle);
+    expect(legend).not.toHaveClass("legend--open");
   });
 });

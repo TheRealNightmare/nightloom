@@ -342,20 +342,9 @@ try {
     await page.goto(url);
     return page;
   };
-  /**
-   * Scrolls the case header's badges up to the top bar (the title goes
-   * under it), so all of the graph is on screen. The Purpose panel is
-   * opened first: it gives the page the room to scroll that far.
-   */
+  /** Captures start at the top of the page: the case header and all of the graph. */
   const showGraph = async (page) => {
-    await page.evaluate(() => {
-      for (const details of document.querySelectorAll("main details")) details.open = true;
-    });
-    await page.evaluate(() => {
-      const badges = document.querySelector(".case-header__meta");
-      if (!badges) return;
-      window.scrollTo(0, badges.getBoundingClientRect().top + window.scrollY - 76);
-    });
+    await page.evaluate(() => window.scrollTo(0, 0));
   };
   const graphReady = async (page) => {
     await page.getByTestId("graph-canvas").waitFor();

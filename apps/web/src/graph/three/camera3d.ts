@@ -231,6 +231,61 @@ export function frameSphere(
   };
 }
 
+/** Pixels at a viewport's edges that overlays cover (legend, controls, ruler marks). */
+export interface FrameInsets {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+export const NO_INSETS: FrameInsets = { top: 0, right: 0, bottom: 0, left: 0 };
+
+/** Insets are ignored on an axis where they would leave less than this share of the viewport. */
+const MIN_AREA_SHARE = 0.4;
+
+/**
+ * Like {@link frameSphere}, on a `width` × `height` viewport whose edges
+ * `insets` covers: the whole sphere fits (with {@link FRAME_MARGIN}) in the
+ * area left uncovered and is centered in it.
+ */
+export function frameSphereInArea(
+  sphere: Sphere,
+  width: number,
+  height: number,
+  insets: FrameInsets = NO_INSETS,
+  direction: Vec3 = RESET_DIRECTION,
+  up: Vec3 = [0, 1, 0],
+): Camera3D {
+  const w = Math.max(width, 1);
+  const h = Math.max(height, 1);
+  const horizontal = insets.left + insets.right;
+  const vertical = insets.top + insets.bottom;
+  const [left, areaW] =
+    horizontal > 0 && w - horizontal >= w * MIN_AREA_SHARE ? [insets.left, w - horizontal] : [0, w];
+  const [top, areaH] =
+    vertical > 0 && h - vertical >= h * MIN_AREA_SHARE ? [insets.top, h - vertical] : [0, h];
+  // Half the angle the area spans, vertically and horizontally (a pixel is
+  // the same angle both ways: the projection's vertical scale is h).
+  const half = Math.atan((TAN_HALF_FOV * Math.min(areaW, areaH)) / h);
+  const distance = Math.min(
+    Math.max((sphere.radius * FRAME_MARGIN) / Math.sin(half), MIN_DISTANCE),
+    MAX_DISTANCE,
+  );
+  const position = add(sphere.center, scale(normalize(direction), distance));
+  const basis = basisOf({ position, target: sphere.center, up });
+  // Shift the camera so the sphere's center shows at the area's center.
+  const unit = worldPerPixel(distance, h);
+  const dx = left + areaW / 2 - w / 2;
+  const dy = top + areaH / 2 - h / 2;
+  const shift = add(scale(basis.right, -dx * unit), scale(basis.up, dy * unit));
+  return {
+    position: add(position, shift),
+    target: add(sphere.center, shift),
+    up: [...up],
+  };
+}
+
 /**
  * The camera of a fly-to: looking at `point` from the current direction,
  * at `distance` (closer than now, never further).
