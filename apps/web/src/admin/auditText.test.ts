@@ -129,6 +129,8 @@ describe("describeAuditEvent", () => {
       ev("job.create", { reason: "too_many_jobs" }, { outcome: "failure" }),
       "tried to run a Shuttle (too many jobs)",
     ],
+    [ev("view.create"), "saved a graph view"],
+    [ev("view.delete"), "deleted a saved graph view"],
     [ev("job.cancel"), "cancelled a Shuttle job"],
     [ev("job.finish", { status: "succeeded" }), "finished a Shuttle job (succeeded)"],
     [ev("job.finish", {}), "finished a Shuttle job (success)"],

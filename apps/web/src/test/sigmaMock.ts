@@ -212,8 +212,9 @@ export class FakeSigma {
     };
   }
 
-  viewportToGraph({ x, y }: Point): Point {
-    const { x: cx, y: cy, ratio, angle } = this.camera.getState();
+  /** Like sigma's: `override.cameraState` stands in for the camera. */
+  viewportToGraph({ x, y }: Point, override?: { cameraState?: CameraState }): Point {
+    const { x: cx, y: cy, ratio, angle } = override?.cameraState ?? this.camera.getState();
     const dx = x - VIEWPORT.width / 2;
     const dy = y - VIEWPORT.height / 2;
     const cos = Math.cos(-angle);
@@ -225,6 +226,10 @@ export class FakeSigma {
 
   viewportToFramedGraph(point: Point): Point {
     return this.viewportToGraph(point);
+  }
+
+  graphToFramedGraph(point: Point): Point {
+    return { ...point };
   }
 
   getViewportZoomedState(at: Point, ratio: number): CameraState {

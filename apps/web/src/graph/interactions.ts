@@ -25,6 +25,7 @@ import type Sigma from "sigma";
 import {
   dragRotation,
   isRectTooSmall,
+  normalizeAngle,
   nodesInRect,
   rectFromPoints,
   rotateBySteps,
@@ -119,6 +120,57 @@ export function freezeFrame(sigma: AnySigma): void {
 /** Lets the picture fit the whole graph again (Reset view). */
 export function releaseFrame(sigma: AnySigma): void {
   if (sigma.getCustomBBox()) sigma.setCustomBBox(null);
+}
+
+/** The camera in graph terms: the point at the center, graph units per pixel, the rotation. */
+export interface GraphCamera {
+  x: number;
+  y: number;
+  ratio: number;
+  angle: number;
+}
+
+/** Graph units per screen pixel with the camera at `ratio` 1 (or as it is now). */
+function unitsPerPixel(sigma: AnySigma, cameraState?: { ratio: number }): number {
+  const center = viewportCenter(sigma);
+  const override = cameraState
+    ? { cameraState: { ...sigma.getCamera().getState(), ...cameraState } }
+    : undefined;
+  const a = sigma.viewportToGraph(center, override);
+  const b = sigma.viewportToGraph({ x: center.x + 1, y: center.y }, override);
+  return Math.hypot(b.x - a.x, b.y - a.y);
+}
+
+/**
+ * Where the camera looks, independent of sigma's framing (which follows the
+ * graph's extent): a saved view means the same on another screen or layout.
+ */
+export function graphCamera(sigma: AnySigma): GraphCamera {
+  const center = sigma.viewportToGraph(viewportCenter(sigma));
+  return {
+    x: center.x,
+    y: center.y,
+    ratio: unitsPerPixel(sigma),
+    angle: normalizeAngle(sigma.getCamera().getState().angle),
+  };
+}
+
+/**
+ * Moves the camera to `target` (see {@link graphCamera}), over `durationMs`
+ * (0: at once). The frame is frozen first, so the picture stays put while a
+ * layout moves nodes that are not pinned.
+ */
+export function moveCamera(sigma: AnySigma, target: GraphCamera, durationMs: number): void {
+  sigma.refresh();
+  freezeFrame(sigma);
+  const camera = sigma.getCamera();
+  const framed = sigma.graphToFramedGraph({ x: target.x, y: target.y });
+  const atOne = unitsPerPixel(sigma, { ratio: 1 });
+  const ratio = camera.getBoundedRatio(atOne > 0 ? target.ratio / atOne : 1);
+  const state = { x: framed.x, y: framed.y, ratio, angle: target.angle };
+  if (durationMs > 0)
+    void camera.animate(state, { duration: durationMs, easing: "quadraticInOut" });
+  else camera.setState(state);
 }
 
 /** A node's position on screen (null when it is not in the graph). */

@@ -1967,6 +1967,107 @@ select.field__input {
   background: var(--line);
 }
 
+/* Saved views: the Views menu of a case graph, its toast. */
+.saved-views__panel {
+  width: min(340px, calc(100vw - 32px));
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+}
+
+.saved-views__menu {
+  display: grid;
+}
+
+.saved-views__status,
+.saved-views__empty {
+  margin: 6px 10px;
+  font-size: 14px;
+}
+
+.saved-views__empty {
+  color: var(--muted);
+}
+
+.saved-views__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+}
+
+.saved-views__apply {
+  display: grid;
+  gap: 2px;
+  min-height: var(--touch-target);
+  padding: 4px 10px;
+}
+
+.saved-views__name {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-views__meta {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-views__more {
+  justify-content: center;
+  min-width: var(--control-height);
+  padding: 0;
+  font-size: 18px;
+}
+
+.saved-views__more[aria-expanded="true"] {
+  background: var(--surface-2);
+}
+
+.saved-views__submenu {
+  display: grid;
+  grid-column: 1 / -1;
+  margin: 0 0 4px 12px;
+  padding-left: 6px;
+  border-left: 2px solid var(--hair);
+}
+
+.saved-views__submenu .menu__item {
+  padding-left: 10px;
+}
+
+.saved-views__danger {
+  color: var(--danger);
+}
+
+.saved-views__save {
+  padding-left: 10px;
+  color: var(--brass-text);
+}
+
+.saved-views__toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  z-index: 20;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  max-width: calc(100vw - 32px);
+  margin: 0;
+  padding: 8px 14px;
+  transform: translateX(-50%);
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-left: 3px solid var(--brass);
+  border-radius: var(--radius-control);
+  color: var(--text);
+  font-size: 14px;
+}
+
 .shortcuts {
   display: grid;
   gap: 12px;

@@ -18,7 +18,8 @@ export type KeyAction =
   | { kind: "select" }
   | { kind: "togglePin" }
   | { kind: "escape" }
-  | { kind: "help" };
+  | { kind: "help" }
+  | { kind: "views" };
 
 export interface KeyInput {
   key: string;
@@ -77,6 +78,9 @@ export function keyAction(input: KeyInput, hasFocusedNode: boolean): KeyAction |
       return { kind: "escape" };
     case "?":
       return { kind: "help" };
+    case "v":
+    case "V":
+      return { kind: "views" };
     default:
       return null;
   }
@@ -106,6 +110,7 @@ export const SHORTCUTS: readonly ShortcutGroup[] = [
       { keys: ["P"], description: "Pin or unpin the focused entity" },
       { keys: ["Shift+arrows"], description: "Move the focused pinned entity by 10 px" },
       { keys: ["Esc"], description: "Leave the entity (or clear the selection)" },
+      { keys: ["V"], description: "Open the saved views of the case" },
       { keys: ["?"], description: "Show these shortcuts" },
     ],
   },

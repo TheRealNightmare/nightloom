@@ -74,6 +74,32 @@ describe("PinStore", () => {
     expect(store.size).toBe(0);
     expect(store.ids()).toEqual([]);
   });
+
+  it("replaces every pin with a saved view's", () => {
+    const store = new PinStore();
+    store.loaded = true;
+    const listener = vi.fn();
+    store.subscribe(listener);
+    store.pin([
+      ["domain:a.example", [1, 1]],
+      [groupId("domain:a.example", "url"), [5, 5]],
+    ]);
+    store.replace({
+      "domain:b.example": [2, 2],
+      "domain:c.example": [Number.NaN, 1] as [number, number],
+    });
+    expect(store.ids()).toEqual(["domain:b.example"]);
+    expect(store.get("domain:b.example")).toEqual([2, 2]);
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a view's pins over the saved layout that arrives after them", () => {
+    const store = new PinStore();
+    store.pin([["domain:a.example", [1, 1]]]);
+    store.replace({ "domain:b.example": [2, 2] });
+    store.load({ "domain:c.example": [3, 3] });
+    expect(store.saved()).toEqual({ "domain:b.example": [2, 2] });
+  });
 });
 
 describe("applyPins", () => {

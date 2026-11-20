@@ -21,11 +21,14 @@ import type { Point, Rect } from "./geometry";
 import {
   attachInteractions,
   freezeFrame,
+  graphCamera,
+  moveCamera,
   nodeOnScreen,
   releaseFrame,
   panBy,
   rotateView,
   zoomStep,
+  type GraphCamera,
   type InteractionHandlers,
 } from "./interactions";
 import { keyAction } from "./keyboard";
@@ -56,6 +59,10 @@ export interface GraphCanvasHandle {
   zoomOut: () => void;
   /** Rotates the view by `steps` × 15° (positive: clockwise). */
   rotate: (steps: number) => void;
+  /** Where the camera looks, in graph terms (null until the graph is drawn). */
+  getCamera: () => GraphCamera | null;
+  /** Moves the camera there over `durationMs` (0: at once). */
+  setCamera: (camera: GraphCamera, durationMs: number) => void;
 }
 
 export interface GraphCanvasProps {
@@ -77,6 +84,10 @@ export interface GraphCanvasProps {
   onClearSelection?: () => void;
   /** The ? key. */
   onShowShortcuts?: () => void;
+  /** The V key (saved views). */
+  onOpenViews?: () => void;
+  /** Whether the graph is drawn (sigma in place); called when that changes. */
+  onReadyChange?: (ready: boolean) => void;
   /** What the mouse wheel does (see ./wheel). */
   wheelSetting?: WheelSetting;
   showMinimap?: boolean;
@@ -137,6 +148,8 @@ export function GraphCanvas({
   onContextMenu = NO_OP,
   onClearSelection = NO_OP,
   onShowShortcuts = NO_OP,
+  onOpenViews = NO_OP,
+  onReadyChange = NO_OP,
   wheelSetting = "auto",
   showMinimap = false,
   showAllLabels = false,
@@ -332,6 +345,15 @@ export function GraphCanvas({
     };
   }, [graph, placeRing]);
 
+  const readyRef = useRef(onReadyChange);
+  useEffect(() => {
+    readyRef.current = onReadyChange;
+  });
+  const ready = sigmaInstance !== null;
+  useEffect(() => {
+    readyRef.current(ready);
+  }, [ready]);
+
   useEffect(() => {
     showAllLabelsRef.current = showAllLabels;
     sigmaInstance?.setSetting(
@@ -453,6 +475,10 @@ export function GraphCanvas({
         event.preventDefault();
         onShowShortcuts();
         return;
+      case "views":
+        event.preventDefault();
+        onOpenViews();
+        return;
       default:
         break;
     }
@@ -532,6 +558,14 @@ export function GraphCanvas({
       rotate(steps) {
         const sigma = sigmaRef.current;
         if (sigma) rotateView(sigma, steps);
+      },
+      getCamera() {
+        const sigma = sigmaRef.current;
+        return sigma ? graphCamera(sigma) : null;
+      },
+      setCamera(camera, durationMs) {
+        const sigma = sigmaRef.current;
+        if (sigma) moveCamera(sigma, camera, durationMs);
       },
     }),
     [],

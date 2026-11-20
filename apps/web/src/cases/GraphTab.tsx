@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router";
 
 import { can } from "../api/cases";
 import { RequestAbortedError } from "../api/client";
@@ -6,8 +7,10 @@ import { DEFAULT_GRAPH_LIMIT, getCaseGraph, getSchema, type Schema } from "../ap
 import { isActive, type Job, type ShuttleInfo } from "../api/shuttles";
 import { TypeSummary, type GraphSummary } from "../components/SidePanel";
 import type { EntityNode, InvestigationGraph } from "../domain/entities";
+import { useAuth } from "../auth/context";
 import type { FocusRequest } from "../graph/GraphView";
 import { useUrlFilters } from "../graph/useUrlFilters";
+import { VIEW_PARAM } from "../graph/viewSnapshot";
 import { useCase } from "./caseContext";
 import { describeCaseError } from "./errors";
 import { Loading } from "./Feedback";
@@ -28,6 +31,7 @@ import {
   withRelationship,
 } from "./graph/mapping";
 import { RunShuttles } from "./graph/RunShuttles";
+import { SavedViews } from "./graph/SavedViews";
 import { graphSummaryText, readOnlyReason } from "./graph/text";
 import { useCaseJobs } from "./graph/useCaseJobs";
 
@@ -82,6 +86,21 @@ export function GraphTab() {
   // Filters live in the query string: shareable, and they survive a reload.
   const [filters, updateFilters] = useUrlFilters();
   const layout = useMemo(() => caseLayout(caseId), [caseId]);
+  // `?view=<id>` opens a saved view; it is taken out of the URL once applied.
+  const [params, setParams] = useSearchParams();
+  const deepLinkId = params.get(VIEW_PARAM);
+  const takeDeepLink = useCallback(() => {
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.delete(VIEW_PARAM);
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setParams]);
+  const { state: auth } = useAuth();
+  const userId = auth.status === "signed_in" ? auth.user.id : null;
 
   // A finished job may have changed the graph: load it again (the view syncs
   // incrementally), and highlight what a successful job created or updated.
@@ -225,6 +244,18 @@ export function GraphTab() {
 
   const { data, schema, truncated } = load;
   const empty = data.nodes.length === 0;
+  const entityIds = new Set(data.nodes.map((node) => node.id));
+  const savedViews = (
+    <SavedViews
+      caseId={caseId}
+      canSave={canEdit}
+      isOwner={current.my_role === "owner"}
+      userId={userId}
+      hasEntity={(id) => entityIds.has(id)}
+      deepLinkId={deepLinkId}
+      onDeepLinkTaken={takeDeepLink}
+    />
+  );
 
   const summaryText = (
     <p className="case-graph__summary" role="status" aria-live="polite">
@@ -365,6 +396,7 @@ export function GraphTab() {
             filters={filters}
             onFiltersChange={updateFilters}
             layout={layout}
+            savedViews={savedViews}
             grades={schema.admiralty}
             toolbar={
               <>

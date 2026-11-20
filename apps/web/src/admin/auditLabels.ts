@@ -33,6 +33,9 @@ export const ACTION_LABELS: Record<AuditAction, string> = {
   "entity.create": "Entity added",
   "entity.delete": "Entity deleted",
   "relationship.create": "Relationship added",
+  "view.create": "Saved view created",
+  "view.update": "Saved view changed",
+  "view.delete": "Saved view deleted",
   "job.create": "Shuttle job queued",
   "job.cancel": "Shuttle job cancelled",
   "job.finish": "Shuttle job finished",
@@ -161,6 +164,10 @@ export function describeAuditEvent(event: AuditEvent, users: readonly User[] = [
       return failed
         ? `tried to run ${text(details["shuttle"]) ?? "a Shuttle"}${reasonSuffix(details)}`
         : `ran ${text(details["shuttle"]) ?? "a Shuttle"}`;
+    case "view.create":
+    case "view.update":
+    case "view.delete":
+      return describeEvent(event);
     case "job.cancel":
       return "cancelled a Shuttle job";
     case "job.finish":

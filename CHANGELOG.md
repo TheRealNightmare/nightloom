@@ -13,6 +13,7 @@ How releases are cut is described in [docs/RELEASING.md](docs/RELEASING.md).
 - 2D graph interactions: drag an entity to pin it where you drop it (or a whole selection), saved per user and case (`GET`/`PUT /cases/{id}/layout`, migration `0007_graph_layouts`); unpin from the side panel, a node menu or *View → Unpin all*.
 - Zoom toward the pointer, trackpad two-finger panning (with a *Scroll wheel* setting), rotation (Alt or right-drag, ⟲ / ⟳, twist), Ctrl/⌘+click and Shift+drag selection, a minimap, and full keyboard control with announcements and a shortcuts dialog.
 - Shorter labels on the canvas: certificates show their subject's common name or a short fingerprint, long values are cut in the middle.
+- Saved views: named snapshots of a case graph's camera, filters, expanded groups and pins, shared with the case's members (`/cases/{id}/views`, migration `0008_saved_views`, audited as `view.create` / `view.update` / `view.delete` without names). A *Views* menu (or <kbd>V</kbd>) applies one with *Undo*; editors and owners save views, and a view's creator or an owner updates, renames or deletes it; *Copy link* shares `?view=<id>`.
 
 ## [0.1.0] - 2026-11-19
 

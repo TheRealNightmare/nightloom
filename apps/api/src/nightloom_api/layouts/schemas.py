@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field
 
 from nightloom_core.normalize import NormalizationError, parse_key
 
@@ -23,31 +23,38 @@ TOO_MANY = f"positions may hold at most {MAX_POSITIONS:,} entries."
 NOT_A_KEY = "positions must be keyed by canonical entity keys."
 
 
+def not_too_many_positions(value: Any) -> Any:
+    """Refuses a map of more than MAX_POSITIONS entries (before any key is parsed)."""
+    if isinstance(value, dict) and len(value) > MAX_POSITIONS:
+        raise ValueError(TOO_MANY)
+    return value
+
+
+def canonical_position_keys(value: dict[str, list[float]]) -> dict[str, list[float]]:
+    """Refuses keys that are not canonical entity keys, without echoing them."""
+    for key in value:
+        try:
+            parse_key(key)
+        except NormalizationError as error:
+            # The key itself is not echoed: it may be person-related.
+            raise ValueError(NOT_A_KEY) from error
+    return value
+
+
+# Entity key -> [x, y]: what a layout, and a saved view, stores.
+Positions = Annotated[
+    dict[str, Position],
+    BeforeValidator(not_too_many_positions),
+    AfterValidator(canonical_position_keys),
+]
+
+
 class LayoutIn(BaseModel):
     """The caller's pins in the case, replacing what was stored."""
 
     model_config = ConfigDict(extra="forbid")
 
-    positions: dict[str, Position]
-
-    @field_validator("positions", mode="before")
-    @classmethod
-    def _not_too_many(cls, value: Any) -> Any:
-        # Checked before any key is parsed, so an oversized map costs nothing.
-        if isinstance(value, dict) and len(value) > MAX_POSITIONS:
-            raise ValueError(TOO_MANY)
-        return value
-
-    @field_validator("positions")
-    @classmethod
-    def _canonical_keys(cls, value: dict[str, list[float]]) -> dict[str, list[float]]:
-        for key in value:
-            try:
-                parse_key(key)
-            except NormalizationError as error:
-                # The key itself is not echoed: it may be person-related.
-                raise ValueError(NOT_A_KEY) from error
-        return value
+    positions: Positions
 
 
 class LayoutOut(BaseModel):
