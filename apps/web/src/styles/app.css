@@ -1833,13 +1833,167 @@ select.field__input {
   outline-offset: 1.5px;
 }
 
+/* Zoom, rotation, reset and help: two columns in the bottom-right corner. */
 .zoom-controls {
   position: absolute;
   right: 12px;
   bottom: 12px;
   z-index: 2;
   display: grid;
+  grid-template-columns: repeat(2, auto);
   gap: 6px;
+}
+
+.zoom-controls__help {
+  font-weight: 600;
+}
+
+/* --- Graph interactions (U3) ---------------------------------------------- */
+
+/* The canvas takes keyboard focus: the ring is drawn inside its edge. */
+.graph-canvas:focus-visible {
+  outline-offset: -2px;
+}
+
+/* The keyboard focus ring around one node, positioned by GraphCanvas. */
+.graph-focus-ring {
+  position: absolute;
+  z-index: 1;
+  border: 2px solid var(--brass);
+  border-radius: var(--radius-round);
+  pointer-events: none;
+}
+
+/* Shift+drag selection rectangle. */
+.graph-selection {
+  position: absolute;
+  z-index: 1;
+  background: color-mix(in srgb, var(--brass) 10%, transparent);
+  border: 1px dashed var(--brass);
+  pointer-events: none;
+}
+
+/* Above the zoom controls (three rows of buttons). */
+.graph-minimap {
+  position: absolute;
+  right: 12px;
+  bottom: calc(12px + 3 * var(--control-height) + 2 * 6px + 8px);
+  z-index: 2;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.layout-status {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  z-index: 3;
+  margin: 0;
+  padding: 4px 10px;
+  transform: translateX(-50%);
+  background: var(--surface);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-control);
+  font-size: 13px;
+}
+
+.view-menu {
+  position: relative;
+}
+
+/* Menus: the View menu and a node's context menu. */
+.menu {
+  position: absolute;
+  z-index: 5;
+  display: grid;
+  min-width: 200px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+
+.view-menu .menu {
+  top: calc(100% + 4px);
+  left: 0;
+}
+
+.menu__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 10px 0 4px;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-chip);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+}
+
+.menu__item:hover:not(:disabled),
+.menu__item:focus-visible {
+  background: var(--surface-2);
+}
+
+.menu__item:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.menu__check {
+  display: inline-block;
+  width: 16px;
+  color: var(--brass-text);
+  text-align: center;
+}
+
+.menu__label {
+  margin: 4px 0 2px;
+  padding: 0 10px 0 26px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.menu__separator {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--line);
+}
+
+.shortcuts {
+  display: grid;
+  gap: 12px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.shortcuts__list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.shortcuts__row {
+  display: grid;
+  grid-template-columns: minmax(0, 14rem) 1fr;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.shortcuts__row dd {
+  margin: 0;
+}
+
+.shortcuts__or {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .stage__overlay {

@@ -8,6 +8,12 @@ How releases are cut is described in [docs/RELEASING.md](docs/RELEASING.md).
 
 ## [Unreleased]
 
+### Added
+
+- 2D graph interactions: drag an entity to pin it where you drop it (or a whole selection), saved per user and case (`GET`/`PUT /cases/{id}/layout`, migration `0007_graph_layouts`); unpin from the side panel, a node menu or *View → Unpin all*.
+- Zoom toward the pointer, trackpad two-finger panning (with a *Scroll wheel* setting), rotation (Alt or right-drag, ⟲ / ⟳, twist), Ctrl/⌘+click and Shift+drag selection, a minimap, and full keyboard control with announcements and a shortcuts dialog.
+- Shorter labels on the canvas: certificates show their subject's common name or a short fingerprint, long values are cut in the middle.
+
 ## [0.1.0] - 2026-11-19
 
 First release: self-hosted, passive collection of public infrastructure data into per-case investigation graphs.

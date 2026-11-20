@@ -7,6 +7,8 @@
  * first, synchronous slice; a 2,000-node graph settles over a second or two
  * while the page stays responsive. Nodes in `fixed` do not move, which is how
  * a newly added entity settles next to its neighbours without a full relayout.
+ * Nodes the user pinned (`pinned`, see ./pins) carry `fixed` permanently, so
+ * no run ever moves them.
  */
 import forceAtlas2, { type ForceAtlas2Settings } from "graphology-layout-forceatlas2";
 
@@ -69,7 +71,25 @@ export interface LayoutOptions {
   now?: () => number;
   /** Called after every slice, e.g. to measure. */
   onSlice?: (iterations: number, elapsedMs: number) => void;
+  /**
+   * At most this many iterations per slice (default: as many as fit in the
+   * budget). A small cap with a frame-paced `schedule` makes nodes glide to
+   * their place instead of jumping there.
+   */
+  maxPerSlice?: number;
 }
+
+/** Iterations per frame when unpinned nodes rejoin the layout (see GraphView). */
+export const GLIDE_ITERATIONS_PER_FRAME = 2;
+
+/** Schedules slices on animation frames (falls back to a timeout without one). */
+export const frameSchedule = (callback: () => void) => {
+  if (typeof requestAnimationFrame === "function")
+    requestAnimationFrame(() => {
+      callback();
+    });
+  else setTimeout(callback, 16);
+};
 
 const defaultSchedule = (callback: () => void) => {
   setTimeout(callback, 0);
@@ -85,6 +105,7 @@ export function startLayout(
     schedule = defaultSchedule,
     now = () => performance.now(),
     onSlice,
+    maxPerSlice = Infinity,
   }: LayoutOptions,
 ): LayoutRun {
   let remaining = graph.order < 2 ? 0 : clampIterations(iterations);
@@ -103,7 +124,10 @@ export function startLayout(
     if (state.finished) return;
     state.finished = true;
     for (const node of pinned) {
-      if (graph.hasNode(node)) graph.removeNodeAttribute(node, "fixed");
+      // A node the user pinned meanwhile stays fixed.
+      if (graph.hasNode(node) && graph.getNodeAttribute(node, "pinned") !== true) {
+        graph.removeNodeAttribute(node, "fixed");
+      }
     }
     resolve();
   };
@@ -116,8 +140,8 @@ export function startLayout(
     const settings = layoutSettings(graph);
     const start = now();
     let ran = 0;
-    while (remaining > 0) {
-      const count = Math.min(batch, remaining);
+    while (remaining > 0 && ran < maxPerSlice) {
+      const count = Math.min(batch, remaining, maxPerSlice - ran);
       const before = now();
       forceAtlas2.assign(graph, { iterations: count, settings });
       const took = now() - before;

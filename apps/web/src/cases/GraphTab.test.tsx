@@ -14,7 +14,7 @@ import {
 } from "../test/caseFixtures";
 import { clearCookies, FakeApi, json, noContent } from "../test/fakeApi";
 import { renderApp } from "../test/renderApp";
-import { FakeSigma } from "../test/sigmaMock";
+import { FakeSigma, waitForSigma } from "../test/sigmaMock";
 import { GRAPH_EMPTY_HINT, GRAPH_EMPTY_MESSAGE } from "./GraphTab";
 import { PERSON_ENTITIES_MESSAGE, PERSON_TYPES_DISABLED_HINT } from "./graph/AddEntityDialog";
 import { PERSON_RELATIONSHIP_MESSAGE } from "./graph/AddRelationshipDialog";
@@ -73,10 +73,7 @@ async function openGraph(options: ServeOptions = {}) {
 const summary = () => screen.getByText(/\d+ entit(y|ies), \d+ relationships?/);
 const details = () => screen.getByRole("complementary", { name: "Details" });
 
-async function sigma() {
-  await screen.findByTestId("graph-canvas");
-  return FakeSigma.latest();
-}
+const sigma = waitForSigma;
 
 async function select(key: string) {
   const instance = await sigma();
@@ -189,7 +186,7 @@ describe("read-only graphs", () => {
 
   it("viewers see the graph without edit controls", async () => {
     await openGraph({ role: "viewer", graph: graphOf([apex, www]) });
-    expect(await screen.findByTestId("graph-canvas")).toBeInTheDocument();
+    await sigma();
     expect(screen.getByText(/You have view access/)).toBeVisible();
     expect(screen.queryByRole("button", { name: "Add entity" })).not.toBeInTheDocument();
   });

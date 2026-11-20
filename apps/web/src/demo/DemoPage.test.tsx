@@ -2,15 +2,16 @@ import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { GRAPH_HELP } from "../graph/GraphCanvas";
 import { DIM_OPACITY } from "../graph/encoding";
-import { FakeSigma } from "../test/sigmaMock";
+import { FakeSigma, waitForSigma } from "../test/sigmaMock";
 import { DemoPage } from "./DemoPage";
 
 vi.mock("sigma", () => import("../test/sigmaMock"));
 
-function renderApp() {
+async function renderApp() {
   const view = render(<DemoPage />);
-  return { ...view, sigma: FakeSigma.latest() };
+  return { ...view, sigma: await waitForSigma() };
 }
 
 const details = () => screen.getByRole("complementary", { name: "Details" });
@@ -20,14 +21,14 @@ afterEach(() => {
 });
 
 describe("DemoPage", () => {
-  it("renders the graph and the overview", () => {
-    renderApp();
+  it("renders the graph and the overview", async () => {
+    await renderApp();
     expect(screen.getByTestId("graph-canvas")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Demo investigation" })).toBeVisible();
   });
 
-  it("shows a node's details when it is clicked, and clears them on the stage", () => {
-    const { sigma } = renderApp();
+  it("shows a node's details when it is clicked, and clears them on the stage", async () => {
+    const { sigma } = await renderApp();
     act(() => {
       sigma.emit("clickNode", { node: "asn:64496" });
     });
@@ -40,8 +41,8 @@ describe("DemoPage", () => {
     expect(screen.getByRole("heading", { name: "Demo investigation" })).toBeVisible();
   });
 
-  it("highlights the hovered node's neighbors and dims the rest", () => {
-    const { sigma } = renderApp();
+  it("highlights the hovered node's neighbors and dims the rest", async () => {
+    const { sigma } = await renderApp();
     const refreshes = sigma.refresh.mock.calls.length;
     act(() => {
       sigma.emit("enterNode", { node: "net:203.0.113.0/24" });
@@ -57,18 +58,20 @@ describe("DemoPage", () => {
     });
     // Only the hovered node's threads show their labels, and the canvas describes them.
     const canvas = screen.getByTestId("graph-canvas");
-    expect(canvas).toHaveAccessibleDescription(/^203\.0\.113\.0\/24: /);
+    // Described by its keyboard help, then the relationships on show.
+    expect(canvas).toHaveAccessibleDescription(/^Tab moves .* 203\.0\.113\.0\/24: /);
 
     act(() => {
       sigma.emit("leaveNode", { node: "net:203.0.113.0/24" });
     });
     expect(sigma.nodeView("domain:example.org")).toMatchObject({ opacity: 1 });
     expect(sigma.nodeView("domain:example.org")["labelVisibility"]).toBeUndefined();
-    expect(canvas).toHaveAccessibleDescription("");
+    expect(canvas.getAttribute("aria-describedby")?.split(" ")).toHaveLength(2);
+    expect(canvas).toHaveAccessibleDescription(`${GRAPH_HELP} `);
   });
 
   it("hides and shows an entity type from the legend", async () => {
-    const { sigma } = renderApp();
+    const { sigma } = await renderApp();
     const toggle = screen.getByRole("button", { name: /Certificate/ });
     await userEvent.click(toggle);
     expect(toggle).toHaveAttribute("aria-pressed", "false");
@@ -79,7 +82,7 @@ describe("DemoPage", () => {
   });
 
   it("finds a node, selects it and moves the camera to it", async () => {
-    const { sigma } = renderApp();
+    const { sigma } = await renderApp();
     await userEvent.type(screen.getByRole("combobox", { name: "Search entities" }), "vpn{Enter}");
     expect(within(details()).getByRole("heading", { level: 2 })).toHaveTextContent(
       "vpn.example.org",
@@ -91,7 +94,7 @@ describe("DemoPage", () => {
   });
 
   it("follows connections from the side panel", async () => {
-    const { sigma } = renderApp();
+    const { sigma } = await renderApp();
     act(() => {
       sigma.emit("clickNode", { node: "tech:react" });
     });
@@ -106,7 +109,7 @@ describe("DemoPage", () => {
   });
 
   it("resets the view", async () => {
-    const { sigma } = renderApp();
+    const { sigma } = await renderApp();
     act(() => {
       sigma.emit("clickNode", { node: "domain:example.org" });
     });
@@ -120,19 +123,19 @@ describe("DemoPage", () => {
     );
   });
 
-  it("labels every node of a small graph", () => {
-    const { sigma } = renderApp();
+  it("labels every node of a small graph", async () => {
+    const { sigma } = await renderApp();
     expect(sigma.setSetting).toHaveBeenCalledWith("labelRenderedSizeThreshold", 0);
   });
 
-  it("tolerates a detached container instead of throwing", () => {
+  it("tolerates a detached container instead of throwing", async () => {
     // A frame can run after navigating away, before sigma is killed.
-    const { sigma } = renderApp();
+    const { sigma } = await renderApp();
     expect(sigma.options.settings).toMatchObject({ allowInvalidContainer: true });
   });
 
-  it("kills sigma on unmount", () => {
-    const { sigma, unmount } = renderApp();
+  it("kills sigma on unmount", async () => {
+    const { sigma, unmount } = await renderApp();
     unmount();
     expect(sigma.kill).toHaveBeenCalledOnce();
   });

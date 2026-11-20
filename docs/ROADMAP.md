@@ -46,7 +46,7 @@ A new look for the web UI, in steps that each keep every screen working.
 
 - [x] U1 Design tokens, light and dark theme, self-hosted fonts, every existing screen restyled
 - [x] U2 The 2D graph in the new look (knots and threads)
-- [ ] U3 2D graph interactions
+- [x] U3 2D graph interactions (drag and pin, saved per user and case; zoom, pan and rotation with mouse, trackpad, touch and keyboard; box selection and moving a selection; a minimap; shorter canvas labels)
 - [ ] U4 Saved views
 - [ ] U5 3D graph view
 - [ ] U6 The 3D loom on the sign-in page, and polish

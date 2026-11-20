@@ -50,7 +50,10 @@ describe("forced password change", () => {
     // No app chrome, and nothing else was asked for.
     expect(screen.queryByRole("navigation", { name: "Main" })).not.toBeInTheDocument();
     expect(api.callsTo("GET", "/cases")).toHaveLength(0);
-    expect(screen.getByLabelText("Temporary password")).toHaveFocus();
+    // The form focuses its first field in an effect, after the heading shows.
+    await waitFor(() => {
+      expect(screen.getByLabelText("Temporary password")).toHaveFocus();
+    });
   });
 
   it("cannot be dismissed with Escape", async () => {

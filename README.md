@@ -70,6 +70,27 @@ See [CONTRIBUTING.md](CONTRIBUTING.md#development-setup) for the full developmen
 
 Only members can see a case, admins included. The rules are described in [Cases](docs/ARCHITECTURE.md#cases).
 
+### Graph controls
+
+Drag an entity to move it: it stays **pinned** where you drop it (a thin brass ring and a pin by its label), and the automatic layout leaves it there. Your pins are saved for you alone, per case, so viewers can arrange their own view too, also in closed and archived cases. Unpin from the side panel, the entity's menu (right-click or long press) or *View → Unpin all*; the entity then glides back into the layout. Long labels are shortened on the canvas only (a certificate shows its subject's common name, or `c73e72dd…41a3`); the side panel and the search use the full value.
+
+| To | Mouse | Trackpad | Touch | Keyboard (graph focused) |
+| --- | --- | --- | --- | --- |
+| Select an entity | click | click | tap | <kbd>Tab</kbd> to it, <kbd>Enter</kbd> |
+| Add to / remove from the selection | <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+click | <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+click | | |
+| Select everything in a rectangle | <kbd>Shift</kbd>+drag on empty space | <kbd>Shift</kbd>+drag | | |
+| Move an entity (and pin it) | drag it; dragging a selected entity moves the whole selection | drag it | drag it | <kbd>P</kbd> to pin, then <kbd>Shift</kbd>+arrows (10 px) |
+| Pin or unpin | side panel, or right-click → *Pin* / *Unpin* | side panel | long press → *Pin* / *Unpin* | <kbd>P</kbd> |
+| Pan | drag empty space | two-finger scroll | one-finger drag | arrow keys |
+| Zoom (toward the pointer) | wheel | pinch | pinch | <kbd>+</kbd> / <kbd>−</kbd> |
+| Rotate | <kbd>Alt</kbd>+drag or right-drag on empty space; ⟲ / ⟳ buttons (15°) | <kbd>Option</kbd>+drag (macOS); twist (Safari) | two-finger twist | <kbd>Q</kbd> / <kbd>E</kbd> (15°) |
+| Reset zoom, position and rotation | *Reset view* button | *Reset view* | *Reset view* | <kbd>0</kbd> |
+| Leave the entity, then clear the selection | click empty space | | tap empty space | <kbd>Esc</kbd> |
+| Entity menu (pin, select neighbours, hide its type) | right-click | two-finger click | long press | |
+| All shortcuts | *?* button | | | <kbd>?</kbd> |
+
+A trackpad's two-finger scroll pans and a mouse wheel zooms. Browsers do not say which device sent a scroll, so Nightloom guesses from the scroll's shape; if it guesses wrong for your device, choose *View → Scroll wheel → Zoom* or *Pan*. *View → Minimap* shows an overview in the bottom-right corner (on by default above 60 entities): click or drag in it to move there. Keyboard focus moves through the entities in reading order (top-left to bottom-right) and a screen reader hears each one ("Domain www.example.org, 3 neighbours, pinned"); <kbd>Tab</kbd> past the last one leaves the graph.
+
 **Managing users (admins).** *Users* in the top bar lists every account with its role, status, last sign-in and creation date, with a search and role and status filters. *New user* asks for an email, a display name and a role (admin, analyst or viewer); Nightloom generates a temporary password and shows it **once**, with a copy button. Pass it on through a secure channel (not the same email or chat as the address); the user must replace it when they first sign in. On each row you can change the role, deactivate or reactivate the account (deactivating signs the user out everywhere; nobody can remove the last active admin or their own admin role), sign the user out everywhere (*Revoke sessions*), or *Reset password*, which ends all their sessions and shows a new temporary password once. You change your own password from the account menu instead. *Audit log* in the top bar shows every recorded action, newest first, filtered by action, outcome, actor, case ID or dates (UTC); *Details* shows an event's full record, and *Verify chain* checks that no event was changed or removed. See [Authentication](docs/ARCHITECTURE.md#authentication) and [Audit log](docs/ARCHITECTURE.md#audit-log).
 
 ### Available Shuttles

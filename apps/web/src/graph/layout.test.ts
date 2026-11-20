@@ -4,6 +4,7 @@ import { sampleGraph } from "../demo/sampleGraph";
 import { buildGraph } from "./buildGraph";
 import {
   clampIterations,
+  frameSchedule,
   fullLayoutIterations,
   LARGE_GRAPH,
   layoutSettings,
@@ -95,5 +96,44 @@ describe("startLayout", () => {
   it("does nothing for fewer than two nodes", () => {
     const graph = buildGraph({ nodes: sampleGraph.nodes.slice(0, 1), edges: [] });
     expect(startLayout(graph, { iterations: 10 }).finished).toBe(true);
+  });
+
+  it("never moves pinned nodes, and leaves them fixed after a run", () => {
+    const graph = buildGraph(sampleGraph, { layoutIterations: 20 });
+    const pinned = "asn:64496";
+    graph.mergeNodeAttributes(pinned, { pinned: true, fixed: true });
+    const before = positions(graph)[pinned];
+    // Even a run that lists the pinned node among its own fixed ones.
+    startLayout(graph, { iterations: 30, fixed: new Set([pinned]), now: stoppedClock });
+    startLayout(graph, { iterations: 30, now: stoppedClock });
+    expect(positions(graph)[pinned]).toEqual(before);
+    expect(graph.getNodeAttribute(pinned, "fixed")).toBe(true);
+  });
+
+  it("caps the iterations per slice, so nodes glide instead of jumping", async () => {
+    const graph = buildGraph(sampleGraph, { layoutIterations: 0 });
+    const slices: number[] = [];
+    const run = startLayout(graph, {
+      iterations: 10,
+      maxPerSlice: 2,
+      now: stoppedClock,
+      onSlice: (iterations) => slices.push(iterations),
+    });
+    expect(run.finished).toBe(false);
+    await run.done;
+    expect(slices).toEqual([2, 2, 2, 2, 2]);
+  });
+
+  it("schedules slices on animation frames", async () => {
+    const graph = buildGraph(sampleGraph, { layoutIterations: 0 });
+    const frames = vi.spyOn(window, "requestAnimationFrame");
+    const run = startLayout(graph, {
+      iterations: 4,
+      maxPerSlice: 1,
+      now: stoppedClock,
+      schedule: frameSchedule,
+    });
+    await run.done;
+    expect(frames).toHaveBeenCalledTimes(3);
   });
 });

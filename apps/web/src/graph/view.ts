@@ -39,6 +39,8 @@ export interface ViewState {
   hiddenTypes: ReadonlySet<EntityType>;
   /** Nodes the other filters hide (see ./filters), on top of the hidden types. */
   hiddenNodes?: ReadonlySet<string>;
+  /** A multi-selection (Ctrl/Cmd+click, a selection rectangle); drawn like the selected node. */
+  selectedNodes?: ReadonlySet<string>;
 }
 
 export const INITIAL_VIEW_STATE: ViewState = {
@@ -142,7 +144,7 @@ export function nodeView(
   const attributes = graph.getNodeAttributes(node);
   const { entity } = attributes;
   const isGroup = entity.group !== undefined;
-  const selected = node === state.selectedNode;
+  const selected = node === state.selectedNode || (state.selectedNodes?.has(node) ?? false);
   const pinned = attributes.pinned === true;
   const pulsing = pulse.has(node);
   const knot = { isGroup, selected, pinned };

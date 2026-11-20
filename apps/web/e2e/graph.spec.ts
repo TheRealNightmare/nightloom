@@ -166,8 +166,10 @@ test("edge labels appear only for the hovered entity's relationships", async ({ 
   await signIn(page);
   const canvas = page.getByTestId("graph-canvas");
   await expect(canvas).toBeVisible();
-  // At rest no relationship label is drawn, so the canvas describes none.
-  await expect(canvas).toHaveAccessibleDescription("");
+  // The canvas is described by its keyboard help, then the relationships whose
+  // labels it draws. At rest no relationship label is drawn: only the help.
+  const helpOnly = /every shortcut\.$/;
+  await expect(canvas).toHaveAccessibleDescription(helpOnly);
   await page.waitForTimeout(1500); // let the layout settle
   await screenshot(page, "nightloom-demo-graph.png");
 
@@ -177,7 +179,8 @@ test("edge labels appear only for the hovered entity's relationships", async ({ 
   if (!box) throw new Error("the canvas has no size");
   const description = () =>
     canvas.evaluate((element) => {
-      const id = element.getAttribute("aria-describedby") ?? "";
+      // The last description: the relationships on show.
+      const id = (element.getAttribute("aria-describedby") ?? "").split(" ").at(-1) ?? "";
       return document.getElementById(id)?.textContent ?? "";
     });
   const cx = box.x + box.width / 2;
@@ -194,11 +197,13 @@ test("edge labels appear only for the hovered entity's relationships", async ({ 
   }
   // "203.0.113.5: within 203.0.113.0/24; …": the hovered entity's relationships.
   expect(found).toMatch(/^[^:]+: .+/);
-  await expect(canvas).toHaveAccessibleDescription(found);
+  await expect(canvas).toHaveAccessibleDescription(
+    new RegExp(`${found.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`),
+  );
   await screenshot(page, "nightloom-demo-hover.png");
 
   // Off the knot (the canvas's padded corner), the labels go again.
   await page.mouse.move(box.x + 8, box.y + 8);
-  await expect(canvas).toHaveAccessibleDescription("");
+  await expect(canvas).toHaveAccessibleDescription(helpOnly);
   expect(pageErrors).toEqual([]);
 });

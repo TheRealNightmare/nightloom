@@ -12,7 +12,7 @@ import {
 } from "../test/caseFixtures";
 import { clearCookies, FakeApi, json, READY_BODY, TEST_USER } from "../test/fakeApi";
 import { renderApp } from "../test/renderApp";
-import { FakeSigma } from "../test/sigmaMock";
+import { FakeSigma, waitForSigma } from "../test/sigmaMock";
 
 vi.mock("sigma", () => import("../test/sigmaMock"));
 
@@ -99,7 +99,8 @@ describe("top bar", () => {
     expect(await screen.findByRole("button", { name: "API status: Ready" })).toBeVisible();
 
     await userEvent.click(within(nav).getByRole("link", { name: "Demo" }));
-    expect(await screen.findByTestId("graph-canvas")).toBeInTheDocument();
+    // The demo graph is drawn (sigma in place), not just its canvas element.
+    await waitForSigma();
     expect(screen.getByText("Demo data")).toBeVisible();
     expect(router.state.location.pathname).toBe("/demo");
 
