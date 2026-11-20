@@ -1,6 +1,6 @@
 /**
  * What a saved view restores, and its conversion to and from the API's
- * version-1 state. Pure functions only: GraphView captures and applies a
+ * state (saved as version 2; version-1 views still load, as 2D). Pure functions only: GraphView captures and applies a
  * {@link ViewSnapshot}; the case's Views menu saves and loads
  * {@link ApiViewState}s.
  */
@@ -16,6 +16,7 @@ import {
   type Reliability,
   type SeenFilter,
 } from "./filters";
+import { DEFAULT_DEPTH, isDepthMode, type Camera3D, type DepthMode, type ViewMode } from "./mode";
 import type { Positions } from "./pins";
 
 /** The camera in graph terms (see {@link ApiCamera}), so it means the same on every screen. */
@@ -23,8 +24,13 @@ export type CameraSnapshot = ApiCamera;
 
 /** How the graph looks: what a saved view captures and applies. */
 export interface ViewSnapshot {
-  /** Null while the graph is not drawn yet. */
+  mode: ViewMode;
+  /** What the third axis shows in 3D. */
+  depth: DepthMode;
+  /** Null while the graph is not drawn yet (in 3D: the 3D camera seen from the front). */
   camera: CameraSnapshot | null;
+  /** The 3D camera (views saved in 3D only). */
+  camera3d: Camera3D | null;
   filters: GraphFilters;
   /** Ids of the expanded groups. */
   expanded: string[];
@@ -113,9 +119,19 @@ export function snapshotToState(snapshot: ViewSnapshot): ApiViewState | null {
     positions[key] = [x, y];
   }
   return {
-    version: 1,
-    mode: "2d",
+    version: 2,
+    mode: snapshot.mode,
     camera: { ...snapshot.camera },
+    ...(snapshot.mode === "3d" && snapshot.camera3d
+      ? {
+          camera3d: {
+            position: [...snapshot.camera3d.position],
+            target: [...snapshot.camera3d.target],
+            up: [...snapshot.camera3d.up],
+          },
+        }
+      : {}),
+    depth: snapshot.depth,
     filters: filtersToApi(snapshot.filters),
     groups: { expanded: [...new Set(snapshot.expanded)].slice(0, VIEW_LIMITS.expandedGroups) },
     positions,
@@ -131,8 +147,16 @@ export function stateToSnapshot(state: ApiViewState, known: (id: string) => bool
   for (const [key, [x, y]] of Object.entries(state.positions)) {
     if (known(key)) pins[key] = [x, y];
   }
+  const v2 = state.version === 2 ? state : null;
+  const camera3d = v2?.camera3d ?? null;
   return {
+    // A version-1 view is 2D.
+    mode: v2?.mode ?? "2d",
+    depth: v2 && isDepthMode(v2.depth) ? v2.depth : DEFAULT_DEPTH,
     camera: { ...state.camera },
+    camera3d: camera3d
+      ? { position: [...camera3d.position], target: [...camera3d.target], up: [...camera3d.up] }
+      : null,
     filters: filtersFromApi(state.filters),
     expanded: [...state.groups.expanded],
     pins,

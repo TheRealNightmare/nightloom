@@ -19,6 +19,7 @@ node_modules/
 .vite/
 coverage/
 playwright-report/
+apps/web/bundle-report.json
 test-results/
 *.tsbuildinfo
 .pnpm-store/

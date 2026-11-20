@@ -1,0 +1,5 @@
+{
+  "$comment": "Gzip bytes (scripts/check-bundle-size.mjs). graph2d: what the 2D graph loads, 288,407 B before the 3D view (U5) plus 2 KB. graph3d: the lazily loaded 3D view on top of it, 250 KB.",
+  "graph2d": 290455,
+  "graph3d": 256000
+}

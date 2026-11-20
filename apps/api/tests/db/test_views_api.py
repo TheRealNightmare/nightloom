@@ -195,6 +195,35 @@ async def test_save_list_and_read(world: World) -> None:
     assert read.json() == body
 
 
+CAMERA_3D = {"position": [10.0, 20.0, 400.0], "target": [10.0, 20.0, 0.0], "up": [0.0, 1.0, 0.0]}
+
+
+async def test_save_and_read_a_3d_view(world: World) -> None:
+    await seed(world)
+    three_d = state(version=2, mode="3d", camera3d=CAMERA_3D, depth="type")
+    created = await create(world.clients["editor"], world.case_id, body_state=three_d)
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["state"]["version"] == 2
+    assert body["state"]["mode"] == "3d"
+    assert body["state"]["depth"] == "type"
+    assert body["state"]["camera3d"] == CAMERA_3D
+    read = await world.clients["viewer"].get(views_url(world.case_id, f"/{body['id']}"))
+    assert read.json()["state"] == body["state"]
+
+
+async def test_version_1_views_still_save_and_read(world: World) -> None:
+    created = await create(world.clients["owner"], world.case_id, body_state=state())
+    assert created.status_code == 201, created.text
+    assert created.json()["state"]["version"] == 1
+    assert "camera3d" not in created.json()["state"]
+    # A 2D view saved as version 2 needs no 3D camera.
+    flat = state(version=2, depth="flat")
+    created = await create(world.clients["owner"], world.case_id, name="Flat", body_state=flat)
+    assert created.status_code == 201, created.text
+    assert "camera3d" not in created.json()["state"]
+
+
 async def test_listed_by_name_ignoring_case(world: World) -> None:
     owner = world.clients["owner"]
     for name in ("beta", "Alpha", "gamma"):
@@ -394,8 +423,17 @@ def _filters(**overrides: Any) -> dict[str, Any]:
     "overrides",
     [
         {"version": 2},
+        {"version": 3},
         {"version": "1"},
         {"mode": "3d"},
+        {"version": 2, "depth": "colour"},
+        {"version": 2, "mode": "4d", "depth": "time"},
+        {"version": 2, "depth": "time", "camera3d": {**CAMERA_3D, "up": [0, 0, 0]}},
+        {"version": 2, "depth": "time", "camera3d": {**CAMERA_3D, "up": [0, 2, 0]}},
+        {"version": 2, "depth": "time", "camera3d": {**CAMERA_3D, "target": [10, 20, 400]}},
+        {"version": 2, "depth": "time", "camera3d": {**CAMERA_3D, "position": [0, 0, 1e6 + 1]}},
+        {"version": 2, "depth": "time", "camera3d": {"position": [0, 0, 1], "target": [0, 0]}},
+        {"version": 1, "depth": "time"},
         {"camera": _camera(ratio=0)},
         {"camera": _camera(ratio=-1)},
         {"camera": _camera(ratio=1e5)},

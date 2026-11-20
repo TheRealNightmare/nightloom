@@ -15,6 +15,8 @@ import {
 import { clearCookies, FakeApi, json, noContent } from "../test/fakeApi";
 import { renderApp } from "../test/renderApp";
 import { FakeSigma, waitForSigma } from "../test/sigmaMock";
+import { NO_WEBGL } from "../graph/GraphView";
+import { MODE_STORAGE_KEY } from "../graph/mode";
 import { GRAPH_EMPTY_HINT, GRAPH_EMPTY_MESSAGE } from "./GraphTab";
 import { PERSON_ENTITIES_MESSAGE, PERSON_TYPES_DISABLED_HINT } from "./graph/AddEntityDialog";
 import { PERSON_RELATIONSHIP_MESSAGE } from "./graph/AddRelationshipDialog";
@@ -167,6 +169,26 @@ describe("showing the case graph", () => {
     fail = false;
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByText("1 entity, 0 relationships")).toBeVisible();
+  });
+});
+
+describe("2D / 3D", () => {
+  it("keeps the mode in the URL (?mode=3d) and remembers it", async () => {
+    // jsdom has no WebGL: 3D is chosen, and 2D is shown with a notice.
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+    const { router } = await openGraph({ graph: graphOf([apex, www], [subdomain]) });
+    await userEvent.click(await screen.findByRole("button", { name: "3D" }));
+    await waitFor(() => {
+      expect(router.state.location.search).toContain("mode=3d");
+    });
+    expect(window.localStorage.getItem(MODE_STORAGE_KEY)).toBe("3d");
+    expect(screen.getByRole("button", { name: "3D" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText(NO_WEBGL)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "2D" }));
+    await waitFor(() => {
+      expect(router.state.location.search).toContain("mode=2d");
+    });
+    window.localStorage.clear();
   });
 });
 

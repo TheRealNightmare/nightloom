@@ -1625,37 +1625,6 @@ select.field__input {
   font-size: 13px;
 }
 
-/* "3D view coming soon": on hover and on keyboard focus (and its description). */
-.view-mode__soon {
-  position: relative;
-  display: inline-flex;
-}
-
-.view-mode__tooltip {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 50%;
-  z-index: 10;
-  width: max-content;
-  padding: 6px 10px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  color: var(--text);
-  font-size: 13px;
-  transform: translateX(-50%);
-  visibility: hidden;
-  opacity: 0;
-  transition: opacity 120ms ease;
-  pointer-events: none;
-}
-
-.view-mode__soon:hover .view-mode__tooltip,
-.view-mode__soon:focus-within .view-mode__tooltip {
-  visibility: visible;
-  opacity: 1;
-}
-
 .search {
   position: relative;
 }
@@ -1884,6 +1853,113 @@ select.field__input {
   border-radius: var(--radius-control);
   cursor: crosshair;
   touch-action: none;
+}
+
+/* --- 3D view (U5) ------------------------------------------------------- */
+
+/* The R3F canvas fills the focusable graph element; --bg behind the threads. */
+.graph3d {
+  background: var(--bg);
+  cursor: grab;
+}
+
+.graph3d:active {
+  cursor: grabbing;
+}
+
+.graph3d--over-node {
+  cursor: pointer;
+}
+
+/* Kept mounted while the WebGL context is lost (2D is shown meanwhile). */
+.graph3d--hidden {
+  visibility: hidden;
+}
+
+.graph3d-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+/* Labels and the depth ruler: HTML over the canvas, placed each frame. */
+.graph3d-labels,
+.graph3d-ruler {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.graph3d-label,
+.graph3d-ruler__mark {
+  position: absolute;
+  top: 0;
+  left: 0;
+  white-space: nowrap;
+  will-change: transform;
+}
+
+.graph3d-label {
+  color: var(--muted);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.graph3d-label--selected {
+  color: var(--brass-text);
+  font-weight: 600;
+}
+
+/* The pin marker by a pinned entity's label, as in 2D. */
+.graph3d-label--pinned::before {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 4px;
+  vertical-align: middle;
+  border: 1.25px solid var(--brass);
+  border-radius: var(--radius-round);
+}
+
+/* A collapsed group's count over its knot, its type below. */
+.graph3d-label--group {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 13px;
+  text-align: center;
+}
+
+.graph3d-label--group small {
+  display: block;
+  padding: 0 4px;
+  background: var(--surface);
+  border-radius: var(--radius-control);
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 11px;
+}
+
+.graph3d-ruler__mark {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  transform-origin: 0 0;
+  translate: -100% -50%;
+  padding-right: 6px;
+}
+
+/* "3D needs WebGL…": calm, at the top of the stage. */
+.graph-notice {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  z-index: 3;
+  max-width: calc(100% - 24px);
+  margin: 0;
+  transform: translateX(-50%);
 }
 
 .layout-status {

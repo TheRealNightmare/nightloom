@@ -98,6 +98,35 @@ Drag an entity to move it: it stays **pinned** where you drop it (a thin brass r
 
 A trackpad's two-finger scroll pans and a mouse wheel zooms. Browsers do not say which device sent a scroll, so Nightloom guesses from the scroll's shape; if it guesses wrong for your device, choose *View → Scroll wheel → Zoom* or *Pan*. *View → Minimap* shows an overview in the bottom-right corner (on by default above 60 entities): click or drag in it to move there. Keyboard focus moves through the entities in reading order (top-left to bottom-right) and a screen reader hears each one ("Domain www.example.org, 3 neighbours, pinned"); <kbd>Tab</kbd> past the last one leaves the graph.
 
+### The 3D view
+
+*3D* on the graph toolbar shows the same graph in space: the same layout, pins, selection, filters and groups, so switching back and forth keeps your place (the camera looks at the same area). The choice is part of the page's address (`?mode=3d`) and remembered in your browser. Knots and threads keep their 2D look; labels are shown for the hovered, selected and focused entities and for the best-connected ones on screen.
+
+**Depth** (next to the switch) chooses what the third axis shows:
+
+- **Time** (the default): when each entity was first seen, oldest at the back. Entities without a first-seen date sit on a separate *Undated* plane in front. A ruler along the depth axis shows the dates.
+- **Type**: one layer per entity type, in the legend's order, named on the ruler.
+- **Flat**: no depth: the 2D picture in space.
+
+Changing the depth glides the entities to their new places (at once with reduced motion). Dragging an entity in 3D moves it on the plane facing you and pins it, through the same pins as 2D; its depth always follows the depth mode.
+
+| To | Mouse | Trackpad | Touch | Keyboard (graph focused) |
+| --- | --- | --- | --- | --- |
+| Select an entity | click | click | tap | <kbd>Tab</kbd> to it (nearest first), <kbd>Enter</kbd> |
+| Fly to an entity | double-click | double-click | | <kbd>Enter</kbd> (also selects it) |
+| Add to / remove from the selection | <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+click | <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+click | | |
+| Select everything in a rectangle | <kbd>Shift</kbd>+drag | <kbd>Shift</kbd>+drag | | |
+| Move an entity (and pin it) | drag it (a selected one moves the selection) | drag it | drag it | |
+| Pin or unpin | side panel, or right-click → *Pin* / *Unpin* | side panel | long press | <kbd>P</kbd> |
+| Orbit around the graph | drag empty space | drag | one-finger drag | arrow keys (10°) |
+| Pan | right-drag | two-finger scroll | two-finger drag | <kbd>Shift</kbd>+arrows |
+| Zoom (toward the pointer) | wheel | pinch | pinch | <kbd>+</kbd> / <kbd>−</kbd> |
+| Turn around the vertical axis | ⟲ / ⟳ buttons (15°) | | | <kbd>Q</kbd> / <kbd>E</kbd> (15°) |
+| Frame the whole graph | *Reset view* button | | | <kbd>0</kbd> |
+| Entity menu, saved views, shortcuts | right-click; *Views*; *?* | | long press | <kbd>V</kbd>; <kbd>?</kbd> |
+
+*View → Scroll wheel* and *View → Minimap* work in 3D too; the minimap shows the graph from the top with the camera's view as a brass outline. The 3D view needs WebGL 2; where it is not available (or the graphics driver resets it) the graph is shown in 2D with a short notice, and 3D comes back by itself once WebGL is restored. Saved views remember 2D or 3D, the 3D camera and the depth.
+
 **Managing users (admins).** *Users* in the top bar lists every account with its role, status, last sign-in and creation date, with a search and role and status filters. *New user* asks for an email, a display name and a role (admin, analyst or viewer); Nightloom generates a temporary password and shows it **once**, with a copy button. Pass it on through a secure channel (not the same email or chat as the address); the user must replace it when they first sign in. On each row you can change the role, deactivate or reactivate the account (deactivating signs the user out everywhere; nobody can remove the last active admin or their own admin role), sign the user out everywhere (*Revoke sessions*), or *Reset password*, which ends all their sessions and shows a new temporary password once. You change your own password from the account menu instead. *Audit log* in the top bar shows every recorded action, newest first, filtered by action, outcome, actor, case ID or dates (UTC); *Details* shows an event's full record, and *Verify chain* checks that no event was changed or removed. See [Authentication](docs/ARCHITECTURE.md#authentication) and [Audit log](docs/ARCHITECTURE.md#audit-log).
 
 ### Available Shuttles

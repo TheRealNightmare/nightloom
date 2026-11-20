@@ -86,6 +86,10 @@ export interface GraphCanvasProps {
   onShowShortcuts?: () => void;
   /** The V key (saved views). */
   onOpenViews?: () => void;
+  /** The node with the keyboard focus ring changed (kept across a switch of mode). */
+  onFocusChange?: (node: string | null) => void;
+  /** Given the focus ring when the canvas first takes the keyboard focus. */
+  initialFocus?: string | null;
   /** Whether the graph is drawn (sigma in place); called when that changes. */
   onReadyChange?: (ready: boolean) => void;
   /** What the mouse wheel does (see ./wheel). */
@@ -150,6 +154,8 @@ export function GraphCanvas({
   onShowShortcuts = NO_OP,
   onOpenViews = NO_OP,
   onReadyChange = NO_OP,
+  onFocusChange = NO_OP,
+  initialFocus = null,
   wheelSetting = "auto",
   showMinimap = false,
   showAllLabels = false,
@@ -187,10 +193,13 @@ export function GraphCanvas({
   const [focused, setFocused] = useState<string | null>(null);
   const focusedRef = useRef<string | null>(null);
   const [hint, setHint] = useState("");
+  const initialFocusRef = useRef(initialFocus);
+  const focusChangeRef = useRef(onFocusChange);
 
   useEffect(() => {
     callbacksRef.current = handlers;
     wheelRef.current = wheelSetting;
+    focusChangeRef.current = onFocusChange;
   });
 
   // The focus ring follows its node through camera moves, drags and layouts.
@@ -409,6 +418,7 @@ export function GraphCanvas({
       setFocused(node);
       focusedRef.current = node;
       callbacksRef.current.onHoverNode(node);
+      focusChangeRef.current(node);
       const sigma = sigmaRef.current;
       if (!sigma || node === null) {
         placeRing();
@@ -588,6 +598,14 @@ export function GraphCanvas({
         // "true" once sigma draws the graph (tests wait for it).
         data-ready={sigmaInstance ? "true" : "false"}
         onKeyDown={onKeyDown}
+        onFocus={(event) => {
+          if (event.target !== event.currentTarget) return;
+          const initial = initialFocusRef.current;
+          initialFocusRef.current = null;
+          if (initial !== null && graph.hasNode(initial) && isNodeVisible(graph, initial, view)) {
+            moveFocus(initial);
+          }
+        }}
         onBlur={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget)) {
             if (focusedRef.current !== null) moveFocus(null);
