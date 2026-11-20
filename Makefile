@@ -78,7 +78,8 @@ CORE_COMPAT_RUN = uv run --python $(1) --no-project --with ./packages/core \
 	worker shuttles \
 	up deps-up down logs ps reset compose-config migrate revision create-admin \
 	secrets deploy-pull backup restore test-edge test-nginx-edge test-backup-restore \
-	web-install web-dev web-lint web-fmt web-typecheck web-test web-build web-size check-web e2e
+	web-install web-dev web-lint web-fmt web-typecheck web-test web-build web-size check-web e2e \
+	screenshots
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -244,6 +245,37 @@ e2e: ## Run the browser end-to-end tests (needs `make up` and NIGHTLOOM_E2E_EMAI
 		exit $$status; \
 	fi; \
 	NIGHTLOOM_E2E_BASE_URL="$$web_url" $(WEB) e2e
+
+# README screenshots (docs/images/). They are taken on a throwaway stack of
+# their own: another Compose project with its own volumes, ports and network,
+# started empty from .env.example (development settings) and removed again
+# afterwards, so the stack of `make up` and its data are never touched. Its
+# worker resolves names with the test DNS server (deploy/compose.test.yaml),
+# so the demo jobs never reach the internet. The demo admin and its random
+# password exist only in that stack. PNGs are shrunk to at most 300 KiB with
+# Pillow (scripts/optimize-png.py, fetched by uv for the run).
+SHOTS_COMPOSE := NIGHTLOOM_NETWORK_SUBNET=172.31.231.0/24 NIGHTLOOM_NETWORK_IP_RANGE=172.31.231.128/25 \
+	NIGHTLOOM_WEB_IP=172.31.231.10 NIGHTLOOM_TEST_DNS_IP=172.31.231.53 \
+	WEB_HOST_PORT=18080 API_HOST_PORT=18000 POSTGRES_HOST_PORT=15432 NEO4J_HTTP_HOST_PORT=17474 \
+	NEO4J_BOLT_HOST_PORT=17687 VALKEY_HOST_PORT=16379 S3_HOST_PORT=18333 \
+	docker compose -p nightloom-screenshots -f deploy/compose.yaml -f deploy/compose.test.yaml \
+	--env-file .env.example
+SHOTS_EMAIL := demo-admin@example.org
+SHOTS_DIR := docs/images
+
+screenshots: ## Take the README screenshots (docs/images/) on a throwaway stack of their own (needs Docker)
+	@set -e; \
+	trap '$(SHOTS_COMPOSE) down -v --remove-orphans >/dev/null 2>&1 || true' EXIT; \
+	$(SHOTS_COMPOSE) down -v --remove-orphans >/dev/null 2>&1 || true; \
+	$(SHOTS_COMPOSE) up -d --build --wait; \
+	password=$$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))'); \
+	printf '%s\n' "$$password" | $(SHOTS_COMPOSE) run --rm --no-deps -T api \
+		python -m nightloom_api.cli create-admin --email "$(SHOTS_EMAIL)" --display-name "Demo Admin" --password-stdin; \
+	NIGHTLOOM_SHOTS_URL=http://127.0.0.1:18080 NIGHTLOOM_SHOTS_EMAIL="$(SHOTS_EMAIL)" \
+	NIGHTLOOM_SHOTS_PASSWORD="$$password" NIGHTLOOM_SHOTS_OUT="$(CURDIR)/$(SHOTS_DIR)" \
+	NIGHTLOOM_SHOTS_COMPOSE='$(SHOTS_COMPOSE)' \
+		node apps/web/scripts/screenshots.mjs; \
+	uv run --no-project --with pillow==13.0.0 python scripts/optimize-png.py --max-kb 300 $(SHOTS_DIR)/*.png
 
 compose-config: ## Validate the Compose files in use (the production ones too when .env says so)
 	$(COMPOSE) config --quiet

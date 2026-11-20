@@ -2,12 +2,13 @@ import { useEffect, useId, useRef, useState, type SubmitEvent } from "react";
 
 import { InvalidCredentialsError } from "../api/client";
 import { useAuth } from "../auth/context";
+import { LoomBackdrop } from "../auth/loom/LoomBackdrop";
 import { describeError } from "../auth/messages";
 import { ThemeToggle } from "../theme/ThemeToggle";
 import { APP_VERSION } from "../version";
-import { LoomArt } from "./LoomArt";
 import { LogoMark } from "./LogoMark";
 import { PasswordField } from "./PasswordField";
+import { useDocumentTitle } from "../app/documentTitle";
 
 export const ETHICS_URL = "https://github.com/TheRealNightmare/nightloom/blob/main/ETHICS.md";
 export const TAGLINE = "Every thread, woven into the full picture.";
@@ -18,6 +19,7 @@ export interface LoginScreenProps {
 }
 
 export function LoginScreen({ notice = null }: LoginScreenProps) {
+  useDocumentTitle("Sign in");
   const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -64,9 +66,11 @@ export function LoginScreen({ notice = null }: LoginScreenProps) {
   return (
     <main className="login login--split">
       <div className="login__art">
-        <LoomArt />
-        <p className="login__tagline">{TAGLINE}</p>
-        <p className="login__caption">Entities are knots · relationships are threads</p>
+        <LoomBackdrop />
+        <div className="login__words">
+          <p className="login__tagline">{TAGLINE}</p>
+          <p className="login__caption">Entities are knots · relationships are threads</p>
+        </div>
       </div>
       <section className="login__panel" aria-labelledby={titleId}>
         <div className="login__panel-top">

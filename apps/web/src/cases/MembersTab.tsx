@@ -15,7 +15,7 @@ import { useAuth } from "../auth/context";
 import { ROLE_LABELS } from "../auth/messages";
 import { useCase } from "./caseContext";
 import { describeCaseError } from "./errors";
-import { Loading } from "./Feedback";
+import { LoadError, Loading } from "./Feedback";
 import { CASE_ROLE_LABELS } from "./labels";
 
 /** Global viewers can only be case viewers (mirrors `allowed_case_roles`). */
@@ -95,9 +95,13 @@ export function MembersTab() {
 
   if (loadError !== null && members === null) {
     return (
-      <p className="form-error" role="alert">
-        {loadError}
-      </p>
+      <LoadError
+        message={loadError}
+        onRetry={() => {
+          setLoadError(null);
+          void refresh();
+        }}
+      />
     );
   }
   if (members === null) return <Loading label="Loading members…" />;

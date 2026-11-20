@@ -6,6 +6,8 @@
 
 **Every thread, woven into the full picture.**
 
+![A Nightloom case graph in the dark theme: knots for domains, IP addresses, netblocks, ASNs, URLs and an organization, joined by threads, with the graph toolbar above and the legend of entity types beside it.](docs/images/graph-2d-dark.png)
+
 Nightloom is an open-source, self-hosted OSINT tool that collects **public** information and maps it as an interactive investigation graph. Start from a domain, IP address, organization or other entity, let Nightloom pivot through public data sources, and explore how everything connects — with provenance, evidence and an audit trail for every finding.
 
 > **Status: 0.1.0, the first release.** Cases, the investigation graph, eight passive Shuttles, user management, the audit log and production deployment work today; auto-pivot and the other [planned features](#planned-features) do not exist yet. See the [changelog](CHANGELOG.md) and the [roadmap](docs/ROADMAP.md).
@@ -14,7 +16,22 @@ Nightloom is an open-source, self-hosted OSINT tool that collects **public** inf
 
 The web UI has sign-in, **investigation cases** (purpose, legal basis, members, activity) with an interactive graph that Shuttles fill with public data, user management and the audit log for admins, and a separate **demo graph** with fictional `example.org` data, clearly labelled "Demo data".
 
-Its look is called *Loom & thread*: calm and crafted, ink and paper with a brass thread. Entities are knots and relationships are threads. Depth comes from fine hairlines and surface steps rather than shadows or glows; headings are set in Fraunces, the interface in Source Sans 3 and keys, IDs and timestamps in JetBrains Mono, all served by Nightloom itself. There is a light and a dark theme: the system setting is followed until you pick one with the toggle in the top bar. Screenshots will follow with the next interface updates.
+Its look is called *Loom & thread*: calm and crafted, ink and paper with a brass thread. Entities are knots and relationships are threads. Depth comes from fine hairlines and surface steps rather than shadows or glows; headings are set in Fraunces, the interface in Source Sans 3 and keys, IDs and timestamps in JetBrains Mono, all served by Nightloom itself. There is a light and a dark theme: the system setting is followed until you pick one with the toggle in the top bar.
+
+The sign-in page shows a slow 3D loom beside the form: a brass weft passing over and under the warp threads, knots forming where it crosses. It loads only once the form is ready and the browser is idle, never takes focus, and gives way to a still drawing of the same loom with reduced motion, Save-Data, or without WebGL. Every page has its own title ("Cases · Nightloom"), and Nightloom can be installed as an app from the browser (it has a web manifest and icons).
+
+### Screenshots
+
+All data in these pictures is fictional (`example.org`, documentation IP ranges and AS numbers); `make screenshots` takes them again on a throwaway stack of its own.
+
+| | |
+| --- | --- |
+| ![The sign-in page in the dark theme: the 3D loom on the left, its brass weft crossing the warp threads with a few colored knots, and the sign-in form on the right.](docs/images/signin-dark.png) | ![The cases list in the light theme: three cases with their status, legal basis, the user's role and when each was last updated.](docs/images/cases-light.png) |
+| Sign-in (dark) | Cases (light) |
+| ![The case graph in the light theme: the same knots and threads on paper-colored ground.](docs/images/graph-2d-light.png) | ![The case graph in 3D with depth by time: the oldest entities at the back, the newest in front, above a date ruler.](docs/images/graph-3d-time-dark.png) |
+| Graph, 2D (light) | Graph, 3D with depth by time (dark) |
+| ![The Views menu open over the graph, listing three saved views with who saved them and when, and "Save current view…".](docs/images/saved-views-dark.png) | ![The Jobs panel above the graph: two finished registrable-domain jobs and a failed DNS job, each with its duration and counts.](docs/images/jobs-dark.png) |
+| Saved views | Jobs |
 
 ## Quick deploy
 

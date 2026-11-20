@@ -3,3 +3,5 @@ coverage
 node_modules
 playwright-report
 test-results
+# Written by `vite build` (gitignored).
+bundle-report.json

@@ -95,12 +95,20 @@ describe("users table", () => {
     expect(screen.getByText("No matching users")).toBeVisible();
   });
 
-  it("shows a load error", async () => {
+  it("shows a load error with a way to try again", async () => {
+    let fail = true;
     api.on("GET", "/users", () => {
-      throw new TypeError("Failed to fetch");
+      if (fail) throw new TypeError("Failed to fetch");
+      return json([ME, BOB, CAROL]);
     });
     renderApp("/admin/users");
-    expect(await screen.findByText(/Cannot reach Nightloom/)).toHaveAttribute("role", "alert");
+    const message = await screen.findByText(/Cannot reach Nightloom/);
+    const alert = message.closest<HTMLElement>("[role=alert]");
+    if (!alert) throw new Error("The load error is not an alert");
+    fail = false;
+    await userEvent.click(within(alert).getByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("table", { name: "Users" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
   });
 });
 

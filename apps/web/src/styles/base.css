@@ -123,3 +123,22 @@ textarea {
       stroke 200ms ease !important;
   }
 }
+
+/*
+ * Reduced motion everywhere: whatever a component animates, people who ask
+ * for less motion get the end state at once. (The graph's camera moves, the
+ * 3D depth transitions and the sign-in loom check the same preference in
+ * code.)
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0s !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
+  }
+}

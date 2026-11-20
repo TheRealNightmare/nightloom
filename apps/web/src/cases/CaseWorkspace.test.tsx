@@ -265,13 +265,20 @@ describe("activity tab", () => {
     expect(await screen.findByText("No activity recorded yet.")).toBeVisible();
   });
 
-  it("reports a failure to load", async () => {
+  it("reports a failure to load, with a way to try again", async () => {
     serveCase(api);
-    api.on("GET", `${path}/audit?limit=50`, () => json({ detail: "no" }, 403));
+    let fail = true;
+    api.on("GET", `${path}/audit?limit=50`, () =>
+      fail ? json({ detail: "no" }, 403) : json({ items: [], next_before_id: null }),
+    );
     await openCase("activity");
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent("You don't have permission to do this.");
     });
+    expect(document.title).toMatch(/ · Activity · Nightloom$/);
+    fail = false;
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("No activity recorded yet.")).toBeVisible();
   });
 
   it("reports a failure to load more", async () => {

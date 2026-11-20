@@ -4,6 +4,7 @@ import type { User } from "../api/client";
 import { useAuth } from "../auth/context";
 import { LogoMark } from "./LogoMark";
 import { PasswordChangeForm } from "./PasswordChangeForm";
+import { useDocumentTitle } from "../app/documentTitle";
 
 export const FORCED_CHANGE_TITLE = "Choose a new password";
 export const FORCED_CHANGE_TEXT =
@@ -20,6 +21,7 @@ export interface ForcedPasswordChangeProps {
  * signing out.
  */
 export function ForcedPasswordChange({ user }: ForcedPasswordChangeProps) {
+  useDocumentTitle(FORCED_CHANGE_TITLE);
   const { logout } = useAuth();
   const [signingOut, setSigningOut] = useState(false);
   const titleId = useId();

@@ -110,12 +110,22 @@ describe("case list", () => {
     expect(within(list()).getAllByRole("listitem")).toHaveLength(1);
   });
 
-  it("shows an error when the list cannot load", async () => {
+  it("shows an error with a way to try again when the list cannot load", async () => {
+    let fail = true;
     api.on("GET", "/cases?limit=25", () => {
-      throw new TypeError("Failed to fetch");
+      if (fail) throw new TypeError("Failed to fetch");
+      return page([makeCase()]);
     });
     renderApp("/cases");
-    expect(await screen.findByRole("alert")).toHaveTextContent("Cannot reach Nightloom");
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Cannot reach Nightloom");
+    expect(document.title).toBe("Cases · Nightloom");
+    fail = false;
+    await userEvent.click(within(alert).getByRole("button", { name: "Try again" }));
+    expect(
+      within(await screen.findByRole("list", { name: "Cases" })).getAllByRole("listitem"),
+    ).toHaveLength(1);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("shows an empty state with a New case button for analysts", async () => {

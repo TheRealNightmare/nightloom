@@ -29,10 +29,34 @@ export function CaseNotFound() {
   );
 }
 
-export function Loading({ label = "Loading…" }: { label?: string }) {
+/**
+ * A failed load and the next step: the reason, and "Try again" (the page
+ * keeps its filters; nothing else is lost).
+ */
+export function LoadError({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <p className="loading" role="status">
-      {label}
-    </p>
+    <div className="load-error" role="alert">
+      <p className="form-error">{message}</p>
+      <button type="button" className="button" onClick={onRetry}>
+        Try again
+      </button>
+    </div>
+  );
+}
+
+/**
+ * A loading state: what is loading, in words, over a few still skeleton lines
+ * (no spinner, no shimmer). The lines are decoration; the words are the status.
+ */
+export function Loading({ label = "Loading…", lines = 3 }: { label?: string; lines?: number }) {
+  return (
+    <div className="loading" role="status">
+      <p className="loading__label">{label}</p>
+      <div className="skeleton" aria-hidden="true">
+        {Array.from({ length: lines }, (_, index) => (
+          <span key={index} className="skeleton__line" />
+        ))}
+      </div>
+    </div>
   );
 }

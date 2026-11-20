@@ -10,13 +10,14 @@ import {
 import { RequestAbortedError, type Role, type User } from "../api/client";
 import { useAuth } from "../auth/context";
 import { ROLE_LABELS } from "../auth/messages";
-import { Loading } from "../cases/Feedback";
+import { LoadError, Loading } from "../cases/Feedback";
 import { RelativeTime } from "../cases/RelativeTime";
 import { Modal } from "../components/Modal";
 import { CreateUserDialog } from "./CreateUserDialog";
 import { describeAdminError } from "./errors";
 import { matchesUser, type ActiveFilter } from "./userFilters";
 import { TemporaryPasswordPanel } from "./TemporaryPasswordPanel";
+import { useDocumentTitle } from "../app/documentTitle";
 
 const ROLES: readonly Role[] = ["admin", "analyst", "viewer"];
 
@@ -32,6 +33,7 @@ const describe = (user: User) => `${user.display_name} (${user.email})`;
 
 /** /admin/users: every account, with the admin's actions on each. */
 export function UsersPage() {
+  useDocumentTitle("Users", "Admin");
   const { state } = useAuth();
   const myId = state.status === "signed_in" ? state.user.id : null;
   const [users, setUsers] = useState<User[] | null>(null);
@@ -44,6 +46,8 @@ export function UsersPage() {
   const [role, setRole] = useState<Role | "">("");
   const [active, setActive] = useState<ActiveFilter>("");
   const ids = { search: useId(), role: useId(), active: useId() };
+  // Bumped by "Try again" after a failed first load.
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -53,7 +57,7 @@ export function UsersPage() {
     return () => {
       controller.abort();
     };
-  }, []);
+  }, [attempt]);
 
   const shown = useMemo(
     () => (users ?? []).filter((user) => matchesUser(user, search, role, active)),
@@ -233,9 +237,19 @@ export function UsersPage() {
         </div>
       </div>
 
-      <div className="form-error" role="alert">
-        {rowError ?? loadError}
-      </div>
+      {users === null && loadError !== null ? (
+        <LoadError
+          message={loadError}
+          onRetry={() => {
+            setLoadError(null);
+            setAttempt((n) => n + 1);
+          }}
+        />
+      ) : (
+        <div className="form-error" role="alert">
+          {rowError ?? loadError}
+        </div>
+      )}
       {users === null && loadError === null && <Loading label="Loading users…" />}
       {users !== null && shown.length === 0 && (
         <div className="empty-state">

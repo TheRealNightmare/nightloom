@@ -5,7 +5,7 @@ import { RequestAbortedError } from "../api/client";
 import { OutcomeBadge } from "./Badges";
 import { useCase } from "./caseContext";
 import { describeCaseError } from "./errors";
-import { Forbidden, Loading } from "./Feedback";
+import { Forbidden, LoadError, Loading } from "./Feedback";
 import { actorName, describeEvent } from "./labels";
 import { RelativeTime } from "./RelativeTime";
 
@@ -20,6 +20,8 @@ export function ActivityTab() {
   const [members, setMembers] = useState<Member[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  // Bumped by "Try again" after a failed first load.
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!allowed) return;
@@ -40,7 +42,7 @@ export function ActivityTab() {
       controller.abort();
     };
     // Reload when the case changes (a status change adds events).
-  }, [allowed, current.id, current.updated_at]);
+  }, [allowed, current.id, current.updated_at, attempt]);
 
   if (!allowed) return <Forbidden />;
 
@@ -85,11 +87,20 @@ export function ActivityTab() {
           ))}
         </ol>
       )}
-      {error !== null && (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
-      )}
+      {error !== null &&
+        (events === null ? (
+          <LoadError
+            message={error}
+            onRetry={() => {
+              setError(null);
+              setAttempt((n) => n + 1);
+            }}
+          />
+        ) : (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        ))}
       {nextBefore !== null && (
         <div className="load-more">
           <button

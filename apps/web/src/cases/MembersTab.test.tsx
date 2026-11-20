@@ -239,10 +239,17 @@ describe("members tab", () => {
     expect(screen.getByRole("button", { name: "Leave case" })).toBeVisible();
   });
 
-  it("reports when the members cannot load", async () => {
+  it("reports when the members cannot load, with a way to try again", async () => {
     serveCase(api);
-    api.on("GET", `${path}/members`, () => json({}, 500));
+    let fail = true;
+    api.on("GET", `${path}/members`, () =>
+      fail ? json({}, 500) : json([makeMember(TEST_USER, "owner")]),
+    );
     renderApp(`${path}/members`);
     expect(await screen.findByRole("alert")).toHaveTextContent("Something went wrong");
+    fail = false;
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("heading", { name: "Members" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
   });
 });

@@ -3,6 +3,7 @@ import { TypeSummary } from "../components/SidePanel";
 import type { InvestigationGraph } from "../domain/entities";
 import { GraphView } from "../graph/GraphView";
 import { sampleGraph } from "./sampleGraph";
+import { useDocumentTitle } from "../app/documentTitle";
 
 export interface DemoPageProps {
   data?: InvestigationGraph;
@@ -32,6 +33,7 @@ const overview = (summary: GraphSummary) => <DemoOverview summary={summary} />;
 
 /** The built-in demo investigation (fictional data), at `/demo`. Never shown inside a case. */
 export function DemoPage({ data = sampleGraph }: DemoPageProps) {
+  useDocumentTitle("Demo graph");
   return (
     <main className="demo-page">
       <GraphView data={data} overview={overview} />

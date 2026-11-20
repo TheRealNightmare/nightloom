@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 
 import indexHtml from "../../index.html?raw";
 import favicon from "../../public/favicon.svg?raw";
+import manifest from "../../public/manifest.webmanifest?raw";
 import { THEME_TOKENS } from "../theme/tokens";
 
 /** Every stylesheet and module of the app (not tests or test helpers), by path. */
@@ -39,7 +40,7 @@ describe("color literals", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("in the favicon and the theme-color tags are token values", () => {
+  it("in the favicon, the web manifest and the theme-color tags are token values", () => {
     const values = new Set(
       Object.values(THEME_TOKENS).flatMap((tokens) =>
         Object.values(tokens).map((v) => v.toLowerCase()),
@@ -47,6 +48,7 @@ describe("color literals", () => {
     );
     for (const [file, text] of [
       ["public/favicon.svg", favicon],
+      ["public/manifest.webmanifest", manifest],
       ["index.html", indexHtml],
     ] as const) {
       const hexes = text.match(HEX) ?? [];
