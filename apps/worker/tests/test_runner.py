@@ -2,10 +2,16 @@
 
 import asyncio
 import logging
+import os
+import signal
+import sys
+import threading
+import time
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import dns.rdata
@@ -13,6 +19,9 @@ import dns.rdataclass
 import dns.rdatatype
 import httpx
 import pytest
+from billiard.exceptions import WorkerLostError
+from celery.exceptions import TimeLimitExceeded
+from celery.signals import task_failure
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -27,7 +36,7 @@ from nightloom_api.audit.models import AuditEvent
 from nightloom_api.auth import clock
 from nightloom_api.auth.models import Role, User
 from nightloom_api.cases.models import Case, CaseMember, CaseStatus
-from nightloom_api.config import Settings
+from nightloom_api.config import Settings, get_settings
 from nightloom_api.graph.repository import GraphRepository
 from nightloom_api.infra import Infra
 from nightloom_api.infra import graph as graph_infra
@@ -58,9 +67,9 @@ from nightloom_shuttle_dns import DnsShuttle
 from nightloom_shuttle_dns.client import Answer
 from nightloom_shuttle_dns.config import DnsConfig
 from nightloom_shuttle_registrable_domain import RegistrableDomain
-from nightloom_worker import runner
+from nightloom_worker import celery_app, runner
 from nightloom_worker.runner import MAX_TOUCHED_KEYS, RunnerConfig, reap_stale_jobs, run_job
-from support import PREFIX, csrf, login
+from support import PREFIX, TEST_DATABASE_URL, TEST_VALKEY_URL, csrf, graph_test_settings, login
 
 pytestmark = [pytest.mark.db, pytest.mark.graph]
 
@@ -935,7 +944,7 @@ async def test_reaper_fails_abandoned_and_lost_jobs(world: World) -> None:
         )
         await db.execute(update(Job).where(Job.id == queued).values(created_at=long_ago))
         await db.commit()
-    assert await reap_stale_jobs(world.config(shuttle)) == 2
+    assert await reap_stale_jobs(world.infra.sessionmaker, ShuttleRegistry([shuttle])) == 2
     assert (await world.job(running)).error == runner.ERROR_WORKER_LOST
     assert (await world.job(queued)).error == runner.ERROR_NOT_PICKED_UP
     assert (await world.job(fresh)).status == JobStatus.QUEUED
@@ -952,3 +961,360 @@ async def test_job_of_a_deleted_case_finishes_quietly(world: World) -> None:
     assert await run_job(job_id, world.config(shuttle)) == JobStatus.SUCCEEDED
     async with world.infra.sessionmaker() as db:
         assert await db.get(Job, job_id) is None
+
+
+# --- deadlines: every job reaches a final status ---------------------------------------------
+#
+# Each test is bounded from outside, so a regression fails instead of hanging.
+
+GRACE = 2.0  # the finish grace these tests give the runner (seconds)
+CLEANUP = 0.5  # each cleanup step's own limit (seconds)
+
+
+@pytest.fixture
+def short_limits(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(runner, "FINISH_GRACE_SECONDS", GRACE, raising=False)
+    monkeypatch.setattr(runner, "CLEANUP_SECONDS", CLEANUP, raising=False)
+
+
+def task_environment() -> dict[str, str]:
+    """The NIGHTLOOM_* variables that point the real task at the test databases."""
+    graph = graph_test_settings()
+    return {
+        "NIGHTLOOM_DATABASE_URL": TEST_DATABASE_URL,
+        "NIGHTLOOM_NEO4J_URI": graph.neo4j_uri,
+        "NIGHTLOOM_NEO4J_USER": graph.neo4j_user,
+        "NIGHTLOOM_NEO4J_PASSWORD": graph.neo4j_password.get_secret_value(),
+        "NIGHTLOOM_VALKEY_URL": TEST_VALKEY_URL,
+    }
+
+
+@pytest.fixture
+def task_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Point the real Celery task (its own engine and driver) at the test databases."""
+    for name, value in task_environment().items():
+        monkeypatch.setenv(name, value)
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
+async def run_task_in_thread(job_id: uuid.UUID, limit: float) -> tuple[bool, float]:
+    """Run the Celery task in a thread; (whether it returned within ``limit``, seconds taken)."""
+    began = time.monotonic()
+    thread = threading.Thread(target=celery_app.run_job_task.run, args=(str(job_id),), daemon=True)
+    thread.start()
+    await asyncio.to_thread(thread.join, limit)
+    return not thread.is_alive(), time.monotonic() - began
+
+
+async def test_loop_blocked_past_the_timeout_ends_at_the_soft_limit(world: World) -> None:
+    """(a) The loop is blocked in a callback when the soft limit's signal arrives.
+
+    A real process, in its main thread, with billiard's own SIGUSR1 handler:
+    the job must end as failed by the time limit, never be left running.
+    """
+    shuttle = scripted([], name="limits", timeout_seconds=1)
+    job_id = await world.queue(shuttle)
+    child = await asyncio.create_subprocess_exec(
+        sys.executable,
+        str(Path(__file__).with_name("limits_child.py")),
+        str(job_id),
+        "block",
+        env={**os.environ, **task_environment()},
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        assert child.stdout is not None
+        assert (await asyncio.wait_for(child.stdout.readline(), 60)).strip() == b"ready"
+        await asyncio.sleep(1.5)  # the job runs; its loop is blocked until about 3 s
+        child.send_signal(signal.SIGUSR1)  # what billiard sends at the soft limit
+        _, stderr = await asyncio.wait_for(child.communicate(), 3 + GRACE + 30)
+    finally:
+        if child.returncode is None:
+            child.kill()
+            await child.wait()
+    job = await world.job(job_id)
+    assert job.status == JobStatus.FAILED, stderr.decode()[-2000:]
+    assert job.error == runner.ERROR_TIME_LIMIT, stderr.decode()[-2000:]
+    assert (await world.finish_event(job_id)).details["reason"] == "worker_time_limit"
+
+
+async def test_hung_executor_job_does_not_keep_the_task_alive(
+    world: World, monkeypatch: pytest.MonkeyPatch, task_settings: None, short_limits: None
+) -> None:
+    """(b) A thread that never returns (a stuck getaddrinfo) must not hold the task open."""
+    stuck = threading.Event()
+
+    async def hung_lookup() -> None:
+        await asyncio.get_running_loop().run_in_executor(None, stuck.wait)
+
+    shuttle = scripted([hung_lookup], timeout_seconds=1)
+    monkeypatch.setattr(celery_app, "default_registry", lambda: ShuttleRegistry([shuttle]))
+    job_id = await world.queue(shuttle)
+    try:
+        returned, took = await run_task_in_thread(job_id, 1 + GRACE + 5)
+    finally:
+        stuck.set()
+    assert returned, f"the task was still running after {took:.1f} s"
+    job = await world.job(job_id)
+    assert job.status == JobStatus.FAILED
+    assert (await world.finish_event(job_id)).details["reason"] == "timeout"
+
+
+async def test_shuttle_ignoring_cancellation_once_still_ends(
+    world: World, short_limits: None
+) -> None:
+    """(c) The Shuttle swallows the first CancelledError and keeps waiting."""
+
+    async def stubborn() -> None:
+        try:
+            await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            await asyncio.sleep(30)
+
+    shuttle = scripted([domain("example.co.uk"), stubborn], timeout_seconds=1)
+    job_id = await world.queue(shuttle)
+    began = time.monotonic()
+    status = await asyncio.wait_for(run_job(job_id, world.config(shuttle)), 1 + GRACE + 5)
+    assert status == JobStatus.FAILED
+    assert time.monotonic() - began < 1 + GRACE + 1
+    job = await world.job(job_id)
+    assert job.error == "The Shuttle did not finish within 1 seconds."
+    assert job.stats["entities_created"] == 1
+
+
+async def test_hanging_context_close_still_ends(
+    world: World, monkeypatch: pytest.MonkeyPatch, short_limits: None
+) -> None:
+    """(d) Closing the Shuttle's context (its HTTP client) never returns."""
+
+    async def hang(self: ShuttleContext) -> None:
+        await asyncio.sleep(3600)
+
+    monkeypatch.setattr(ShuttleContext, "aclose", hang)
+    shuttle = scripted([domain("example.co.uk")])
+    job_id = await world.queue(shuttle)
+    status = await asyncio.wait_for(run_job(job_id, world.config(shuttle)), 1 + GRACE + 5)
+    assert status == JobStatus.SUCCEEDED
+    assert (await world.job(job_id)).status == JobStatus.SUCCEEDED
+
+
+async def mark_running(world: World, job_id: uuid.UUID, started_at: datetime) -> None:
+    async with world.infra.sessionmaker() as db:
+        await db.execute(
+            update(Job)
+            .where(Job.id == job_id)
+            .values(status=JobStatus.RUNNING, started_at=started_at)
+        )
+        await db.commit()
+
+
+@pytest.mark.parametrize(
+    ("exception", "error", "reason"),
+    [
+        (TimeLimitExceeded(390), "ERROR_TIME_LIMIT", "worker_time_limit"),
+        (WorkerLostError("signal 9 (SIGKILL)"), "ERROR_WORKER_LOST", "worker_lost"),
+    ],
+)
+async def test_killed_worker_process_is_recorded_by_the_main_process(
+    world: World, task_settings: None, exception: Exception, error: str, reason: str
+) -> None:
+    """(e) The pool child was killed mid-run: Celery's main process sends task_failure."""
+    shuttle = scripted([])
+    job_id = await world.queue(shuttle)
+    await mark_running(world, job_id, clock.utcnow())
+
+    def send() -> None:
+        task_failure.send(
+            sender=celery_app.run_job_task,
+            task_id=str(job_id),
+            exception=exception,
+            args=[str(job_id)],
+            kwargs={},
+            traceback=None,
+            einfo=None,
+        )
+
+    await asyncio.wait_for(asyncio.to_thread(send), 30)
+    job = await world.job(job_id)
+    assert job.status == JobStatus.FAILED
+    assert job.error == getattr(runner, error)
+    assert (await world.finish_event(job_id)).details["reason"] == reason
+
+
+# --- the reaper: per-job staleness, idempotent, race-safe --------------------------------------
+
+
+async def test_reaper_uses_each_jobs_own_shuttle_timeout(world: World) -> None:
+    short = scripted([], name="short", timeout_seconds=10)
+    long = scripted([], name="long", timeout_seconds=600)
+    registry = ShuttleRegistry([short, long])
+    now = clock.utcnow()
+    # short: deadline 10 s, hard limit 10 + 90 s, stale 60 s after that = 160 s.
+    stale_short = await world.queue(short)
+    await mark_running(world, stale_short, now - timedelta(seconds=161))
+    fresh_short = await world.queue(short)
+    await mark_running(world, fresh_short, now - timedelta(seconds=150))
+    # long: stale after 600 + 90 + 60 = 750 s.
+    fresh_long = await world.queue(long)
+    await mark_running(world, fresh_long, now - timedelta(seconds=700))
+    stale_long = await world.queue(long)
+    await mark_running(world, stale_long, now - timedelta(seconds=751))
+    # A Shuttle that is not installed any more: the largest timeout (600 s).
+    gone = scripted([], name="uninstalled", timeout_seconds=1)
+    fresh_unknown = await world.queue(gone)
+    await mark_running(world, fresh_unknown, now - timedelta(seconds=700))
+
+    assert await reap_stale_jobs(world.infra.sessionmaker, registry) == 2
+    statuses = {
+        name: (await world.job(job_id)).status
+        for name, job_id in {
+            "stale_short": stale_short,
+            "fresh_short": fresh_short,
+            "fresh_long": fresh_long,
+            "stale_long": stale_long,
+            "fresh_unknown": fresh_unknown,
+        }.items()
+    }
+    assert statuses == {
+        "stale_short": JobStatus.FAILED,
+        "fresh_short": JobStatus.RUNNING,
+        "fresh_long": JobStatus.RUNNING,
+        "stale_long": JobStatus.FAILED,
+        "fresh_unknown": JobStatus.RUNNING,
+    }
+    event = await world.finish_event(stale_short)
+    assert (event.details["reason"], event.actor_label) == ("worker_lost", "system:worker")
+    # Reaping again changes nothing and records nothing more.
+    assert await reap_stale_jobs(world.infra.sessionmaker, registry) == 0
+    await world.finish_event(stale_short)  # still exactly one
+
+
+async def test_reaper_and_a_finishing_run_never_both_finish_a_job(world: World) -> None:
+    shuttle = scripted([], timeout_seconds=1)
+    job_id = await world.queue(shuttle)
+    await mark_running(world, job_id, clock.utcnow() - timedelta(days=1))
+
+    # The run records its outcome between the reaper's read and its update.
+    original = service.finish_job_if
+    raced = False
+
+    async def finish_first(db: Any, job_id_: uuid.UUID, **kwargs: Any) -> Any:
+        nonlocal raced
+        if not raced:
+            raced = True
+            async with world.infra.sessionmaker() as other:
+                await original(
+                    other,
+                    job_id_,
+                    only_if={JobStatus.RUNNING},
+                    status=JobStatus.SUCCEEDED,
+                    actor=runner.WORKER_ACTOR,
+                )
+        return await original(db, job_id_, **kwargs)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(service, "finish_job_if", finish_first)
+        assert await reap_stale_jobs(world.infra.sessionmaker, ShuttleRegistry([shuttle])) == 0
+    job = await world.job(job_id)
+    assert (job.status, job.error) == (JobStatus.SUCCEEDED, None)
+    assert (await world.finish_event(job_id)).details["status"] == "succeeded"
+
+
+async def test_finish_abandoned_only_fails_running_jobs(world: World) -> None:
+    shuttle = scripted([])
+    done = await world.queue(shuttle)
+    assert await run_job(done, world.config(shuttle)) == JobStatus.SUCCEEDED
+    outcome = runner.Outcome(JobStatus.FAILED, error=runner.ERROR_TIME_LIMIT, reason="x")
+    assert await runner.finish_abandoned(world.infra.sessionmaker, done, outcome) is False
+    assert (await world.job(done)).status == JobStatus.SUCCEEDED
+    assert await runner.finish_abandoned(world.infra.sessionmaker, uuid.uuid4(), outcome) is False
+
+
+async def test_an_unanswering_database_leaves_the_job_to_the_reaper(
+    world: World, caplog: pytest.LogCaptureFixture, short_limits: None
+) -> None:
+    """Recording the outcome is bounded by the deadline plus the grace period."""
+    shuttle = scripted([domain("example.co.uk")], timeout_seconds=1)
+    job_id = await world.queue(shuttle)
+
+    async def hang_on_finish(*args: Any, **kwargs: Any) -> Any:
+        await asyncio.sleep(3600)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(runner, "_try_finish", hang_on_finish)
+        began = time.monotonic()
+        assert await run_job(job_id, world.config(shuttle)) is None
+        assert time.monotonic() - began < 1 + GRACE + 1
+    assert (await world.job(job_id)).status == JobStatus.RUNNING
+    assert "its outcome (succeeded) was not recorded" in caplog.text
+
+
+async def test_start_and_end_are_logged_with_duration(
+    world: World, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO, logger="nightloom_worker.runner")
+    shuttle = scripted([domain("example.co.uk")], timeout_seconds=45)
+    job_id = await world.queue(shuttle)
+    await run_job(job_id, world.config(shuttle))
+    assert f"Job {job_id} started: shuttle=scripted version=1.0.0 timeout=45s" in caplog.text
+    assert f"Job {job_id} finished: shuttle=scripted status=succeeded reason=- duration=" in (
+        caplog.text
+    )
+    assert "example.co.uk" not in caplog.text
+
+
+async def test_the_deadline_warning_names_the_phase(
+    world: World, caplog: pytest.LogCaptureFixture, short_limits: None
+) -> None:
+    async def hang() -> None:
+        await asyncio.sleep(30)
+
+    shuttle = scripted([hang], timeout_seconds=1)
+    job_id = await world.queue(shuttle)
+    assert await run_job(job_id, world.config(shuttle)) == JobStatus.FAILED
+    assert "the deadline cut the run short after 1.0 s, while running the Shuttle" in caplog.text
+
+
+async def test_failing_clean_up_is_logged_by_type_only(
+    world: World, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    async def fail(self: ShuttleContext) -> None:
+        raise RuntimeError(SECRET)
+
+    monkeypatch.setattr(ShuttleContext, "aclose", fail)
+    shuttle = scripted([domain("example.co.uk")])
+    job_id = await world.queue(shuttle)
+    assert await run_job(job_id, world.config(shuttle)) == JobStatus.SUCCEEDED
+    assert "closing the HTTP client failed: RuntimeError." in caplog.text
+    assert SECRET not in caplog.text
+
+
+async def test_a_job_started_long_ago_gets_no_time_at_all(world: World) -> None:
+    """The deadline counts from started_at, not from when this process got the job."""
+
+    async def hang() -> None:
+        await asyncio.sleep(30)
+
+    shuttle = scripted([hang], timeout_seconds=5)
+    job_id = await world.queue(shuttle)
+    original = service.mark_running
+
+    async def started_earlier(db: Any, job_id_: uuid.UUID) -> bool:
+        started = await original(db, job_id_)
+        await db.execute(
+            update(Job)
+            .where(Job.id == job_id_)
+            .values(started_at=clock.utcnow() - timedelta(seconds=10))
+        )
+        await db.commit()
+        return started
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(service, "mark_running", started_earlier)
+        began = time.monotonic()
+        assert await run_job(job_id, world.config(shuttle)) == JobStatus.FAILED
+    assert time.monotonic() - began < 2
+    assert (await world.finish_event(job_id)).details["reason"] == "timeout"

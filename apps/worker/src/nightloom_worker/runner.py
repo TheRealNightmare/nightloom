@@ -12,7 +12,8 @@
    Shuttles, the Shuttle is passive and accepts the input's type, the person
    gate still allows it, and the input entity still exists. A failed check
    finishes the job as ``failed`` with a ``denied`` ``job.finish`` event.
-3. **Run** the Shuttle with its timeout. Each finding is normalized with
+3. **Run** the Shuttle until the job's **deadline** (``started_at`` + the
+   Shuttle's timeout; see :mod:`nightloom_api.jobs.deadlines`). Each finding is normalized with
    ``nightloom_core``, checked against the Shuttle's declared outputs, the
    case's person gate and the relationship allow-list, and upserted with
    the provenance source ``shuttle:<name>@<version>`` and the Shuttle's
@@ -25,6 +26,18 @@
 4. **Finish** with the status, the stats and a ``job.finish`` event, in one
    transaction. Any error ends as ``failed`` with one of a few fixed,
    user-safe messages: never an exception's text or a stack trace.
+
+Nothing in a run may outlast the deadline by much: the guardrail checks and
+the Shuttle's findings (with their graph writes) are cut at the deadline; a
+Shuttle that ignores cancellation, the cancellation watcher and closing the
+Shuttle's HTTP client each get :data:`CLEANUP_SECONDS` and are then left
+behind; recording the outcome gets until the deadline plus
+:data:`FINISH_GRACE_SECONDS`. A job that still cannot be recorded is left to
+the reaper (:func:`reap_stale_jobs`).
+
+Finishing is a conditional update (only while the job is still active), so
+a run, the worker's time-limit handling and the reaper can race without a
+job being finished twice.
 """
 
 import asyncio
@@ -32,7 +45,7 @@ import contextlib
 import logging
 import uuid
 from collections import Counter
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Collection
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
@@ -53,15 +66,15 @@ from nightloom_api.graph.repository import (
     PersonEntitiesDisabledError,
     RelationshipNotAllowedError,
 )
-from nightloom_api.jobs import service
-from nightloom_api.jobs.models import FINISHED_STATUSES, Job, JobStatus, empty_stats
+from nightloom_api.jobs import deadlines, service
+from nightloom_api.jobs.models import ACTIVE_STATUSES, Job, JobStatus, empty_stats
 from nightloom_core.entities import Sensitivity, build_entity, sensitivity_of
 from nightloom_core.normalize import NormalizationError, normalize, parse_key
 from nightloom_core.provenance import Observation, Reliability
 from nightloom_core.relationships import RelationshipError, validate_relationship
 from nightloom_sdk.context import JobCancelledError, ShuttleContext
 from nightloom_sdk.findings import EntityFinding, RelationshipFinding
-from nightloom_sdk.meta import MAX_TIMEOUT_SECONDS, ShuttleMeta
+from nightloom_sdk.meta import ShuttleMeta
 from nightloom_sdk.registry import ShuttleRegistry
 from nightloom_sdk.shuttle import EntityInput, InputRefusedError, Shuttle, ShuttleFailedError
 
@@ -72,9 +85,11 @@ MAX_FINDINGS_PER_JOB = 5_000
 # can highlight them; at most this many.
 MAX_TOUCHED_KEYS = 200
 CANCEL_POLL_SECONDS = 2.0
-# A job still running this long after it started was abandoned by a worker
-# that died (the Celery hard limit is far shorter).
-STALE_RUNNING = timedelta(seconds=MAX_TIMEOUT_SECONDS * 2)
+# Seconds after the deadline to record the outcome (and only that).
+FINISH_GRACE_SECONDS = float(deadlines.FINISH_GRACE_SECONDS)
+# Seconds for each clean-up step: a Shuttle ignoring cancellation, the
+# cancellation watcher, closing the Shuttle's HTTP client.
+CLEANUP_SECONDS = 5.0
 # A job still queued this long was lost by the broker.
 STALE_QUEUED = timedelta(hours=6)
 
@@ -90,6 +105,7 @@ ERROR_SHUTTLE = "The Shuttle failed. Findings stored before the failure were kep
 ERROR_GRAPH = "The graph database was unavailable. Try again later."
 ERROR_INTERNAL = "The job failed because of an internal error."
 ERROR_WORKER_LOST = "The worker stopped while running this job."
+ERROR_TIME_LIMIT = "The job ran past its time limit, so the worker stopped it."
 ERROR_NOT_PICKED_UP = "The job was not picked up in time."
 
 
@@ -102,6 +118,9 @@ class RunnerConfig:
     registry: ShuttleRegistry
     max_findings: int = MAX_FINDINGS_PER_JOB
     cancel_poll_seconds: float = CANCEL_POLL_SECONDS
+    # Read when the config is built, so tests can shorten them.
+    finish_grace_seconds: float = field(default_factory=lambda: FINISH_GRACE_SECONDS)
+    cleanup_seconds: float = field(default_factory=lambda: CLEANUP_SECONDS)
 
 
 @dataclass
@@ -160,24 +179,52 @@ def _denied(error: str, reason: str) -> Outcome:
     return Outcome(JobStatus.FAILED, error=error, reason=reason, denied=True)
 
 
+# --- bounded waits --------------------------------------------------------------------------
+
+
+async def bounded(awaitable: Awaitable[Any], seconds: float, what: str) -> bool:
+    """Await ``awaitable`` for at most ``seconds``; False (and a warning) if it did not finish.
+
+    It runs as a task of its own and is abandoned (cancelled, not awaited)
+    when the time is up, so even code that ignores cancellation cannot hold
+    the caller. Errors are logged by type only and swallowed.
+    """
+    task = asyncio.ensure_future(awaitable)
+    try:
+        done, _ = await asyncio.wait({task}, timeout=max(0.0, seconds))
+    except asyncio.CancelledError:
+        task.cancel()
+        raise
+    if not done:
+        task.cancel()
+        logger.warning("%s did not finish within %.1f s; left behind.", what, seconds)
+        return False
+    if task.cancelled():
+        return True
+    error = task.exception()
+    if error is not None:
+        logger.warning("%s failed: %s.", what, type(error).__name__)
+        return False
+    return True
+
+
 # --- finishing -------------------------------------------------------------------------------
 
 
-async def _finish(
-    config: RunnerConfig, job_id: uuid.UUID, outcome: Outcome, stats: Stats | None
-) -> JobStatus:
-    async with config.sessionmaker() as db:
-        job = (
-            await db.execute(select(Job).where(Job.id == job_id).with_for_update())
-        ).scalar_one_or_none()
-        if job is None:  # the case (and with it the job) was deleted meanwhile
-            logger.info("Job %s disappeared before it finished.", job_id)
-            return outcome.status
-        if job.status in FINISHED_STATUSES:  # finished already (never twice)
-            return job.status
-        await service.finish_job(
+async def _try_finish(
+    sessionmaker: async_sessionmaker[AsyncSession],
+    job_id: uuid.UUID,
+    outcome: Outcome,
+    stats: Stats | None,
+    *,
+    only_if: Collection[JobStatus] = ACTIVE_STATUSES,
+) -> tuple[JobStatus | None, bool]:
+    """Finish the job if its status is in ``only_if``: (its status now, whether this call did)."""
+    async with sessionmaker() as db:
+        job = await service.finish_job_if(
             db,
-            job,
+            job_id,
+            only_if=only_if,
             status=outcome.status,
             actor=WORKER_ACTOR,
             stats=stats.as_dict() if stats is not None else None,
@@ -185,42 +232,98 @@ async def _finish(
             reason=outcome.reason,
             denied=outcome.denied,
         )
-    logger.info(
-        "Job %s finished: %s%s",
-        job_id,
-        outcome.status.value,
-        f" ({outcome.reason})" if outcome.reason else "",
+        if job is None:
+            current = await db.scalar(select(Job.status).where(Job.id == job_id))
+            if current is None:  # the case (and with it the job) was deleted meanwhile
+                logger.info("Job %s disappeared before it finished.", job_id)
+            return current, False
+    duration = (
+        (job.finished_at - job.started_at).total_seconds()
+        if job.finished_at is not None and job.started_at is not None
+        else 0.0
     )
-    return outcome.status
+    logger.info(
+        "Job %s finished: shuttle=%s status=%s reason=%s duration=%.1fs",
+        job_id,
+        job.shuttle_name,
+        outcome.status.value,
+        outcome.reason or "-",
+        duration,
+    )
+    return outcome.status, True
 
 
-async def finish_abandoned(config: RunnerConfig, job_id: uuid.UUID, outcome: Outcome) -> JobStatus:
-    """Finish a job its run could not finish (the worker's time limit); no-op once final."""
-    return await _finish(config, job_id, outcome, None)
+async def _finish(
+    config: RunnerConfig,
+    job_id: uuid.UUID,
+    outcome: Outcome,
+    stats: Stats | None,
+    *,
+    seconds: float | None = None,
+) -> JobStatus | None:
+    """Record how the job ended (no-op once final), within ``seconds``.
+
+    Returns the job's status, or None if it is unknown (the job is gone, or
+    the database did not answer in time: the reaper fails the job later).
+    """
+    limit = config.finish_grace_seconds if seconds is None else seconds
+    task = asyncio.ensure_future(_try_finish(config.sessionmaker, job_id, outcome, stats))
+    if not await bounded(task, limit, f"Job {job_id}: recording the outcome"):
+        logger.error("Job %s: its outcome (%s) was not recorded.", job_id, outcome.status.value)
+        return None
+    status, _ = task.result()
+    return status if status is not None else outcome.status
 
 
-async def reap_stale_jobs(config: RunnerConfig) -> int:
-    """Fail jobs abandoned by a dead worker or lost by the broker. Returns how many."""
+async def finish_abandoned(
+    sessionmaker: async_sessionmaker[AsyncSession], job_id: uuid.UUID, outcome: Outcome
+) -> bool:
+    """Fail a job its run could not finish (time limit, lost worker) if it is still running.
+
+    Returns whether this call finished it.
+    """
+    _, finished = await _try_finish(
+        sessionmaker, job_id, outcome, None, only_if={JobStatus.RUNNING}
+    )
+    return finished
+
+
+async def reap_stale_jobs(
+    sessionmaker: async_sessionmaker[AsyncSession], registry: ShuttleRegistry
+) -> int:
+    """Fail jobs abandoned by a dead worker or lost by the broker. Returns how many.
+
+    A running job is stale :data:`~nightloom_api.jobs.deadlines.REAPER_MARGIN_SECONDS`
+    after its own hard limit (from its Shuttle's timeout; the largest allowed
+    timeout for a Shuttle that is not installed). Each is failed with a
+    conditional update, so a job finishing at the same moment is left alone.
+    """
     now = clock.utcnow()
-    async with config.sessionmaker() as db:
-        stale = list(
-            (
-                await db.execute(
-                    select(Job.id, Job.status).where(
-                        ((Job.status == JobStatus.RUNNING) & (Job.started_at < now - STALE_RUNNING))
-                        | ((Job.status == JobStatus.QUEUED) & (Job.created_at < now - STALE_QUEUED))
-                    )
+    # No job can be stale sooner than one with the shortest timeout (1 s).
+    earliest = deadlines.stale_at(now, 1) - now
+    async with sessionmaker() as db:
+        candidates = (
+            await db.execute(
+                select(Job.id, Job.status, Job.shuttle_name, Job.started_at).where(
+                    ((Job.status == JobStatus.RUNNING) & (Job.started_at < now - earliest))
+                    | ((Job.status == JobStatus.QUEUED) & (Job.created_at < now - STALE_QUEUED))
                 )
-            ).all()
-        )
-    for job_id, status in stale:
-        error, reason = (
-            (ERROR_WORKER_LOST, "worker_lost")
-            if status == JobStatus.RUNNING
-            else (ERROR_NOT_PICKED_UP, "not_picked_up")
-        )
-        await _finish(config, job_id, Outcome(JobStatus.FAILED, error=error, reason=reason), None)
-    return len(stale)
+            )
+        ).all()
+    reaped = 0
+    for job_id, status, shuttle_name, started_at in candidates:
+        if status == JobStatus.RUNNING:
+            timeout = deadlines.shuttle_timeout(registry, shuttle_name)
+            if started_at is None or deadlines.stale_at(started_at, timeout) > now:
+                continue
+            outcome = Outcome(JobStatus.FAILED, error=ERROR_WORKER_LOST, reason="worker_lost")
+        else:
+            outcome = Outcome(JobStatus.FAILED, error=ERROR_NOT_PICKED_UP, reason="not_picked_up")
+        _, finished = await _try_finish(sessionmaker, job_id, outcome, None, only_if={status})
+        if finished:
+            logger.warning("Reaped job %s (%s): %s.", job_id, status.value, outcome.reason)
+            reaped += 1
+    return reaped
 
 
 # --- the run ---------------------------------------------------------------------------------
@@ -240,6 +343,8 @@ class JobRun:
         self.stats = Stats()
         self.received = 0
         self.cancel_event = asyncio.Event()
+        # What the run is doing, for the log line when the deadline cuts it.
+        self.phase = "starting"
 
     # --- guardrails ---
 
@@ -431,30 +536,52 @@ class JobRun:
                         error=ERROR_TOO_MANY.format(limit=f"{self.config.max_findings:,}"),
                         reason="too_many_findings",
                     )
+                self.phase = "writing findings"
                 try:
                     await self.store(finding)
                 except _RejectedError as rejected:
                     self.stats.rejected[rejected.reason] += 1
                     logger.info("Job %s: rejected a finding (%s).", self.job_id, rejected.reason)
+                self.phase = "running the Shuttle"
         finally:
-            if pending is not None and not pending.done():
-                pending.cancel()
-                with contextlib.suppress(BaseException):
-                    await pending
-            with contextlib.suppress(Exception):
-                await findings.aclose()  # type: ignore[attr-defined]
+            await self.stop_shuttle(pending, findings)
 
-    async def run(self) -> Outcome:
-        try:
-            entity = await self.check_start()
-        except _StopRunError as stop:
-            return stop.outcome
+    async def stop_shuttle(self, pending: "asyncio.Future[Any] | None", findings: Any) -> None:
+        """Cancel the Shuttle's step in progress and close it, each within the clean-up time."""
+        seconds = self.config.cleanup_seconds
+        if pending is not None and not pending.done():
+            pending.cancel()
+            done, _ = await asyncio.wait({pending}, timeout=seconds)
+            if not done:
+                logger.warning(
+                    "Job %s: the Shuttle ignored cancellation for %.1f s; left behind.",
+                    self.job_id,
+                    seconds,
+                )
+                return  # it is still running: closing it would fail
+            if not pending.cancelled():
+                pending.exception()  # retrieved: the run is over either way
+        await bounded(findings.aclose(), seconds, f"Job {self.job_id}: closing the Shuttle")
+
+    async def run(self, deadline: float) -> Outcome:
+        """Run until ``deadline`` (a time of the running loop's clock)."""
+        loop = asyncio.get_running_loop()
+        began = loop.time()
         ctx = ShuttleContext(self.meta, cancel_event=self.cancel_event)
         watcher = asyncio.create_task(self.watch_cancel())
         try:
-            async with asyncio.timeout(self.meta.timeout_seconds):
+            async with asyncio.timeout_at(deadline):
+                self.phase = "checking guardrails"
+                entity = await self.check_start()
+                self.phase = "running the Shuttle"
                 return await self.consume(ctx, entity)
         except TimeoutError:
+            logger.warning(
+                "Job %s: the deadline cut the run short after %.1f s, while %s.",
+                self.job_id,
+                loop.time() - began,
+                self.phase,
+            )
             return Outcome(
                 JobStatus.FAILED,
                 error=ERROR_TIMEOUT.format(seconds=self.meta.timeout_seconds),
@@ -464,10 +591,10 @@ class JobRun:
             return stop.outcome
         finally:
             self.stats.notes = list(ctx.notes)
+            seconds = self.config.cleanup_seconds
             watcher.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await watcher
-            await ctx.aclose()
+            await bounded(watcher, seconds, f"Job {self.job_id}: stopping the cancel watcher")
+            await bounded(ctx.aclose(), seconds, f"Job {self.job_id}: closing the HTTP client")
 
 
 async def run_job(job_id: uuid.UUID, config: RunnerConfig) -> JobStatus | None:
@@ -509,9 +636,21 @@ async def run_job(job_id: uuid.UUID, config: RunnerConfig) -> JobStatus | None:
                 stored.shuttle_version = shuttle.meta.version
                 await db.commit()
 
+    timeout = shuttle.meta.timeout_seconds
+    loop = asyncio.get_running_loop()
+    started_at = job.started_at or clock.utcnow()
+    remaining = (deadlines.deadline(started_at, timeout) - clock.utcnow()).total_seconds()
+    deadline = loop.time() + max(0.0, remaining)
+    logger.info(
+        "Job %s started: shuttle=%s version=%s timeout=%ds",
+        job_id,
+        shuttle.meta.name,
+        shuttle.meta.version,
+        timeout,
+    )
     run = JobRun(config, job, shuttle)
     try:
-        outcome = await run.run()
+        outcome = await run.run(deadline)
     except (Neo4jError, DriverError, GraphCommitError) as error:
         logger.error("Job %s: graph error %s.", job_id, type(error).__name__)
         outcome = Outcome(JobStatus.FAILED, error=ERROR_GRAPH, reason="graph_unavailable")
@@ -521,17 +660,23 @@ async def run_job(job_id: uuid.UUID, config: RunnerConfig) -> JobStatus | None:
         outcome = Outcome(JobStatus.FAILED, error=ERROR_INTERNAL, reason="internal_error")
     if outcome.status == JobStatus.SUCCEEDED and run.cancel_event.is_set():
         outcome = Outcome(JobStatus.CANCELLED, reason="cancelled")
-    return await _finish(config, job_id, outcome, run.stats)
+    # Until the deadline plus the grace period; never less than a clean-up step.
+    seconds = max(deadline + config.finish_grace_seconds - loop.time(), config.cleanup_seconds)
+    return await _finish(config, job_id, outcome, run.stats, seconds=seconds)
 
 
 __all__ = [
     "CANCEL_POLL_SECONDS",
+    "CLEANUP_SECONDS",
+    "ERROR_TIME_LIMIT",
     "ERROR_WORKER_LOST",
+    "FINISH_GRACE_SECONDS",
     "MAX_FINDINGS_PER_JOB",
     "MAX_TOUCHED_KEYS",
     "Outcome",
     "RunnerConfig",
     "Stats",
+    "bounded",
     "finish_abandoned",
     "reap_stale_jobs",
     "run_job",

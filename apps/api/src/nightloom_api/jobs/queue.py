@@ -18,24 +18,18 @@ from celery import Celery
 from fastapi import Request
 
 from nightloom_api.config import Settings
+from nightloom_api.jobs.deadlines import (
+    HARD_LIMIT_MARGIN_SECONDS,
+    SOFT_LIMIT_MARGIN_SECONDS,
+    time_limits,
+)
 from nightloom_sdk.meta import MAX_TIMEOUT_SECONDS
 
 TASK_NAME = "nightloom.run_job"
 QUEUE_NAME = "shuttles"
-# Seconds a task may run beyond its Shuttle's timeout: loading the job,
-# checking guardrails and writing the results. The runner enforces the Shuttle
-# timeout itself; these limits only catch a stuck worker.
-SOFT_LIMIT_MARGIN_SECONDS = 60
-HARD_LIMIT_MARGIN_SECONDS = 30
 # The broker re-delivers a task not acknowledged within this time. It must be
 # longer than any task can run, or a long job would run twice.
 VISIBILITY_TIMEOUT_SECONDS = 3600
-
-
-def time_limits(timeout_seconds: int) -> tuple[int, int]:
-    """The (soft, hard) Celery time limits for a Shuttle with ``timeout_seconds``."""
-    soft = timeout_seconds + SOFT_LIMIT_MARGIN_SECONDS
-    return soft, soft + HARD_LIMIT_MARGIN_SECONDS
 
 
 def celery_config(settings: Settings) -> dict[str, Any]:
@@ -111,7 +105,9 @@ def get_job_queue(request: Request) -> JobQueue:
 
 
 __all__ = [
+    "HARD_LIMIT_MARGIN_SECONDS",
     "QUEUE_NAME",
+    "SOFT_LIMIT_MARGIN_SECONDS",
     "TASK_NAME",
     "CeleryJobQueue",
     "JobQueue",

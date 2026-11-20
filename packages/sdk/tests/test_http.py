@@ -7,6 +7,7 @@ test explicitly allows.
 
 import asyncio
 import gzip
+import threading
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
@@ -15,6 +16,7 @@ import httpx
 import pytest
 
 from nightloom_core.entities import EntityType, Sensitivity
+from nightloom_sdk import http as http_module
 from nightloom_sdk.http import (
     MAX_RESPONSE_BYTES,
     DestinationNotAllowedError,
@@ -211,6 +213,24 @@ async def test_unix_sockets_are_refused() -> None:
 
 async def test_system_resolver_handles_literal_addresses() -> None:
     assert await system_resolver("127.0.0.1", 80) == ["127.0.0.1"]
+
+
+async def test_system_resolver_times_out(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A lookup that never returns (a stuck getaddrinfo) does not hold the caller."""
+    stuck = threading.Event()
+    loop = asyncio.get_running_loop()
+
+    async def hung_getaddrinfo(*_: object, **__: object) -> list[object]:
+        await loop.run_in_executor(None, stuck.wait)
+        return []  # pragma: no cover
+
+    monkeypatch.setattr(http_module, "DNS_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(loop, "getaddrinfo", hung_getaddrinfo)
+    try:
+        with pytest.raises(TimeoutError):
+            await system_resolver("example.org", 443)
+    finally:
+        stuck.set()
 
 
 @pytest.mark.parametrize(

@@ -38,6 +38,7 @@ Passive infrastructure Shuttles from free public sources, then a graph UI good e
   - [x] R1 Production deployment (`deploy/compose.prod.yaml` with HTTPS through Caddy or Cloudflare Tunnel, real client IPs through the edge, `make secrets`, `make backup` / `make restore`, small-host variant; see [DEPLOYMENT.md](DEPLOYMENT.md))
   - [x] R2 User management UI (Users page with temporary passwords shown once, forced password change at first sign-in, password reset, Audit log page with filters, details and chain verification)
   - [x] R3 Release automation (one version everywhere with `make bump-version` and a CI check, CHANGELOG, tag-triggered release workflow publishing multi-architecture images to GHCR with SBOM and provenance attestations, production pulling the images by `NIGHTLOOM_VERSION`; see [RELEASING.md](RELEASING.md))
+- [x] Fix: jobs stuck in `running` (a crt.sh job outlived its timeout and its soft limit, was killed at the hard limit without a record, and the reaper only ran when the next job started). Every job now has a deadline enforced in four layers (timeout, soft limit, hard limit recorded by the worker's main process, a reaper every minute), the event loop always closes, and the *Jobs* panel marks overdue jobs. See [Deadlines](ARCHITECTURE.md#deadlines-every-job-ends).
 
 ## UI redesign (Loom & thread)
 

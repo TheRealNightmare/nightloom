@@ -309,6 +309,35 @@ describe("jobs", () => {
     expect(within(jobRow()).queryByRole("list", { name: "Notes" })).toBeNull();
   });
 
+  it("marks a job still running past its hard time limit as overdue", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(Date.parse("2026-11-12T08:40:00Z"));
+    const stuck = makeJob({
+      shuttle_name: "crtsh",
+      status: "running",
+      started_at: "2026-11-12T08:30:00Z",
+      timeout_seconds: 300,
+      deadline: "2026-11-12T08:35:00Z",
+      overdue_at: "2026-11-12T08:36:30Z",
+    });
+    const onTime = makeJob({
+      id: "0b6f8e1c-2a3d-4c5e-8f9a-1b2c3d4e5f60",
+      status: "running",
+      started_at: "2026-11-12T08:39:00Z",
+      deadline: "2026-11-12T08:39:30Z",
+      overdue_at: "2026-11-12T08:41:00Z",
+    });
+    await openGraph({ jobs: [stuck, onTime] });
+    await userEvent.click(screen.getByRole("button", { name: /Jobs/ }));
+    const row = jobRow("crtsh on example.org");
+    expect(within(row).getByText("overdue — the worker may have stopped")).toHaveClass(
+      "job__overdue",
+    );
+    // The time stops at the deadline: 5 minutes, not 10.
+    expect(within(row).getByTestId("job-elapsed")).toHaveTextContent("Running for 5 min 00 s");
+    expect(within(jobRow()).queryByText(/overdue/)).toBeNull();
+  });
+
   it("does not poll while the page is hidden", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     api.on("GET", `${path}/jobs/${running.id}`, () => json(running));

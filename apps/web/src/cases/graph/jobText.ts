@@ -47,11 +47,25 @@ export function formatDuration(ms: number): string {
   return `${String(Math.floor(minutes / 60))} h ${String(minutes % 60).padStart(2, "0")} min`;
 }
 
-/** Time the job has been running (or waiting, while queued), or how long it took. */
+/**
+ * Time the job has been running (or waiting, while queued), or how long it
+ * took. A running job's time stops at its deadline: the run cannot go on
+ * past it, only the recording of its outcome can.
+ */
 export function elapsedMs(job: Job, now: number): number {
   const start = Date.parse(job.started_at ?? job.created_at);
-  const end = job.finished_at ? Date.parse(job.finished_at) : now;
+  let end = job.finished_at ? Date.parse(job.finished_at) : now;
+  if (!job.finished_at && job.status === "running" && job.deadline) {
+    end = Math.min(end, Date.parse(job.deadline));
+  }
   return Math.max(0, end - start);
+}
+
+export const OVERDUE_MESSAGE = "overdue — the worker may have stopped";
+
+/** A job still running after the worker's hard time limit: its worker most likely died. */
+export function isOverdue(job: Job, now: number): boolean {
+  return job.status === "running" && job.overdue_at !== null && now > Date.parse(job.overdue_at);
 }
 
 /** "Created 4 · Updated 1 · Rejected 0" (entities and relationships together). */

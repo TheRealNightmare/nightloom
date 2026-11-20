@@ -1,6 +1,7 @@
 """Jobs without services: Celery configuration, the queue, guardrails and schemas."""
 
 import uuid
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
@@ -8,8 +9,8 @@ import pytest
 
 from nightloom_api.audit.service import Actor
 from nightloom_api.config import Settings
+from nightloom_api.jobs import deadlines, service
 from nightloom_api.jobs import queue as queue_module
-from nightloom_api.jobs import service
 from nightloom_api.jobs.models import Job, JobStatus, empty_stats
 from nightloom_api.jobs.queue import (
     QUEUE_NAME,
@@ -22,7 +23,9 @@ from nightloom_api.jobs.queue import (
 from nightloom_api.jobs.schemas import JobStats, ShuttleOut
 from nightloom_core.entities import EntityType, Sensitivity
 from nightloom_core.relationships import RelationType
-from nightloom_sdk.meta import Mode, ShuttleMeta
+from nightloom_sdk.meta import MAX_TIMEOUT_SECONDS, Mode, ShuttleMeta
+from nightloom_sdk.registry import ShuttleRegistry
+from nightloom_shuttle_registrable_domain import RegistrableDomain
 
 
 def meta(**overrides: Any) -> ShuttleMeta:
@@ -65,6 +68,33 @@ def test_time_limits_follow_the_shuttle_timeout() -> None:
     assert time_limits(60) == (120, 150)
     soft, hard = time_limits(600)
     assert soft < hard
+
+
+def test_deadline_layers_come_in_order() -> None:
+    started = datetime(2026, 11, 20, 12, 0, tzinfo=UTC)
+    # crt.sh: 300 s timeout; soft 360 s, hard 390 s, reaped at 450 s.
+    assert deadlines.deadline(started, 300) == started + timedelta(seconds=300)
+    assert deadlines.overdue_at(started, 300) == started + timedelta(seconds=390)
+    assert deadlines.stale_at(started, 300) == started + timedelta(seconds=450)
+    # The runner records the outcome before Celery's soft limit fires.
+    assert deadlines.FINISH_GRACE_SECONDS < deadlines.SOFT_LIMIT_MARGIN_SECONDS
+
+
+def test_shuttle_timeout_falls_back_to_the_largest() -> None:
+    registry = ShuttleRegistry([RegistrableDomain])
+    assert deadlines.shuttle_timeout(registry, "registrable-domain") == 30
+    assert deadlines.shuttle_timeout(registry, "uninstalled") == MAX_TIMEOUT_SECONDS
+
+
+async def test_finish_job_if_needs_a_final_status() -> None:
+    with pytest.raises(ValueError, match="final status"):
+        await service.finish_job_if(
+            None,  # type: ignore[arg-type]
+            uuid.uuid4(),
+            only_if={JobStatus.RUNNING},
+            status=JobStatus.RUNNING,
+            actor=Actor.system("worker"),
+        )
 
 
 async def test_enqueue_sends_only_the_job_id(monkeypatch: pytest.MonkeyPatch) -> None:

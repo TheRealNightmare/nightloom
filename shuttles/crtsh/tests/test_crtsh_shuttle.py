@@ -48,6 +48,7 @@ from nightloom_shuttle_crtsh.shuttle import (
     MAX_CERTIFICATES,
     MAX_SUBDOMAINS,
     NOTE_EXPIRED_EXCLUDED,
+    SEARCH_BUDGET_SECONDS,
 )
 
 D = EntityType.DOMAIN
@@ -549,7 +550,7 @@ async def test_covers_relationships_are_capped(monkeypatch: pytest.MonkeyPatch) 
     assert "Stopped adding COVERS relationships at 3 (the limit)." in ctx.notes
 
 
-async def test_downloads_stop_at_the_time_budget() -> None:
+async def test_downloads_stop_at_the_time_budget(caplog: pytest.LogCaptureFixture) -> None:
     time = FakeTime()
     fake = FakeCrtSh()
     slow = fake.handler
@@ -568,6 +569,39 @@ async def test_downloads_stop_at_the_time_budget() -> None:
         "Reached the time limit after 0 of 5 certificate downloads; the rest contribute names only."
         in ctx.notes
     )
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert warnings == ["[crtsh] phase downloads: cut by its time budget after 0 of 5, 0.0 s"]
+
+
+async def test_each_phase_logs_its_duration_never_values(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level("INFO", logger="nightloom.shuttle.crtsh")
+    await run_shuttle(FakeCrtSh())
+    own = [r.getMessage() for r in caplog.records if r.name == "nightloom.shuttle.crtsh"]
+    phases = [line for line in own if "phase" in line]
+    assert [line.split(":")[0] for line in phases] == [
+        "[crtsh] phase search",
+        "[crtsh] phase write",
+        "[crtsh] phase downloads",
+    ]
+    assert not [line for line in own if "example.org" in line]
+
+
+async def test_search_cut_by_its_budget_is_logged(caplog: pytest.LogCaptureFixture) -> None:
+    fake = FakeCrtSh({"example.org": httpx.Response(503)})
+    time = FakeTime()
+    slow = fake.handler
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        time.now += SEARCH_BUDGET_SECONDS / 2  # each try takes long
+        return slow(request)
+
+    fake.handler = handler  # type: ignore[method-assign]
+    with pytest.raises(ShuttleFailedError) as failed:
+        await run_shuttle(fake, time=time)
+    assert failed.value.reason is FailureReason.SOURCE_UNAVAILABLE
+    assert "phase search: cut by its time budget" in caplog.text
 
 
 async def test_failed_downloads_are_skipped_then_stop() -> None:

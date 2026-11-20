@@ -79,6 +79,8 @@ class CrtShClient:
         self._backoff = tuple(backoff)
         self.requests = 0
         self.retries = 0
+        # Whether a try was skipped because the deadline had passed.
+        self.out_of_time = False
 
     def extend_deadline(self, deadline: float) -> None:
         """Allow tries until ``deadline`` (a later phase of the run has its own budget)."""
@@ -98,6 +100,7 @@ class CrtShClient:
             if self._before_request is not None:
                 self._before_request()
             if self._past_deadline():
+                self.out_of_time = True
                 raise SourceUnavailableError(f"out of time after: {failure}")
             self.requests += 1
             try:

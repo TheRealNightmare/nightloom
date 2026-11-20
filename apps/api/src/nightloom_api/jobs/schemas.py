@@ -6,11 +6,13 @@ from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from nightloom_api.jobs import deadlines
 from nightloom_api.jobs.models import Job, JobStatus
 from nightloom_core.entities import EntityType, Sensitivity
 from nightloom_core.normalize import MAX_KEY_LENGTH
 from nightloom_core.relationships import RelationType
 from nightloom_sdk.meta import NAME_MAX_LENGTH, Mode, ShuttleMeta
+from nightloom_sdk.registry import ShuttleRegistry
 
 
 class RateLimitOut(BaseModel):
@@ -117,9 +119,19 @@ class JobOut(BaseModel):
     finished_at: datetime | None
     error: str | None
     stats: JobStats
+    # The Shuttle's timeout (the largest allowed one if it is no longer installed).
+    timeout_seconds: int
+    # When the run must end: started_at + timeout_seconds (null until it starts).
+    deadline: datetime | None
+    # When the worker's hard limit has passed (null until it starts). A job
+    # still running after this has most likely lost its worker; the worker's
+    # reaper fails it about a minute later.
+    overdue_at: datetime | None
 
     @classmethod
-    def build(cls, job: Job) -> "JobOut":
+    def build(cls, job: Job, registry: ShuttleRegistry) -> "JobOut":
+        timeout = deadlines.shuttle_timeout(registry, job.shuttle_name)
+        started = job.started_at
         return cls(
             id=job.id,
             case_id=job.case_id,
@@ -134,6 +146,9 @@ class JobOut(BaseModel):
             finished_at=job.finished_at,
             error=job.error,
             stats=JobStats.parse(job.stats),
+            timeout_seconds=timeout,
+            deadline=deadlines.deadline(started, timeout) if started else None,
+            overdue_at=deadlines.overdue_at(started, timeout) if started else None,
         )
 
 

@@ -1,16 +1,23 @@
 """The Celery task wrapper; one test runs the real task against the test databases."""
 
 import asyncio
+import threading
+import time
 import uuid
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
-from celery.exceptions import SoftTimeLimitExceeded
+from billiard.exceptions import WorkerLostError
+from celery.exceptions import SoftTimeLimitExceeded, TimeLimitExceeded
+from celery.signals import task_failure
 from pydantic import SecretStr
+from redis.asyncio import Redis
 
 from nightloom_api.config import Settings, get_settings
 from nightloom_api.jobs.queue import TASK_NAME
 from nightloom_worker import celery_app
-from support import TEST_DATABASE_URL, graph_test_settings, run_in_thread
+from support import TEST_DATABASE_URL, TEST_VALKEY_URL, graph_test_settings, run_in_thread
 
 
 def test_task_is_registered_under_the_shared_name() -> None:
@@ -103,3 +110,248 @@ def test_startup_checks_every_shuttle_configuration(
     with pytest.raises(SystemExit):  # ...but never in production
         celery_app._check_shuttles()
     assert "test-only setting" in caplog.text
+
+
+# --- the main process: time limits and lost workers -----------------------------------------
+
+
+@pytest.fixture
+def recorded(monkeypatch: pytest.MonkeyPatch) -> list[tuple[uuid.UUID, str | None]]:
+    calls: list[tuple[uuid.UUID, str | None]] = []
+    monkeypatch.setattr(
+        celery_app,
+        "record_abandoned",
+        lambda job_id, outcome: calls.append((job_id, outcome.reason)),
+    )
+    return calls
+
+
+def _fail(exception: BaseException, *, sender: Any = None, **extra: Any) -> None:
+    task_failure.send(
+        sender=sender or celery_app.run_job_task,
+        exception=exception,
+        traceback=None,
+        einfo=None,
+        kwargs={},
+        **extra,
+    )
+
+
+def test_hard_limit_and_lost_workers_are_recorded(
+    recorded: list[tuple[uuid.UUID, str | None]],
+) -> None:
+    first, second = uuid.uuid4(), uuid.uuid4()
+    _fail(TimeLimitExceeded(390), task_id=str(first), args=[str(first)])
+    _fail(WorkerLostError("lost"), task_id=str(second), args=None)  # from the task ID
+    assert recorded == [(first, "worker_time_limit"), (second, "worker_lost")]
+
+
+def test_other_failures_and_tasks_are_left_alone(
+    recorded: list[tuple[uuid.UUID, str | None]], caplog: pytest.LogCaptureFixture
+) -> None:
+    job_id = str(uuid.uuid4())
+    _fail(ValueError("boom"), task_id=job_id, args=[job_id])  # recorded by the run itself
+    _fail(SoftTimeLimitExceeded(), task_id=job_id, args=[job_id])  # likewise
+    other = celery_app.app.tasks["celery.chord_unlock"]  # any other task
+    _fail(TimeLimitExceeded(1), sender=other, task_id=job_id, args=[job_id])
+    _fail(TimeLimitExceeded(1), task_id="not-a-uuid", args=["not-a-uuid"])
+    assert recorded == []
+    assert "A task with an invalid job ID failed: TimeLimitExceeded." in caplog.text
+
+
+def test_recording_never_raises_or_hangs(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    async def fails(*_: Any) -> bool:
+        raise OSError("connection refused, password=hunter2")
+
+    monkeypatch.setattr(celery_app, "_record", fails)
+    celery_app.record_abandoned(uuid.uuid4(), celery_app.TIME_LIMIT_OUTCOME)
+    assert "could not be recorded: OSError." in caplog.text
+    assert "hunter2" not in caplog.text
+
+    async def hangs(*_: Any) -> bool:
+        await asyncio.sleep(3600)
+        return True  # pragma: no cover
+
+    monkeypatch.setattr(celery_app, "_record", hangs)
+    monkeypatch.setattr(celery_app, "RECORD_SECONDS", 0.2)
+    began = time.monotonic()
+    celery_app.record_abandoned(uuid.uuid4(), celery_app.TIME_LIMIT_OUTCOME)
+    assert time.monotonic() - began < 2
+    assert "did not finish within 0 s; left behind." in caplog.text
+
+
+# --- the main process: the reaper -------------------------------------------------------------
+
+
+class _FakeReap:
+    def __init__(self, *results: int | Exception | None) -> None:
+        self.results = list(results)
+        self.calls = 0
+        self.called = threading.Event()
+
+    async def __call__(self, settings: Settings) -> int | None:
+        self.calls += 1
+        self.called.set()
+        result = self.results.pop(0) if self.results else 0
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+
+def test_reaper_runs_now_and_then_every_interval(caplog: pytest.LogCaptureFixture) -> None:
+    fake = _FakeReap(3, OSError("down"), None)
+    reaper = celery_app.Reaper(Settings(env="test"), interval=0.05, reap=fake)
+    reaper.start()
+    try:
+        deadline = time.monotonic() + 5
+        while fake.calls < 4 and time.monotonic() < deadline:
+            fake.called.wait(0.1)
+    finally:
+        reaper.stop()
+        reaper.join(5)
+    assert fake.calls >= 4
+    assert not reaper.is_alive()
+    assert "Failed 3 abandoned job(s)." in caplog.text
+    assert "Reaping stale jobs failed: OSError." in caplog.text
+
+
+def test_reaper_starts_when_the_worker_is_ready_and_stops_with_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started: list[Any] = []
+
+    class FakeReaper:
+        def __init__(self, settings: Settings, *, hostname: str | None) -> None:
+            self.stopped = False
+            self.hostname = hostname
+
+        def start(self) -> None:
+            started.append(self)
+
+        def stop(self) -> None:
+            self.stopped = True
+
+    monkeypatch.setattr(celery_app, "Reaper", FakeReaper)
+    monkeypatch.setattr(celery_app, "_reaper", None)
+    consumer = SimpleNamespace(hostname="worker@abc")
+    celery_app._start_reaper(sender=consumer)
+    celery_app._start_reaper(sender=consumer)  # once per process
+    assert len(started) == 1
+    assert started[0].hostname == "worker@abc"
+    celery_app._stop_reaper()
+    celery_app._stop_reaper()
+    assert started[0].stopped is True
+
+
+@pytest.mark.db
+def test_only_one_worker_reaps_at_a_time(
+    monkeypatch: pytest.MonkeyPatch, migrated_database: str
+) -> None:
+    monkeypatch.setenv("NIGHTLOOM_DATABASE_URL", TEST_DATABASE_URL)
+    monkeypatch.setenv("NIGHTLOOM_VALKEY_URL", TEST_VALKEY_URL)
+    get_settings.cache_clear()
+    settings = get_settings()
+    lock_name = f"{celery_app.REAPER_LOCK}:test:{uuid.uuid4()}"
+    monkeypatch.setattr(celery_app, "REAPER_LOCK", lock_name)
+
+    async def scenario() -> tuple[int | None, int | None, int | None]:
+        other = Redis.from_url(TEST_VALKEY_URL)
+        try:
+            held = other.lock(lock_name, timeout=30, blocking=False)
+            assert await held.acquire()
+            while_held = await celery_app.reap_once(settings)  # another worker reaps
+            await held.release()
+            free = await celery_app.reap_once(settings)
+            assert await other.get(lock_name) is None  # released after reaping
+            # A lock that expired while reaping is not an error.
+            await other.set(lock_name, "someone else", ex=30)
+            stolen = await celery_app.reap_once(settings)
+            return while_held, free, stolen
+        finally:
+            await other.delete(lock_name)
+            await other.aclose()
+
+    while_held, free, stolen = run_in_thread(scenario)
+    get_settings.cache_clear()
+    assert while_held is None
+    assert isinstance(free, int)
+    assert stolen is None
+
+
+def test_reaper_first_fails_what_the_previous_run_left(caplog: pytest.LogCaptureFixture) -> None:
+    calls: list[str] = []
+
+    async def own(settings: Settings, hostname: str) -> int:
+        calls.append(hostname)
+        return 1
+
+    async def broken(settings: Settings, hostname: str) -> int:
+        raise OSError("down")
+
+    reaper = celery_app.Reaper(Settings(env="test"), hostname="worker@abc", reap_own=own)
+    assert reaper.reap_previous_run() == 1
+    assert calls == ["worker@abc"]
+    assert celery_app.Reaper(Settings(env="test"), reap_own=own).reap_previous_run() is None
+    failing = celery_app.Reaper(Settings(env="test"), hostname="w", reap_own=broken)
+    assert failing.reap_previous_run() is None
+    assert "Reaping this worker's previous jobs failed: OSError." in caplog.text
+
+
+def test_noting_the_worker_is_best_effort(caplog: pytest.LogCaptureFixture) -> None:
+    unreachable = Settings(env="test", valkey_url=SecretStr("redis://127.0.0.1:1/0"))
+    job_id = uuid.uuid4()
+    assert celery_app._note_running(unreachable, job_id, None) is False
+    assert celery_app._note_running(unreachable, job_id, "worker@abc") is False
+    celery_app._forget_running(unreachable, job_id)
+    assert "could not note its worker: ConnectionError." in caplog.text
+    assert "could not clear its worker: ConnectionError." in caplog.text
+
+
+@pytest.mark.db
+def test_a_restarted_worker_fails_the_jobs_its_previous_run_left(
+    monkeypatch: pytest.MonkeyPatch, migrated_database: str
+) -> None:
+    """docker compose kill + start: same node name, a new run; nothing of the old one runs."""
+    monkeypatch.setenv("NIGHTLOOM_DATABASE_URL", TEST_DATABASE_URL)
+    monkeypatch.setenv("NIGHTLOOM_VALKEY_URL", TEST_VALKEY_URL)
+    get_settings.cache_clear()
+    settings = get_settings()
+    hostname = f"worker@{uuid.uuid4().hex[:8]}"
+    finished: list[uuid.UUID] = []
+
+    async def fake_finish(sessionmaker: Any, job_id: uuid.UUID, outcome: Any) -> bool:
+        assert outcome.reason == "worker_lost"
+        finished.append(job_id)
+        return True
+
+    monkeypatch.setattr(celery_app, "finish_abandoned", fake_finish)
+    previous, current, elsewhere = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    key = celery_app.RUNNING_KEY.format
+
+    # A job of this run, noted the way the task does it.
+    assert celery_app._note_running(settings, current, hostname)
+
+    async def scenario() -> tuple[int, list[bool]]:
+        client = Redis.from_url(TEST_VALKEY_URL)
+        try:
+            await client.set(key(job_id=previous), f"{hostname} an-earlier-boot", ex=60)
+            await client.set(key(job_id=elsewhere), "worker@other an-earlier-boot", ex=60)
+            await client.set(key(job_id="not-a-uuid"), f"{hostname} an-earlier-boot", ex=60)
+            reaped = await celery_app.reap_own(settings, hostname)
+            left = [
+                bool(await client.exists(key(job_id=job_id)))
+                for job_id in (previous, current, elsewhere)
+            ]
+            return reaped, left
+        finally:
+            for job_id in (previous, current, elsewhere, "not-a-uuid"):
+                await client.delete(key(job_id=job_id))
+            await client.aclose()
+
+    reaped, left = run_in_thread(scenario)
+    celery_app._forget_running(settings, current)
+    get_settings.cache_clear()
+    assert (reaped, finished) == (1, [previous])
+    assert left == [False, True, True]

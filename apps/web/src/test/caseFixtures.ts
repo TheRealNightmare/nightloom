@@ -162,6 +162,9 @@ export function makeJob(overrides: Partial<Job> = {}): Job {
     started_at: null,
     finished_at: null,
     error: null,
+    timeout_seconds: 30,
+    deadline: null,
+    overdue_at: null,
     ...overrides,
     stats: {
       entities_created: 0,

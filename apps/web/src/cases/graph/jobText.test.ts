@@ -13,6 +13,8 @@ import {
   ACTIVE_SHUTTLE_REASON,
   describeJobError,
   elapsedMs,
+  isOverdue,
+  OVERDUE_MESSAGE,
   formatDuration,
   PERSON_SHUTTLE_REASON,
   shuttleBlockedReason,
@@ -40,6 +42,31 @@ describe("job text", () => {
       finished_at: "2026-11-12T08:30:34Z",
     });
     expect(elapsedMs(done, now)).toBe(4_000);
+  });
+
+  it("stops a running job's time at its deadline", () => {
+    const running = makeJob({
+      status: "running",
+      started_at: "2026-11-12T08:30:00Z",
+      deadline: "2026-11-12T08:35:00Z",
+    });
+    expect(elapsedMs(running, Date.parse("2026-11-12T08:31:00Z"))).toBe(60_000);
+    expect(elapsedMs(running, Date.parse("2026-11-12T09:00:00Z"))).toBe(300_000);
+  });
+
+  it("calls a running job overdue only after its hard time limit", () => {
+    const running = makeJob({
+      status: "running",
+      started_at: "2026-11-12T08:30:00Z",
+      overdue_at: "2026-11-12T08:36:30Z",
+    });
+    expect(isOverdue(running, Date.parse("2026-11-12T08:36:00Z"))).toBe(false);
+    expect(isOverdue(running, Date.parse("2026-11-12T08:37:00Z"))).toBe(true);
+    expect(isOverdue({ ...running, status: "failed" }, Date.parse("2026-11-12T09:00:00Z"))).toBe(
+      false,
+    );
+    expect(isOverdue(makeJob(), Date.parse("2026-11-13T00:00:00Z"))).toBe(false); // queued
+    expect(OVERDUE_MESSAGE).toBe("overdue — the worker may have stopped");
   });
 
   it("sums entity and relationship stats", () => {
