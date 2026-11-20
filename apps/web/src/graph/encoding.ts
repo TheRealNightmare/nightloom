@@ -17,6 +17,7 @@
  */
 import type { EntityNode, RelationEdge } from "../domain/entities";
 import type { GraphPalette } from "../theme/graphPalette";
+import { canvasLabel } from "./labels";
 
 /** Fully transparent (a ring that takes space but draws nothing). */
 export const TRANSPARENT = "transparent";
@@ -159,7 +160,7 @@ export function compactCount(count: number): string {
 
 /**
  * An entity's label sits to the right of its knot, in --muted (--brass-text
- * when selected). A group's label is its count, over the center of the knot;
+ * when selected), shortened for the canvas (see ./labels). A group's label is its count, over the center of the knot;
  * the type name goes below it (see GROUP_ATTACHMENT).
  */
 export function nodeLabelStyle(
@@ -177,7 +178,8 @@ export function nodeLabelStyle(
     };
   }
   return {
-    label: entity.label,
+    // Shortened for the canvas only (./labels); the side panel shows it in full.
+    label: canvasLabel(entity),
     labelColor: selected ? palette.selectionText : palette.label,
     labelFont: selected ? LABEL_FONT_STRONG : LABEL_FONT,
     labelSize: LABEL_SIZE,

@@ -11,6 +11,7 @@ import {
 } from "react";
 
 import { FiltersPanel, type GradeOption } from "../components/FiltersPanel";
+import { Modal } from "../components/Modal";
 import { Legend } from "../components/Legend";
 import { SearchBox } from "../components/SearchBox";
 import { SidePanel, type GraphSummary } from "../components/SidePanel";
@@ -36,13 +37,30 @@ import {
   type LeafGroup,
 } from "./groups";
 import {
+  frameSchedule,
   fullLayoutIterations,
+  GLIDE_ITERATIONS_PER_FRAME,
   INCREMENTAL_LAYOUT_ITERATIONS,
   startLayout,
   type LayoutRun,
 } from "./layout";
+import type { Point } from "./geometry";
+import { MINIMAP_DEFAULT_THRESHOLD } from "./minimap";
+import { NodeContextMenu } from "./NodeContextMenu";
+import { applyPins } from "./pins";
+import {
+  storedMinimap,
+  storedWheelSetting,
+  storeMinimap,
+  storeWheelSetting,
+  type MinimapPreference,
+} from "./preferences";
+import { ShortcutsDialog } from "./ShortcutsDialog";
+import { usePins, type LayoutPersistence } from "./usePins";
 import { useNow, type FiltersUpdate } from "./useUrlFilters";
-import { connectionsOf, countByType } from "./view";
+import { connectionsOf, countByType, isNodeVisible } from "./view";
+import { ViewMenu } from "./ViewMenu";
+import type { WheelSetting } from "./wheel";
 
 /** Up to this many nodes, every node is labelled. */
 const SMALL_GRAPH = 200;
@@ -82,8 +100,22 @@ export interface GraphViewProps {
   grades?: { reliability: readonly GradeOption[]; credibility: readonly GradeOption[] };
   /** Extra class names for the outer element (e.g. to embed it in a page). */
   className?: string;
+  /**
+   * Where the user's pins are saved (the case Graph tab: per user and case).
+   * Without it, pins last as long as the page.
+   */
+  layout?: LayoutPersistence;
   ref?: Ref<GraphViewHandle>;
 }
+
+/** A node's menu, open at a point in the canvas. */
+interface MenuState {
+  node: string;
+  at: Point;
+  bounds: { width: number; height: number };
+}
+
+const NO_SELECTION: ReadonlySet<string> = new Set();
 
 /**
  * The interactive graph: canvas, search, legend, filters and side panel,
@@ -106,6 +138,7 @@ export function GraphView({
   onFiltersChange,
   grades,
   className,
+  layout,
   ref,
 }: GraphViewProps) {
   const [graph] = useState(createGraph);
@@ -152,10 +185,34 @@ export function GraphView({
     });
   }, []);
 
+  // --- pins ---------------------------------------------------------------------------
+  // Unpinned nodes rejoin the layout: a short run moves only them, a couple
+  // of iterations per frame, so they glide back instead of jumping.
+  const rejoin = useCallback(
+    (released: string[]) => {
+      const running = layoutRef.current;
+      // A layout still running takes them along (they are no longer fixed).
+      if (running && !running.finished) return;
+      const moving = new Set(released.filter((node) => graph.hasNode(node)));
+      if (moving.size === 0) return;
+      layoutRef.current = startLayout(graph, {
+        iterations: INCREMENTAL_LAYOUT_ITERATIONS,
+        fixed: new Set(graph.filterNodes((node) => !moving.has(node))),
+        maxPerSlice: GLIDE_ITERATIONS_PER_FRAME,
+        schedule: frameSchedule,
+      });
+    },
+    [graph],
+  );
+  const pins = usePins(graph, layout, rejoin);
+  const pinStore = pins.store;
+
   // The graph is an external, mutable store: bring it in line with what is
   // displayed (cheap, incremental) and keep a snapshot that changes whenever it does.
   const snapshot = useMemo(() => {
     syncGraph(graph, display, palette);
+    // Entities that just appeared (an expanded group, new data) go where they were pinned.
+    applyPins(graph, pinStore);
     return { order: graph.order, size: graph.size };
     // A theme change only repaints (below); it does not resync.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -217,7 +274,16 @@ export function GraphView({
     [filters.hiddenTypes, updateFilters],
   );
   const explorer = useGraphExplorer(graph, typesStore);
-  const { selectNode, resetView } = explorer;
+  const { selectNode: selectOne, resetView } = explorer;
+  // A multi-selection (two or more nodes); a single selection is the explorer's.
+  const [multi, setMulti] = useState<ReadonlySet<string>>(NO_SELECTION);
+  const selectNode = useCallback(
+    (node: string | null) => {
+      setMulti(NO_SELECTION);
+      selectOne(node);
+    },
+    [selectOne],
+  );
   // Entities the filters hide (group nodes stand for visible entities).
   const hiddenNodes = useMemo(
     () =>
@@ -226,7 +292,91 @@ export function GraphView({
       ),
     [display, visible],
   );
-  const view = useMemo(() => ({ ...explorer.view, hiddenNodes }), [explorer.view, hiddenNodes]);
+  const view = useMemo(
+    () => ({ ...explorer.view, hiddenNodes, selectedNodes: multi }),
+    [explorer.view, hiddenNodes, multi],
+  );
+  // The multi-selection, without what is no longer drawn.
+  const selection = useMemo(
+    () => [...multi].filter((node) => graph.hasNode(node) && isNodeVisible(graph, node, view)),
+    // snapshot: the graph's nodes changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [graph, multi, view, snapshot],
+  );
+
+  /** Selects `nodes`: none, one (the explorer's selection) or several. */
+  const selectMany = useCallback(
+    (nodes: Iterable<string>) => {
+      const next = new Set(nodes);
+      if (next.size >= 2) {
+        selectOne(null);
+        setMulti(next);
+        return;
+      }
+      setMulti(NO_SELECTION);
+      const [only] = next;
+      selectOne(only ?? null);
+    },
+    [selectOne],
+  );
+  const currentSelection = useCallback((): Set<string> => {
+    if (multi.size > 0) return new Set(multi);
+    const single = explorer.view.selectedNode;
+    return new Set(single === null ? [] : [single]);
+  }, [multi, explorer.view.selectedNode]);
+  const toggleInSelection = useCallback(
+    (node: string) => {
+      const next = currentSelection();
+      if (next.has(node)) next.delete(node);
+      else next.add(node);
+      selectMany(next);
+    },
+    [currentSelection, selectMany],
+  );
+  const boxSelect = useCallback(
+    (nodes: string[], additive: boolean) => {
+      const next = additive ? currentSelection() : new Set<string>();
+      for (const node of nodes) next.add(node);
+      selectMany(next);
+    },
+    [currentSelection, selectMany],
+  );
+  const selectNeighbours = useCallback(
+    (node: string) => {
+      if (!graph.hasNode(node)) return;
+      const next = new Set([node]);
+      graph.forEachNeighbor(node, (neighbour) => {
+        if (isNodeVisible(graph, neighbour, view)) next.add(neighbour);
+      });
+      selectMany(next);
+    },
+    [graph, view, selectMany],
+  );
+
+  // --- view preferences, menus and dialogs -------------------------------------------
+  const [wheel, setWheel] = useState<WheelSetting>(storedWheelSetting);
+  const [minimapPreference, setMinimapPreference] = useState<MinimapPreference>(storedMinimap);
+  const visibleCount = visible.size;
+  const minimapShown =
+    minimapPreference === "auto"
+      ? visibleCount > MINIMAP_DEFAULT_THRESHOLD
+      : minimapPreference === "on";
+  const [menu, setMenu] = useState<MenuState | null>(null);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [confirmUnpinAll, setConfirmUnpinAll] = useState(false);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const openMenu = useCallback(
+    (node: string, at: Point) => {
+      if (!graph.hasNode(node)) return;
+      const stage = stageRef.current;
+      setMenu({
+        node,
+        at,
+        bounds: { width: stage?.clientWidth ?? 0, height: stage?.clientHeight ?? 0 },
+      });
+    },
+    [graph],
+  );
 
   const selectedId =
     view.selectedNode !== null && graph.hasNode(view.selectedNode) ? view.selectedNode : null;
@@ -319,6 +469,7 @@ export function GraphView({
   }, [applyFocus, pending, snapshot]);
 
   const onResetView = useCallback(() => {
+    setMulti(NO_SELECTION);
     resetView();
     canvasRef.current?.resetCamera();
   }, [resetView]);
@@ -339,6 +490,27 @@ export function GraphView({
           ),
     [groups, expanded, selectedId],
   );
+  const selectedPinned = selectedId !== null && pins.isPinned(selectedId);
+  const pinActions =
+    selectedId === null ? null : (
+      <section aria-label="Layout">
+        <h3 className="panel__section">Layout</h3>
+        <p className="panel__hint">
+          {selectedPinned
+            ? "Pinned: the layout leaves it where you put it."
+            : "Placed by the layout. Drag it to pin it in place."}
+        </p>
+        <button
+          type="button"
+          className="button button--small"
+          onClick={() => {
+            pins.toggle(selectedId);
+          }}
+        >
+          {selectedPinned ? "Unpin" : "Pin"}
+        </button>
+      </section>
+    );
   const groupActions =
     collapsible.length === 0 ? null : (
       <section aria-label="Groups">
@@ -386,21 +558,80 @@ export function GraphView({
             )}
           </button>
           <ViewModeSwitch />
+          <ViewMenu
+            minimap={minimapShown}
+            onMinimapChange={(shown) => {
+              const next = shown ? "on" : "off";
+              setMinimapPreference(next);
+              storeMinimap(next);
+            }}
+            wheel={wheel}
+            onWheelChange={(setting) => {
+              setWheel(setting);
+              storeWheelSetting(setting);
+            }}
+            pinnedCount={pinStore.size}
+            onUnpinAll={() => {
+              setConfirmUnpinAll(true);
+            }}
+          />
           {toolbar}
         </div>
-        <div className="stage__canvas">
+        <div className="stage__canvas" ref={stageRef}>
           <GraphCanvas
             ref={canvasRef}
             graph={graph}
             view={view}
             onHoverNode={explorer.hoverNode}
             onSelectNode={choose}
+            onToggleNode={toggleInSelection}
+            onBoxSelect={boxSelect}
+            onNodesMoved={pins.pin}
+            onTogglePin={pins.toggle}
+            onContextMenu={openMenu}
+            onClearSelection={() => {
+              selectNode(null);
+            }}
+            onShowShortcuts={() => {
+              setShortcutsOpen(true);
+            }}
+            wheelSetting={wheel}
+            showMinimap={minimapShown}
             showAllLabels={snapshot.order <= SMALL_GRAPH}
             revision={snapshot}
+            pinRevision={pins.version}
             palette={painted}
             theme={theme}
             {...(pulse ? { pulse } : {})}
           />
+          {(pins.saveStatus === "retrying" || pins.saveStatus === "failed") && (
+            <p className="layout-status" role="status">
+              {pins.saveStatus === "retrying"
+                ? "Couldn’t save layout — retrying"
+                : "Couldn’t save layout. Reload the page to try again."}
+            </p>
+          )}
+          {menu !== null && graph.hasNode(menu.node) && (
+            <NodeContextMenu
+              at={menu.at}
+              bounds={menu.bounds}
+              label={graph.getNodeAttribute(menu.node, "entity").label}
+              type={graph.getNodeAttribute(menu.node, "entityType")}
+              pinned={pins.isPinned(menu.node)}
+              onTogglePin={() => {
+                pins.toggle(menu.node);
+              }}
+              onSelectNeighbours={() => {
+                selectNeighbours(menu.node);
+              }}
+              onHideType={() => {
+                explorer.toggleEntityType(graph.getNodeAttribute(menu.node, "entityType"));
+              }}
+              onClose={() => {
+                setMenu(null);
+              }}
+            />
+          )}
           {activeFilters > 0 && !filtersOpen && (
             <p className="filter-status" role="status">
               {summaryText} ·{" "}
@@ -431,7 +662,7 @@ export function GraphView({
             onToggle={explorer.toggleEntityType}
             onShowAll={explorer.showAllTypes}
           />
-          <div className="zoom-controls" role="group" aria-label="Zoom">
+          <div className="zoom-controls" role="group" aria-label="Zoom and rotation">
             <button
               type="button"
               className="icon-button icon-button--square"
@@ -453,11 +684,42 @@ export function GraphView({
             <button
               type="button"
               className="icon-button icon-button--square"
+              aria-label="Rotate left"
+              title="Rotate left (Q)"
+              onClick={() => canvasRef.current?.rotate(-1)}
+            >
+              <RotateIcon />
+            </button>
+            <button
+              type="button"
+              className="icon-button icon-button--square"
+              aria-label="Rotate right"
+              title="Rotate right (E)"
+              onClick={() => canvasRef.current?.rotate(1)}
+            >
+              <RotateIcon clockwise />
+            </button>
+            <button
+              type="button"
+              className="icon-button icon-button--square"
               aria-label="Reset view"
-              title="Reset view"
+              title="Reset view (0)"
               onClick={onResetView}
             >
               <FitIcon />
+            </button>
+            <button
+              type="button"
+              className="icon-button icon-button--square"
+              aria-label="Keyboard and mouse shortcuts"
+              title="Shortcuts (?)"
+              onClick={() => {
+                setShortcutsOpen(true);
+              }}
+            >
+              <span aria-hidden="true" className="zoom-controls__help">
+                ?
+              </span>
             </button>
           </div>
         </div>
@@ -465,15 +727,118 @@ export function GraphView({
       <SidePanel
         selected={selected}
         connections={connections}
-        overview={overview(summary)}
+        overview={
+          selection.length >= 2 ? (
+            <SelectionSummary
+              count={selection.length}
+              pinned={selection.filter((node) => pins.isPinned(node)).length}
+              onPinAll={() => {
+                pins.pin(selection);
+              }}
+              onUnpinAll={() => {
+                pins.unpin(selection);
+              }}
+              onClear={() => {
+                selectNode(null);
+              }}
+            />
+          ) : (
+            overview(summary)
+          )
+        }
         {...(renderEntity ? { renderEntity } : {})}
-        extra={groupActions}
+        extra={
+          <>
+            {pinActions}
+            {groupActions}
+          </>
+        }
         onSelect={focusNode}
         onClear={() => {
           selectNode(null);
         }}
       />
+      {shortcutsOpen && (
+        <ShortcutsDialog
+          onClose={() => {
+            setShortcutsOpen(false);
+          }}
+        />
+      )}
+      {confirmUnpinAll && (
+        <Modal
+          title="Unpin all entities?"
+          description={`${pinStore.size.toLocaleString("en")} pinned ${pinStore.size === 1 ? "entity goes" : "entities go"} back to the automatic layout. This changes only your own view.`}
+          onClose={() => {
+            setConfirmUnpinAll(false);
+          }}
+        >
+          <div className="button-row dialog__actions">
+            <button
+              type="button"
+              className="button"
+              onClick={() => {
+                setConfirmUnpinAll(false);
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="button button--primary"
+              onClick={() => {
+                setConfirmUnpinAll(false);
+                pins.unpinAll();
+              }}
+            >
+              Unpin all
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
+  );
+}
+
+/** The side panel while several entities are selected. */
+function SelectionSummary({
+  count,
+  pinned,
+  onPinAll,
+  onUnpinAll,
+  onClear,
+}: {
+  count: number;
+  pinned: number;
+  onPinAll: () => void;
+  onUnpinAll: () => void;
+  onClear: () => void;
+}) {
+  return (
+    <section aria-labelledby="selection-title">
+      <h2 id="selection-title" className="panel__title">
+        {count.toLocaleString("en")} entities selected
+      </h2>
+      <p className="panel__hint">
+        {pinned.toLocaleString("en")} pinned. Drag any of them to move them together.
+      </p>
+      <div className="button-row">
+        <button type="button" className="button button--small" onClick={onPinAll}>
+          Pin all
+        </button>
+        <button
+          type="button"
+          className="button button--small"
+          disabled={pinned === 0}
+          onClick={onUnpinAll}
+        >
+          Unpin all
+        </button>
+        <button type="button" className="button button--small" onClick={onClear}>
+          Clear
+        </button>
+      </div>
+    </section>
   );
 }
 
@@ -522,6 +887,29 @@ function ZoomIcon({ plus = false }: { plus?: boolean }) {
         stroke="currentColor"
         strokeWidth="1.5"
         strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+/** A circular arrow: rotate the view (counter-clockwise unless `clockwise`). */
+function RotateIcon({ clockwise = false }: { clockwise?: boolean }) {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+      focusable="false"
+      style={clockwise ? { transform: "scaleX(-1)" } : undefined}
+    >
+      <path
+        d="M4.2 4.5A5 5 0 1 1 3 8.5M4.2 4.5V1.8M4.2 4.5H7"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
   );

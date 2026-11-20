@@ -28,6 +28,7 @@ from nightloom_api.routers import (
     graph,
     health,
     jobs,
+    layouts,
     readiness,
     schema,
     shuttles,
@@ -84,6 +85,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(cases.router, prefix=resolved.api_prefix)
     app.include_router(graph.router, prefix=resolved.api_prefix)
     app.include_router(export.router, prefix=resolved.api_prefix)
+    app.include_router(layouts.router, prefix=resolved.api_prefix)
     app.include_router(schema.router, prefix=resolved.api_prefix)
     app.include_router(shuttles.router, prefix=resolved.api_prefix)
     app.include_router(jobs.router, prefix=resolved.api_prefix)

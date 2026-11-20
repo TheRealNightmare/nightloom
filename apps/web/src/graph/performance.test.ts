@@ -11,6 +11,8 @@ import { largeGraph } from "../test/largeGraph";
 import { createGraph, syncGraph } from "./buildGraph";
 import { applyFilters, EMPTY_FILTERS } from "./filters";
 import { collapseGroups, computeGroups, groupContaining } from "./groups";
+import { boundsOf, drawMinimap, minimapProjection, type MinimapContext } from "./minimap";
+import { applyPins, PinStore } from "./pins";
 import {
   fullLayoutIterations,
   INCREMENTAL_LAYOUT_ITERATIONS,
@@ -250,5 +252,112 @@ describe("a 1,500-leaf group", { timeout: 30_000 }, () => {
     expect(performance.now() - start).toBeLessThan(200 * TIME_FACTOR);
     const group = groupContaining(computeGroups(leafy, visible), hit?.id ?? "");
     expect(group?.parent).toBe(archive);
+  });
+});
+
+// Dragging moves nodes on every pointer move. Per frame, sigma updates the
+// moved nodes' attributes and runs the reducers (the whole graph when the
+// highlight changes; the moved nodes and their edges otherwise), and the
+// minimap redraws (at most 10 times a second). A frame is 16 ms.
+describe("dragging in a 2,000-entity graph", { timeout: 30_000 }, () => {
+  const FRAME_MS = 16;
+  const FRAMES = 30;
+  const graph = createGraph();
+  syncGraph(graph, data);
+  const hub = graph.nodes().reduce((a, b) => (graph.degree(a) >= graph.degree(b) ? a : b));
+  // A multi-selection of 50 nodes moved together, the hub among them.
+  const dragged = [
+    hub,
+    ...graph
+      .nodes()
+      .filter((node) => node !== hub)
+      .slice(0, 49),
+  ];
+  const state = {
+    ...INITIAL_VIEW_STATE,
+    hoveredNode: hub,
+    selectedNodes: new Set(dragged),
+  };
+  const context = { cameraRatio: 0.5, theme: "dark" } as const;
+  const median = (values: number[]) =>
+    [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)] ?? Infinity;
+
+  function moveFrame(frame: number) {
+    for (const node of dragged) {
+      const { x, y } = graph.getNodeAttributes(node);
+      graph.mergeNodeAttributes(node, { x: x + frame * 0.1, y: y - frame * 0.1 });
+    }
+  }
+
+  it("keeps a frame's incremental work far below a frame", () => {
+    const highlight = computeHighlight(graph, state);
+    const timings: number[] = [];
+    for (let frame = 0; frame < FRAMES; frame += 1) {
+      const start = performance.now();
+      moveFrame(frame);
+      for (const node of dragged) {
+        nodeView(graph, node, state, highlight, context);
+        graph.forEachEdge(node, (edge) => edgeView(graph, edge, state, highlight, context));
+      }
+      timings.push(performance.now() - start);
+    }
+    expect(median(timings)).toBeLessThan((FRAME_MS / 4) * TIME_FACTOR);
+  });
+
+  it("keeps a full repaint of every node and edge within a frame", () => {
+    const timings: number[] = [];
+    for (let frame = 0; frame < FRAMES; frame += 1) {
+      const start = performance.now();
+      moveFrame(frame);
+      const highlight = computeHighlight(graph, state);
+      graph.forEachNode((node) => nodeView(graph, node, state, highlight, context));
+      graph.forEachEdge((edge) => edgeView(graph, edge, state, highlight, context));
+      timings.push(performance.now() - start);
+    }
+    expect(median(timings)).toBeLessThan(FRAME_MS * TIME_FACTOR);
+  });
+
+  it("pins the dragged nodes and redraws the minimap quickly", () => {
+    const store = new PinStore();
+    store.loaded = true;
+    let start = performance.now();
+    store.pin(
+      dragged.map((node) => {
+        const { x, y } = graph.getNodeAttributes(node);
+        return [node, [x, y]] as const;
+      }),
+    );
+    applyPins(graph, store);
+    expect(performance.now() - start).toBeLessThan(FRAME_MS * TIME_FACTOR);
+    expect(graph.getNodeAttribute(hub, "pinned")).toBe(true);
+
+    const noop = () => undefined;
+    const ctx = {
+      clearRect: noop,
+      fillRect: noop,
+      beginPath: noop,
+      moveTo: noop,
+      lineTo: noop,
+      closePath: noop,
+      stroke: noop,
+      fill: noop,
+      setTransform: noop,
+      fillStyle: "",
+      strokeStyle: "",
+      lineWidth: 1,
+      globalAlpha: 1,
+    } as unknown as MinimapContext;
+    const size = { width: 168, height: 112 };
+    const timings: number[] = [];
+    for (let frame = 0; frame < 10; frame += 1) {
+      start = performance.now();
+      const dots = graph.mapNodes((_node, { x, y, color }) => ({ x, y, color }));
+      dots.sort((a, b) => (a.color < b.color ? -1 : a.color > b.color ? 1 : 0));
+      drawMinimap(ctx, size, dots, [], minimapProjection(boundsOf(dots), size), {
+        viewport: "#000",
+      });
+      timings.push(performance.now() - start);
+    }
+    expect(median(timings)).toBeLessThan((FRAME_MS / 2) * TIME_FACTOR);
   });
 });

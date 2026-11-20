@@ -481,6 +481,8 @@ export interface ApiRequestOptions extends RequestOptions {
   on401?: "invalid_credentials" | "session_expired";
   /** Tell `onSessionExpired` listeners about a `401` (default true). */
   notifySessionExpired?: boolean;
+  /** Let the request outlive the page (a save while the page is being hidden). */
+  keepalive?: boolean;
 }
 
 /**
@@ -496,6 +498,7 @@ export async function apiRequest(
     cookies,
     on401 = "session_expired",
     notifySessionExpired = true,
+    keepalive = false,
     timeoutMs = DEFAULT_TIMEOUT_MS,
     signal,
     fetchImpl = fetch,
@@ -536,6 +539,7 @@ export async function apiRequest(
         credentials: "same-origin",
         cache: "no-store",
         signal: controller.signal,
+        ...(keepalive ? { keepalive: true } : {}),
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
     } catch {

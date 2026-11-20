@@ -13,6 +13,7 @@ import { describeCaseError } from "./errors";
 import { Loading } from "./Feedback";
 import { AddEntityDialog } from "./graph/AddEntityDialog";
 import { AddRelationshipDialog } from "./graph/AddRelationshipDialog";
+import { caseLayout } from "./graph/caseLayout";
 import { DeleteEntityDialog } from "./graph/DeleteEntityDialog";
 import { EntityDetails } from "./graph/EntityDetails";
 import { ExportDialog } from "./graph/ExportDialog";
@@ -80,6 +81,7 @@ export function GraphTab() {
   const [pulse, setPulse] = useState<ReadonlySet<string> | null>(null);
   // Filters live in the query string: shareable, and they survive a reload.
   const [filters, updateFilters] = useUrlFilters();
+  const layout = useMemo(() => caseLayout(caseId), [caseId]);
 
   // A finished job may have changed the graph: load it again (the view syncs
   // incrementally), and highlight what a successful job created or updated.
@@ -351,6 +353,8 @@ export function GraphTab() {
       ) : (
         <Suspense fallback={<Loading label="Loading graph view…" />}>
           <GraphView
+            // One graph, and one set of pins, per case.
+            key={caseId}
             className="workspace--case"
             data={data}
             overview={overview}
@@ -360,6 +364,7 @@ export function GraphTab() {
             {...(pulse ? { pulse } : {})}
             filters={filters}
             onFiltersChange={updateFilters}
+            layout={layout}
             grades={schema.admiralty}
             toolbar={
               <>

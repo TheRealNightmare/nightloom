@@ -39,16 +39,22 @@ afterEach(() => {
 });
 
 describe("graph chrome", () => {
-  it("zooms in, out and back to the whole graph", async () => {
+  it("zooms in, out, rotates and goes back to the whole graph, unrotated", async () => {
     const { sigma } = renderDemo();
-    const zoom = screen.getByRole("group", { name: "Zoom" });
+    const zoom = screen.getByRole("group", { name: "Zoom and rotation" });
     expect(zoom).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "Zoom in" }));
-    expect(sigma.camera.zoomIn).toHaveBeenCalledTimes(1);
+    expect(sigma.camera.ratio).toBeCloseTo(1 / 1.5);
     await userEvent.click(screen.getByRole("button", { name: "Zoom out" }));
-    expect(sigma.camera.zoomOut).toHaveBeenCalledTimes(1);
+    expect(sigma.camera.ratio).toBeCloseTo(1);
+    await userEvent.click(screen.getByRole("button", { name: "Rotate right" }));
+    expect(sigma.camera.angle).toBeCloseTo(Math.PI / 12);
+    await userEvent.click(screen.getByRole("button", { name: "Rotate left" }));
+    await userEvent.click(screen.getByRole("button", { name: "Rotate left" }));
+    expect(sigma.camera.angle).toBeCloseTo(-Math.PI / 12);
     await userEvent.click(screen.getByRole("button", { name: "Reset view" }));
     expect(sigma.camera.reset).toHaveBeenCalledTimes(1);
+    expect(sigma.camera.angle).toBe(0);
   });
 
   it("offers only the 2D view for now", async () => {

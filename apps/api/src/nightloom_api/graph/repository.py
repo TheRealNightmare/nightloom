@@ -309,6 +309,12 @@ RETURN type(r) AS type, s.key AS source, t.key AS target,
 ORDER BY source, type, target
 """
 
+_EXISTING_KEYS: LiteralString = """
+UNWIND $keys AS key
+MATCH (n:Entity {case_id: $case_id, key: key})
+RETURN n.key AS key
+"""
+
 _DELETE_CASE_BATCH: LiteralString = """
 MATCH (n:Entity {case_id: $case_id})
 WITH n LIMIT $batch
@@ -504,6 +510,13 @@ class GraphOperations:
                 target_sensitivity=Sensitivity(record["target_sensitivity"]),
             )
 
+    async def existing_keys(self, case_id: uuid.UUID | str, keys: Sequence[str]) -> set[str]:
+        """Those of ``keys`` that are entities of the case."""
+        if not keys:
+            return set()
+        result = await self._tx.run(_EXISTING_KEYS, case_id=_case(case_id), keys=list(keys))
+        return {record["key"] async for record in result}
+
     async def delete_case_batch(self, case_id: uuid.UUID | str, batch_size: int) -> int:
         """Delete up to ``batch_size`` of the case's nodes; returns how many were deleted."""
         result = await self._tx.run(_DELETE_CASE_BATCH, case_id=_case(case_id), batch=batch_size)
@@ -590,6 +603,10 @@ class GraphRepository:
     async def get_entity(self, case_id: uuid.UUID | str, key: str) -> EntityDetail | None:
         async with self.read() as ops:
             return await ops.get_entity(case_id, key)
+
+    async def existing_keys(self, case_id: uuid.UUID | str, keys: Sequence[str]) -> set[str]:
+        async with self.read() as ops:
+            return await ops.existing_keys(case_id, keys)
 
     async def count_graph(self, case_id: uuid.UUID | str) -> GraphCounts:
         async with self.read() as ops:
