@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DemoPage } from "../demo/DemoPage";
 import { sampleGraph } from "../demo/sampleGraph";
-import { FakeSigma } from "../test/sigmaMock";
+import { FakeSigma, waitForSigma } from "../test/sigmaMock";
 import { GRAPH_PALETTES } from "../theme/graphPalette";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { ThemeToggle } from "../theme/ThemeToggle";
@@ -16,14 +16,14 @@ import type { NightloomGraph } from "./buildGraph";
 
 vi.mock("sigma", () => import("../test/sigmaMock"));
 
-function renderDemo() {
+async function renderDemo() {
   render(
     <ThemeProvider>
       <ThemeToggle />
       <DemoPage />
     </ThemeProvider>,
   );
-  const sigma = FakeSigma.latest();
+  const sigma = await waitForSigma();
   return { sigma, graph: sigma.graph as unknown as NightloomGraph };
 }
 
@@ -40,7 +40,7 @@ afterEach(() => {
 
 describe("graph chrome", () => {
   it("zooms in, out, rotates and goes back to the whole graph, unrotated", async () => {
-    const { sigma } = renderDemo();
+    const { sigma } = await renderDemo();
     const zoom = screen.getByRole("group", { name: "Zoom and rotation" });
     expect(zoom).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "Zoom in" }));
@@ -58,7 +58,7 @@ describe("graph chrome", () => {
   });
 
   it("offers only the 2D view for now", async () => {
-    renderDemo();
+    await renderDemo();
     const view = screen.getByRole("group", { name: "View" });
     const twoD = screen.getByRole("button", { name: "2D" });
     const threeD = screen.getByRole("button", { name: "3D" });
@@ -74,7 +74,7 @@ describe("graph chrome", () => {
   });
 
   it("repaints the canvas in the other theme's colors, without moving anything", async () => {
-    const { sigma, graph } = renderDemo();
+    const { sigma, graph } = await renderDemo();
     const node = sampleGraph.nodes[0];
     const edge = sampleGraph.edges[0];
     if (!node || !edge) throw new Error("empty sample");
@@ -113,8 +113,8 @@ describe("graph chrome", () => {
     });
   });
 
-  it("widens threads as the camera zooms in, repainting only on visible steps", () => {
-    const { sigma } = renderDemo();
+  it("widens threads as the camera zooms in, repainting only on visible steps", async () => {
+    const { sigma } = await renderDemo();
     const edge = sampleGraph.edges[0];
     if (!edge) throw new Error("empty sample");
     expect(sigma.edgeView(edge.id)["size"]).toBeCloseTo(1);
@@ -131,8 +131,8 @@ describe("graph chrome", () => {
     expect(sigma.edgeView(edge.id)["size"]).toBeCloseTo(1.5 * Math.sqrt(0.25));
   });
 
-  it("draws with the knot and thread programs", () => {
-    const { sigma } = renderDemo();
+  it("draws with the knot and thread programs", async () => {
+    const { sigma } = await renderDemo();
     const { primitives, styles } = sigma.options as {
       primitives: { nodes: { variables: object }; edges: object };
       styles: { edges: { path: string; labelVisibility: string } };

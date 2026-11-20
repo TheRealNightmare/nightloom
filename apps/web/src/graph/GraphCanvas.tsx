@@ -551,6 +551,8 @@ export function GraphCanvas({
         aria-describedby={`${helpId} ${summaryId}`}
         aria-roledescription="graph"
         data-testid="graph-canvas"
+        // "true" once sigma draws the graph (tests wait for it).
+        data-ready={sigmaInstance ? "true" : "false"}
         onKeyDown={onKeyDown}
         onBlur={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget)) {

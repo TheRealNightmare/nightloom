@@ -15,7 +15,7 @@ import {
 } from "../test/caseFixtures";
 import { clearCookies, FakeApi, json } from "../test/fakeApi";
 import { renderApp } from "../test/renderApp";
-import { FakeSigma } from "../test/sigmaMock";
+import { FakeSigma, waitForSigma } from "../test/sigmaMock";
 import { REDACTION_NOTE } from "./graph/exportText";
 
 vi.mock("sigma", () => import("../test/sigmaMock"));
@@ -66,7 +66,7 @@ afterEach(() => {
 async function openGraph(query = "", role: "owner" | "editor" | "viewer" = "owner") {
   serveCase(api, { graph, role });
   const view = renderApp(`${path}/graph${query}`);
-  await screen.findByTestId("graph-canvas");
+  await waitForSigma();
   return view;
 }
 

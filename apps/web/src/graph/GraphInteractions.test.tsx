@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { sampleGraph } from "../demo/sampleGraph";
 import type { InvestigationGraph } from "../domain/entities";
-import { FakeSigma, sigmaEvent } from "../test/sigmaMock";
+import { FakeSigma, sigmaEvent, waitForSigma } from "../test/sigmaMock";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import type { NightloomGraph } from "./buildGraph";
 import { GraphView } from "./GraphView";
@@ -33,7 +33,7 @@ function persistence(saved: Positions = {}, save = vi.fn(() => Promise.resolve()
   return { layout, save };
 }
 
-function renderView({
+async function renderView({
   layout,
   data = sampleGraph,
 }: { layout?: LayoutPersistence; data?: InvestigationGraph } = {}) {
@@ -42,7 +42,7 @@ function renderView({
       <GraphView data={data} overview={() => <p>Overview</p>} {...(layout ? { layout } : {})} />
     </ThemeProvider>,
   );
-  const sigma = FakeSigma.latest();
+  const sigma = await waitForSigma();
   return { sigma, graph: sigma.graph as unknown as NightloomGraph };
 }
 
@@ -72,7 +72,7 @@ afterEach(() => {
 describe("dragging and pinning", () => {
   it("pins a dragged node where it was dropped and saves it after a pause", async () => {
     const { layout, save } = persistence();
-    const { sigma, graph } = renderView({ layout });
+    const { sigma, graph } = await renderView({ layout });
     await waitFor(() => {
       expect(layout.load).toHaveBeenCalled();
     });
@@ -102,8 +102,8 @@ describe("dragging and pinning", () => {
     });
   });
 
-  it("keeps the node under the pointer from the first move of a drag", () => {
-    const { sigma, graph } = renderView();
+  it("keeps the node under the pointer from the first move of a drag", async () => {
+    const { sigma, graph } = await renderView();
     const before = { ...graph.getNodeAttributes(WWW) };
     const down = sigma.screenOf(WWW);
     act(() => {
@@ -123,7 +123,7 @@ describe("dragging and pinning", () => {
 
   it("puts saved pins back where they were when the graph opens", async () => {
     const { layout } = persistence({ [WWW]: [123, -45] });
-    const { graph } = renderView({ layout });
+    const { graph } = await renderView({ layout });
     await waitFor(() => {
       expect(graph.getNodeAttributes(WWW)).toMatchObject({ x: 123, y: -45, pinned: true });
     });
@@ -132,7 +132,7 @@ describe("dragging and pinning", () => {
   it("says when the layout could not be saved, and keeps retrying", async () => {
     const save = vi.fn(() => Promise.reject(new Error("down")));
     const { layout } = persistence({}, save);
-    const { sigma, graph } = renderView({ layout });
+    const { sigma, graph } = await renderView({ layout });
     await waitFor(() => {
       expect(layout.load).toHaveBeenCalled();
     });
@@ -146,7 +146,7 @@ describe("dragging and pinning", () => {
 
   it("saves the pins at once when the page is hidden", async () => {
     const { layout, save } = persistence();
-    const { sigma, graph } = renderView({ layout });
+    const { sigma, graph } = await renderView({ layout });
     await waitFor(() => {
       expect(layout.load).toHaveBeenCalled();
     });
@@ -161,7 +161,7 @@ describe("dragging and pinning", () => {
 
   it("unpins from the side panel, and pins again", async () => {
     const { layout, save } = persistence({ [WWW]: [10, 10] });
-    const { sigma, graph } = renderView({ layout });
+    const { sigma, graph } = await renderView({ layout });
     await waitFor(() => {
       expect(graph.getNodeAttribute(WWW, "pinned")).toBe(true);
     });
@@ -179,8 +179,8 @@ describe("dragging and pinning", () => {
     expect(graph.getNodeAttribute(WWW, "pinned")).toBe(true);
   });
 
-  it("keeps pins for the page only when there is nowhere to save them (the demo)", () => {
-    const { sigma, graph } = renderView();
+  it("keeps pins for the page only when there is nowhere to save them (the demo)", async () => {
+    const { sigma, graph } = await renderView();
     drag(sigma, graph, [WWW]);
     expect(graph.getNodeAttribute(WWW, "pinned")).toBe(true);
   });
@@ -188,7 +188,7 @@ describe("dragging and pinning", () => {
 
 describe("selecting several entities", () => {
   it("toggles entities with Ctrl/Cmd+click and moves the selection together", async () => {
-    const { sigma, graph } = renderView();
+    const { sigma, graph } = await renderView();
     act(() => {
       sigma.emit("clickNode", { node: WWW });
     });
@@ -226,8 +226,8 @@ describe("selecting several entities", () => {
     expect(within(panel).getByText("Overview")).toBeVisible();
   });
 
-  it("selects what a Shift+drag rectangle covers, and a stage click right after does not clear it", () => {
-    const { sigma, graph } = renderView();
+  it("selects what a Shift+drag rectangle covers, and a stage click right after does not clear it", async () => {
+    const { sigma, graph } = await renderView();
     // Spread three nodes apart on screen and draw a box around two of them.
     act(() => {
       graph.mergeNodeAttributes(WWW, { x: -300, y: 200 });
@@ -263,8 +263,8 @@ describe("selecting several entities", () => {
     expect(sigma.nodeView(APEX)["haloSize"]).toBe(0);
   });
 
-  it("selects under rotation what is inside the rectangle on screen", () => {
-    const { sigma, graph } = renderView();
+  it("selects under rotation what is inside the rectangle on screen", async () => {
+    const { sigma, graph } = await renderView();
     act(() => {
       graph.forEachNode((node) => {
         graph.mergeNodeAttributes(node, { x: 1000, y: 1000 });
@@ -288,7 +288,7 @@ describe("selecting several entities", () => {
 
 describe("node menu", () => {
   it("opens on right-click with pin, select neighbours and hide type", async () => {
-    const { sigma, graph } = renderView();
+    const { sigma, graph } = await renderView();
     act(() => {
       sigma.emit("rightClickNode", { node: APEX, event: sigmaEvent({ x: 120, y: 80 }) });
     });
@@ -317,7 +317,7 @@ describe("node menu", () => {
   });
 
   it("closes with Escape", async () => {
-    const { sigma } = renderView();
+    const { sigma } = await renderView();
     act(() => {
       sigma.emit("rightClickNode", { node: APEX });
     });
@@ -325,10 +325,11 @@ describe("node menu", () => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
-  it("opens on a long press on a touch screen", () => {
+  it("opens on a long press on a touch screen", async () => {
+    // Rendered before faking timers: waiting for sigma needs real ones.
+    const { sigma } = await renderView();
     vi.useFakeTimers();
     try {
-      const { sigma } = renderView();
       const touch = sigmaEvent({ x: 50, y: 60 }, new TouchEvent("touchstart"));
       act(() => {
         sigma.emit("downNode", { node: WWW, event: touch });
@@ -340,10 +341,11 @@ describe("node menu", () => {
     }
   });
 
-  it("does not open when the finger moves or lifts first", () => {
+  it("does not open when the finger moves or lifts first", async () => {
+    // Rendered before faking timers: waiting for sigma needs real ones.
+    const { sigma } = await renderView();
     vi.useFakeTimers();
     try {
-      const { sigma } = renderView();
       act(() => {
         sigma.emit("downNode", {
           node: WWW,
@@ -366,7 +368,7 @@ describe("node menu", () => {
 
 describe("View menu", () => {
   it("toggles the minimap, sets the scroll wheel and unpins everything after confirming", async () => {
-    const { sigma, graph } = renderView();
+    const { sigma, graph } = await renderView();
     drag(sigma, graph, [WWW, API]);
     const view = screen.getByRole("button", { name: "View" });
     await userEvent.click(view);
@@ -398,7 +400,7 @@ describe("View menu", () => {
   });
 
   it("moves between items with the arrow keys and closes with Escape", async () => {
-    renderView();
+    await renderView();
     const view = screen.getByRole("button", { name: "View" });
     await userEvent.click(view);
     expect(screen.getByRole("menuitemcheckbox", { name: "Minimap" })).toHaveFocus();
@@ -412,7 +414,7 @@ describe("View menu", () => {
     expect(view).toHaveFocus();
   });
 
-  it("shows the minimap by default for more than 60 entities", () => {
+  it("shows the minimap by default for more than 60 entities", async () => {
     const many: InvestigationGraph = {
       nodes: Array.from({ length: 61 }, (_, i) => ({
         ...sampleGraph.nodes[0]!,
@@ -421,7 +423,7 @@ describe("View menu", () => {
       })),
       edges: [],
     };
-    renderView({ data: many });
+    await renderView({ data: many });
     expect(screen.getByTestId("graph-minimap")).toBeInTheDocument();
   });
 });
@@ -442,7 +444,7 @@ describe("minimap", () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
       context as unknown as CanvasRenderingContext2D,
     );
-    const { sigma } = renderView();
+    const { sigma } = await renderView();
     await userEvent.click(screen.getByRole("button", { name: "View" }));
     await userEvent.click(screen.getByRole("menuitemcheckbox", { name: "Minimap" }));
     await waitFor(() => {
@@ -467,7 +469,7 @@ describe("keyboard", () => {
   }
 
   it("is a focusable application with a description and a help dialog", async () => {
-    renderView();
+    await renderView();
     const graphCanvas = canvas();
     expect(graphCanvas).toHaveAttribute("tabindex", "0");
     expect(graphCanvas).toHaveAccessibleDescription(/Tab moves through the entities/);
@@ -481,7 +483,7 @@ describe("keyboard", () => {
   });
 
   it("pans, zooms, rotates and resets", async () => {
-    const { sigma } = renderView();
+    const { sigma } = await renderView();
     canvas().focus();
     await userEvent.keyboard("{ArrowRight}");
     expect(sigma.camera.x).toBeCloseTo(PAN_STEP_PX);
@@ -500,7 +502,7 @@ describe("keyboard", () => {
   });
 
   it("moves a focus ring through the entities, announces them, selects and pins", async () => {
-    const { sigma, graph } = renderView();
+    const { sigma, graph } = await renderView();
     // Put two nodes at the top-left of the screen, the rest further down.
     act(() => {
       graph.forEachNode((node, { x }) => {
@@ -546,7 +548,7 @@ describe("keyboard", () => {
   });
 
   it("asks to pin before moving an entity with Shift+arrows", async () => {
-    renderView();
+    await renderView();
     canvas().focus();
     await userEvent.keyboard("{Tab}{Shift>}{ArrowLeft}{/Shift}");
     expect(screen.getByTestId("graph-announcer")).toHaveTextContent(/Pin it first \(P\)/);
@@ -560,6 +562,7 @@ describe("keyboard", () => {
         <button type="button">After</button>
       </ThemeProvider>,
     );
+    await waitForSigma();
     canvas().focus();
     await userEvent.keyboard("{Tab}");
     expect(screen.getByTestId("graph-announcer")).not.toHaveTextContent("");
@@ -581,8 +584,8 @@ describe("wheel, trackpad and rotation", () => {
     return event;
   }
 
-  it("zooms with a mouse wheel and pans with a trackpad, never scrolling the page", () => {
-    const { sigma } = renderView();
+  it("zooms with a mouse wheel and pans with a trackpad, never scrolling the page", async () => {
+    const { sigma } = await renderView();
     const event = wheel({ deltaY: 100 });
     expect(event.defaultPrevented).toBe(true);
     expect(sigma.camera.ratio).toBeGreaterThan(1);
@@ -594,8 +597,8 @@ describe("wheel, trackpad and rotation", () => {
     expect(sigma.camera.x).not.toBe(x);
   });
 
-  it("zooms toward the pointer on a pinch (Ctrl+wheel)", () => {
-    const { sigma } = renderView();
+  it("zooms toward the pointer on a pinch (Ctrl+wheel)", async () => {
+    const { sigma } = await renderView();
     wheel({ deltaY: -10, ctrlKey: true, clientX: 700, clientY: 100 });
     expect(sigma.camera.ratio).toBeLessThan(1);
     // Toward the top-right: the camera moved that way.
@@ -605,7 +608,7 @@ describe("wheel, trackpad and rotation", () => {
 
   it("follows the Scroll wheel setting", async () => {
     window.localStorage.setItem(WHEEL_STORAGE_KEY, "pan");
-    const { sigma } = renderView();
+    const { sigma } = await renderView();
     wheel({ deltaY: 100 });
     expect(sigma.camera.ratio).toBe(1);
     expect(sigma.camera.y).toBeLessThan(0);
@@ -615,8 +618,8 @@ describe("wheel, trackpad and rotation", () => {
     expect(sigma.camera.ratio).toBeGreaterThan(1);
   });
 
-  it("rotates with Alt+drag and right-button drag on the stage, not with a plain drag", () => {
-    const { sigma } = renderView();
+  it("rotates with Alt+drag and right-button drag on the stage, not with a plain drag", async () => {
+    const { sigma } = await renderView();
     const rotate = (init: MouseEventInit) => {
       const move = sigmaEvent({ x: 400, y: 500 }, new MouseEvent("mousemove"));
       act(() => {
@@ -641,15 +644,15 @@ describe("wheel, trackpad and rotation", () => {
     expect(sigma.camera.angle).toBe(0);
   });
 
-  it("keeps the browser's menu closed over the graph", () => {
-    renderView();
+  it("keeps the browser's menu closed over the graph", async () => {
+    await renderView();
     const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
     screen.getByTestId("graph-canvas").dispatchEvent(event);
     expect(event.defaultPrevented).toBe(true);
   });
 
-  it("pinches and twists with Safari's gesture events", () => {
-    const { sigma } = renderView();
+  it("pinches and twists with Safari's gesture events", async () => {
+    const { sigma } = await renderView();
     const gesture = (type: string, extra: Record<string, number> = {}) => {
       const event = Object.assign(new Event(type, { cancelable: true }), {
         scale: 1,
@@ -673,13 +676,13 @@ describe("wheel, trackpad and rotation", () => {
 });
 
 describe("canvas labels", () => {
-  it("shortens long labels on the canvas, not in the side panel", () => {
+  it("shortens long labels on the canvas, not in the side panel", async () => {
     const long = "https://www.example.org/a/very/long/path/to/an/archived/page.html";
     const data: InvestigationGraph = {
       nodes: [{ ...sampleGraph.nodes[0]!, id: "url:long", label: long, type: "url" }],
       edges: [],
     };
-    const { sigma } = renderView({ data });
+    const { sigma } = await renderView({ data });
     expect(sigma.nodeView("url:long")["label"]).toHaveLength(32);
     act(() => {
       sigma.emit("clickNode", { node: "url:long" });

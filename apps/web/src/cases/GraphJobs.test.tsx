@@ -19,7 +19,7 @@ import {
 } from "../test/caseFixtures";
 import { clearCookies, FakeApi, json } from "../test/fakeApi";
 import { renderApp } from "../test/renderApp";
-import { FakeSigma } from "../test/sigmaMock";
+import { FakeSigma, waitForSigma } from "../test/sigmaMock";
 import { PULSE_MS } from "./GraphTab";
 import { NO_JOBS_MESSAGE } from "./graph/JobsPanel";
 import { PERSON_SHUTTLE_REASON } from "./graph/jobText";
@@ -83,9 +83,9 @@ async function openGraph(options: ServeOptions = {}) {
 const details = () => screen.getByRole("complementary", { name: "Details" });
 
 async function select(key: string) {
-  await screen.findByTestId("graph-canvas");
+  const sigma = await waitForSigma();
   act(() => {
-    FakeSigma.latest().emit("clickNode", { node: key });
+    sigma.emit("clickNode", { node: key });
   });
 }
 

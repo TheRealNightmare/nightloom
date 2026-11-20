@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiRequest, CSRF_HEADER } from "../api/client";
 import { ETHICS_URL } from "../components/LoginScreen";
 import { clearCookies, FakeApi, json, noContent, READY_BODY, TEST_USER } from "../test/fakeApi";
-import { FakeSigma } from "../test/sigmaMock";
+import { FakeSigma, waitForSigma } from "../test/sigmaMock";
 import { renderApp } from "../test/renderApp";
 import { APP_VERSION } from "../version";
 import { SESSION_ENDED_NOTICE, useAuth } from "./context";
@@ -64,7 +64,8 @@ describe("start-up", () => {
 
   it("goes straight to the app when a session exists", async () => {
     await renderSignedIn();
-    expect(await screen.findByTestId("graph-canvas")).toBeInTheDocument();
+    // The demo graph is drawn (sigma in place), not just its canvas element.
+    await waitForSigma();
     expect(screen.getByText("Demo data")).toBeVisible();
     expect(await screen.findByRole("button", { name: "API status: Ready" })).toBeVisible();
   });
@@ -132,7 +133,8 @@ describe("sign-in", () => {
     await screen.findByLabelText("Email");
     await signIn("  analyst@example.org ");
     expect(await screen.findByRole("button", { name: /Ada Analyst/ })).toBeVisible();
-    expect(await screen.findByTestId("graph-canvas")).toBeInTheDocument();
+    // The demo graph is drawn (sigma in place), not just its canvas element.
+    await waitForSigma();
     expect(JSON.parse(api.callsTo("POST", "/auth/login")[0]?.init.body as string)).toEqual({
       email: "analyst@example.org",
       password: "correct horse battery",

@@ -6,6 +6,7 @@
  * screen like sigma does (y up), with the camera's x / y as the graph point
  * at the center, `ratio` as graph units per pixel and `angle` as rotation.
  */
+import { waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 
 type Handler = (payload: Record<string, unknown>) => void;
@@ -266,6 +267,28 @@ export class FakeSigma {
   static reset(): void {
     FakeSigma.instances = [];
   }
+}
+
+/**
+ * Waits until the graph canvas has drawn with sigma, and returns that sigma.
+ *
+ * The canvas element shows up before sigma exists: the graph view is loaded
+ * lazily and GraphCanvas creates sigma in an effect (after the label font),
+ * so finding `graph-canvas` is not enough. The canvas sets
+ * `data-ready="true"` once its sigma instance is in place; this also checks
+ * that the latest FakeSigma draws into a canvas that is still on the page.
+ */
+export async function waitForSigma(): Promise<FakeSigma> {
+  return waitFor(() => {
+    const sigma = FakeSigma.latest();
+    if (!sigma.container.isConnected || sigma.kill.mock.calls.length > 0) {
+      throw new Error("the latest sigma is no longer on the page");
+    }
+    if (sigma.container.dataset["ready"] !== "true") {
+      throw new Error("the graph canvas has not drawn yet");
+    }
+    return sigma;
+  });
 }
 
 export default FakeSigma;
