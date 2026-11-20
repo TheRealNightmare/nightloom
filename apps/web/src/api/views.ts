@@ -14,6 +14,8 @@ export const VIEW_LIMITS = {
   positions: 10_000,
   hiddenSources: 100,
   sourceMax: 100,
+  /** Coordinates (pins, cameras) stay within ±this. */
+  coordinate: 1e6,
 } as const;
 
 export interface ApiCamera {
@@ -44,8 +46,18 @@ export interface ApiFilters {
   hide_isolated: boolean;
 }
 
-/** Mirrors `ViewState` (version 1). */
-export interface ApiViewState {
+/** Mirrors `Camera3D`: where a 3D camera is, what it looks at and which way is up. */
+export interface ApiCamera3D {
+  position: [number, number, number];
+  target: [number, number, number];
+  /** Each component within [-1, 1], not all zero. */
+  up: [number, number, number];
+}
+
+export type ApiDepth = "time" | "type" | "flat";
+
+/** Mirrors `ViewStateV1`: 2D only (still accepted and read). */
+export interface ApiViewStateV1 {
   version: 1;
   mode: "2d";
   camera: ApiCamera;
@@ -53,6 +65,24 @@ export interface ApiViewState {
   groups: { expanded: string[] };
   positions: Record<string, [number, number]>;
 }
+
+/**
+ * Mirrors `ViewStateV2`: the 2D or 3D view. `camera` is always there (a 3D
+ * view's camera seen from the front, so any client can show it in 2D);
+ * `camera3d` only for views saved in 3D.
+ */
+export interface ApiViewStateV2 {
+  version: 2;
+  mode: "2d" | "3d";
+  camera: ApiCamera;
+  camera3d?: ApiCamera3D | null;
+  depth: ApiDepth;
+  filters: ApiFilters;
+  groups: { expanded: string[] };
+  positions: Record<string, [number, number]>;
+}
+
+export type ApiViewState = ApiViewStateV1 | ApiViewStateV2;
 
 export interface ApiAuthor {
   id: string;
@@ -149,8 +179,36 @@ function isPosition(value: unknown): value is [number, number] {
   return Array.isArray(value) && value.length === 2 && value.every(isFiniteNumber);
 }
 
+function isVec3(value: unknown, bound: number): value is [number, number, number] {
+  return (
+    Array.isArray(value) &&
+    value.length === 3 &&
+    value.every((n) => isFiniteNumber(n) && Math.abs(n) <= bound)
+  );
+}
+
+function isCamera3d(value: unknown): value is ApiCamera3D {
+  return (
+    isRecord(value) &&
+    isVec3(value["position"], VIEW_LIMITS.coordinate) &&
+    isVec3(value["target"], VIEW_LIMITS.coordinate) &&
+    isVec3(value["up"], 1)
+  );
+}
+
+function isVersioned(value: Record<string, unknown>): boolean {
+  if (value["version"] === 1) return value["mode"] === "2d";
+  if (value["version"] !== 2) return false;
+  const camera3d = value["camera3d"];
+  return (
+    (value["mode"] === "2d" || value["mode"] === "3d") &&
+    ["time", "type", "flat"].includes(value["depth"] as string) &&
+    (camera3d === undefined || camera3d === null || isCamera3d(camera3d))
+  );
+}
+
 export function isViewState(value: unknown): value is ApiViewState {
-  if (!isRecord(value) || value["version"] !== 1 || value["mode"] !== "2d") return false;
+  if (!isRecord(value) || !isVersioned(value)) return false;
   const { camera, groups, positions } = value;
   return (
     isRecord(camera) &&

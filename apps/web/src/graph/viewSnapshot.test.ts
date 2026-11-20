@@ -28,7 +28,10 @@ const FILTERS: GraphFilters = {
 };
 
 const SNAPSHOT: ViewSnapshot = {
+  mode: "2d",
+  depth: "time",
   camera: { x: 10, y: -4, ratio: 0.25, angle: 0.5 },
+  camera3d: null,
   filters: FILTERS,
   expanded: ["group:domain:example.org|url"],
   pins: { "domain:example.org": [1, 2], "ip_address:192.0.2.1": [-3, 4.5] },
@@ -103,6 +106,26 @@ describe("snapshots", () => {
     const applied = stateToSnapshot(STATE, (id) => id !== "domain:example.org");
     expect(applied.pins).toEqual({});
     expect(stateToSnapshot(STATE, () => true).pins).toEqual({ "domain:example.org": [1, 2] });
+  });
+
+  it("are saved as version 2, with the 3D camera and depth of a 3D view", () => {
+    const camera3d = {
+      position: [1, 2, 300] as [number, number, number],
+      target: [1, 2, 0] as [number, number, number],
+      up: [0, 1, 0] as [number, number, number],
+    };
+    const three: ViewSnapshot = { ...SNAPSHOT, mode: "3d", depth: "type", camera3d };
+    const state = snapshotToState(three);
+    expect(state).toMatchObject({ version: 2, mode: "3d", depth: "type", camera3d });
+    expect(stateToSnapshot(state!, () => true)).toEqual(three);
+    // A 2D view keeps no 3D camera.
+    expect(snapshotToState({ ...SNAPSHOT, camera3d })).not.toHaveProperty("camera3d");
+  });
+
+  it("read version-1 views as 2D, with the default depth", () => {
+    const applied = stateToSnapshot(STATE, () => true);
+    expect(applied).toMatchObject({ mode: "2d", depth: "time", camera3d: null });
+    expect(applied.camera).toEqual(STATE.camera);
   });
 
   it("drop duplicate groups", () => {

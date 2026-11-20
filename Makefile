@@ -78,7 +78,7 @@ CORE_COMPAT_RUN = uv run --python $(1) --no-project --with ./packages/core \
 	worker shuttles \
 	up deps-up down logs ps reset compose-config migrate revision create-admin \
 	secrets deploy-pull backup restore test-edge test-nginx-edge test-backup-restore \
-	web-install web-dev web-lint web-fmt web-typecheck web-test web-build check-web e2e
+	web-install web-dev web-lint web-fmt web-typecheck web-test web-build web-size check-web e2e
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -208,6 +208,9 @@ web-test: ## Run the web unit tests with coverage
 
 web-build: ## Build the web frontend into apps/web/dist
 	$(WEB) build
+
+web-size: ## Check the built bundle against apps/web/bundle-budget.json (after web-build)
+	$(WEB) size
 
 check-web: web-lint web-typecheck web-test ## Run lint, typecheck and tests (web)
 

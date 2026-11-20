@@ -14,6 +14,9 @@ How releases are cut is described in [docs/RELEASING.md](docs/RELEASING.md).
 - Zoom toward the pointer, trackpad two-finger panning (with a *Scroll wheel* setting), rotation (Alt or right-drag, ⟲ / ⟳, twist), Ctrl/⌘+click and Shift+drag selection, a minimap, and full keyboard control with announcements and a shortcuts dialog.
 - Shorter labels on the canvas: certificates show their subject's common name or a short fingerprint, long values are cut in the middle.
 - Saved views: named snapshots of a case graph's camera, filters, expanded groups and pins, shared with the case's members (`/cases/{id}/views`, migration `0008_saved_views`, audited as `view.create` / `view.update` / `view.delete` without names). A *Views* menu (or <kbd>V</kbd>) applies one with *Undo*; editors and owners save views, and a view's creator or an owner updates, renames or deletes it; *Copy link* shares `?view=<id>`.
+- A 3D view of the case graph (*2D | 3D* on the toolbar, kept in the URL as `?mode=3d` and remembered per browser): the same layout, pins, selection, filters and groups, with depth by first seen (oldest at the back, undated entities on their own plane, a date ruler), by entity type, or flat. Orbit, pan, zoom toward the pointer, fly-to, box selection, drag to pin (the same pins as 2D), the node menu, a minimap and the full keyboard map with the same announcements. Loaded only when used (three.js and React Three Fiber in their own chunk, about 200 KiB gzip); without WebGL the graph stays in 2D with a notice.
+- Saved views store version 2 of the view state: `mode` (`2d` or `3d`), an optional `camera3d` and the `depth`. Version-1 views still load, in 2D.
+- `make web-size` (run in CI) checks the built bundle against `apps/web/bundle-budget.json`.
 
 ## [0.1.0] - 2026-11-19
 

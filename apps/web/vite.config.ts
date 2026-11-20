@@ -1,8 +1,9 @@
 /// <reference types="vitest/config" />
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+import { gzipSync } from "node:zlib";
 
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 
 // Shown in the account menu (src/version.ts). Read from package.json, which
 // scripts/bump-version.py keeps equal to every Python package's version.
@@ -14,8 +15,73 @@ const { version } = JSON.parse(readFileSync(new URL("package.json", import.meta.
 // Override when API_HOST_PORT is changed in .env.
 const apiProxyTarget = process.env.NIGHTLOOM_API_PROXY_TARGET ?? "http://127.0.0.1:8000";
 
+/**
+ * Writes bundle-report.json after a build: the gzip size of what the 2D
+ * graph loads (the entry, the GraphView chunk and everything they import
+ * statically, and the CSS) and of the lazily loaded 3D view on top of it.
+ * scripts/check-bundle-size.mjs compares it with bundle-budget.json (CI).
+ */
+function bundleReport(): Plugin {
+  return {
+    name: "nightloom-bundle-report",
+    apply: "build",
+    generateBundle(_options, bundle) {
+      const files = Object.values(bundle);
+      const chunks = files.flatMap((file) => (file.type === "chunk" ? [file] : []));
+      const byName = new Map(chunks.map((chunk) => [chunk.fileName, chunk]));
+      const closure = (start: readonly string[]): Set<string> => {
+        const seen = new Set<string>();
+        const queue = [...start];
+        while (queue.length > 0) {
+          const name = queue.pop() ?? "";
+          if (seen.has(name) || !byName.has(name)) continue;
+          seen.add(name);
+          queue.push(...(byName.get(name)?.imports ?? []));
+        }
+        return seen;
+      };
+      const chunkOf = (path: string) =>
+        chunks.find((chunk) => chunk.moduleIds.some((id) => id.endsWith(path)))?.fileName ?? "";
+      const gzip = (text: string | Uint8Array) => gzipSync(text, { level: 9 }).length;
+      const sizeOf = (names: Iterable<string>) => {
+        const sizes: Record<string, number> = {};
+        for (const name of names) sizes[name] = gzip(byName.get(name)?.code ?? "");
+        return sizes;
+      };
+      const entries = chunks.filter((chunk) => chunk.isEntry).map((chunk) => chunk.fileName);
+      const graph2d = closure([...entries, chunkOf("/src/graph/GraphView.tsx")]);
+      const graph3d = new Set(
+        [
+          ...closure([
+            chunkOf("/src/graph/three/GraphCanvas3D.tsx"),
+            chunkOf("/src/graph/three/keyboard3d.ts"),
+          ]),
+        ].filter((name) => !graph2d.has(name)),
+      );
+      const css: Record<string, number> = {};
+      for (const file of files) {
+        if (file.type === "asset" && file.fileName.endsWith(".css")) {
+          css[file.fileName] = gzip(file.source);
+        }
+      }
+      const sum = (sizes: Record<string, number>) =>
+        Object.values(sizes).reduce((total, size) => total + size, 0);
+      const files2d = { ...sizeOf(graph2d), ...css };
+      const files3d = sizeOf(graph3d);
+      const report = {
+        graph2d: { gzip: sum(files2d), files: files2d },
+        graph3d: { gzip: sum(files3d), files: files3d },
+      };
+      writeFileSync(
+        new URL("bundle-report.json", import.meta.url),
+        `${JSON.stringify(report, null, 2)}\n`,
+      );
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), bundleReport()],
   define: {
     __NIGHTLOOM_VERSION__: JSON.stringify(version),
   },
@@ -42,7 +108,15 @@ export default defineConfig({
     rolldownOptions: {
       output: {
         codeSplitting: {
-          groups: [{ name: "graph-vendor", test: /node_modules[\\/](sigma|graphology)/ }],
+          // A group takes only the modules it names: by default it would also
+          // take what they import (React, for three-vendor), and the 2D graph
+          // would load the 3D view's vendor chunk.
+          includeDependenciesRecursively: false,
+          groups: [
+            { name: "graph-vendor", test: /node_modules[\\/](sigma|graphology|events[\\/])/ },
+            // three.js and React Three Fiber: only the lazily loaded 3D view uses them.
+            { name: "three-vendor", test: /node_modules[\\/](three|@react-three)[\\/]/ },
+          ],
         },
       },
     },

@@ -1,9 +1,9 @@
 """Request and response bodies of the saved-view routes, the view state, and their limits.
 
-The state is versioned (``version: 1``) and validated strictly (unknown fields
-are refused at every level), so a client can rely on what it reads back. A
-future version adds a model and a branch here; stored version-1 states stay
-readable.
+The state is versioned and validated strictly (unknown fields are refused at
+every level), so a client can rely on what it reads back. Version 2 adds the
+3D view (``mode``, ``camera3d``, ``depth``); version-1 states (2D only) are
+still accepted and stored ones stay readable.
 """
 
 import math
@@ -31,7 +31,7 @@ from nightloom_core.normalize import NormalizationError, parse_key
 
 __all__ = ["MAX_BODY_BYTES"]
 
-STATE_VERSION = 1
+STATE_VERSION = 2
 NAME_MAX_LENGTH = 80
 # At most this many views per case.
 MAX_VIEWS_PER_CASE = 50
@@ -48,6 +48,10 @@ NAME_CONTROL = "name must not contain control characters."
 NOT_A_GROUP = "expanded must hold group ids (group:<entity key>|<entity type>)."
 NOT_A_FOCUS_KEY = "focus.key must be a canonical entity key."
 NOT_A_DAY = "Dates must be written YYYY-MM-DD."
+ZERO_UP = "camera3d.up must not be the zero vector."
+CAMERA_AT_TARGET = "camera3d.position must differ from camera3d.target."
+# A 3D camera's up vector: each component within [-1, 1].
+MIN_UP_LENGTH = 1e-6
 ISO_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 Finite = Annotated[float, Field(strict=True, allow_inf_nan=False)]
@@ -83,6 +87,27 @@ class Camera(_Strict):
     y: Coordinate
     ratio: Annotated[Finite, Field(ge=MIN_CAMERA_RATIO, le=MAX_CAMERA_RATIO)]
     angle: Annotated[Finite, Field(ge=-math.tau, le=math.tau)]
+
+
+UpComponent = Annotated[Finite, Field(ge=-1, le=1)]
+Vector = Annotated[list[Coordinate], Field(min_length=3, max_length=3)]
+UpVector = Annotated[list[UpComponent], Field(min_length=3, max_length=3)]
+
+
+class Camera3D(_Strict):
+    """A 3D view's camera: where it is, what it looks at, which way is up (graph coordinates)."""
+
+    position: Vector
+    target: Vector
+    up: UpVector
+
+    @model_validator(mode="after")
+    def _usable(self) -> "Camera3D":
+        if math.hypot(*self.up) < MIN_UP_LENGTH:
+            raise ValueError(ZERO_UP)
+        if self.position == self.target:
+            raise ValueError(CAMERA_AT_TARGET)
+        return self
 
 
 def _iso_day(value: Any) -> Any:
@@ -177,8 +202,8 @@ class Groups(_Strict):
     ] = []
 
 
-class ViewState(_Strict):
-    """Everything a saved view restores (version 1)."""
+class ViewStateV1(_Strict):
+    """Everything a saved 2D view restores (version 1, still accepted)."""
 
     version: Literal[1]
     mode: Literal["2d"]
@@ -191,6 +216,34 @@ class ViewState(_Strict):
     def stored(self) -> dict[str, Any]:
         """The JSON stored in the database (and sent back): aliases, ISO dates."""
         return self.model_dump(mode="json", by_alias=True)
+
+
+class ViewStateV2(_Strict):
+    """Everything a saved 2D or 3D view restores (version 2).
+
+    ``camera`` is always there (for a 3D view, its camera seen from the
+    front), so any client can show the view in 2D; ``camera3d`` only for
+    views saved in 3D. ``depth`` is what the 3D view's third axis shows.
+    """
+
+    version: Literal[2]
+    mode: Literal["2d", "3d"]
+    camera: Camera
+    camera3d: Camera3D | None = None
+    depth: Literal["time", "type", "flat"]
+    filters: Filters
+    groups: Groups
+    positions: Positions
+
+    def stored(self) -> dict[str, Any]:
+        """The JSON stored in the database (and sent back); no ``camera3d`` when there is none."""
+        return self.model_dump(
+            mode="json", by_alias=True, exclude={"camera3d"} if self.camera3d is None else None
+        )
+
+
+# Either version, told apart by ``version``.
+ViewState = Annotated[ViewStateV1 | ViewStateV2, Field(discriminator="version")]
 
 
 class ViewCreate(_Strict):

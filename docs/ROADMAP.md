@@ -48,7 +48,7 @@ A new look for the web UI, in steps that each keep every screen working.
 - [x] U2 The 2D graph in the new look (knots and threads)
 - [x] U3 2D graph interactions (drag and pin, saved per user and case; zoom, pan and rotation with mouse, trackpad, touch and keyboard; box selection and moving a selection; a minimap; shorter canvas labels)
 - [x] U4 Saved views (named snapshots of the camera, filters, expanded groups and pins, shared with the case's members; apply with undo, links that open a view)
-- [ ] U5 3D graph view
+- [x] U5 3D graph view (React Three Fiber, lazily loaded: the same layout and pins in space, depth by first seen, type or flat, orbit / pan / zoom / fly-to with mouse, trackpad, touch and keyboard, HTML labels, a minimap, 2D fallback without WebGL; saved views remember 2D or 3D)
 - [ ] U6 The 3D loom on the sign-in page, and polish
 
 ## Next: Milestone 2

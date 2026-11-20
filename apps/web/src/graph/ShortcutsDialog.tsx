@@ -1,12 +1,19 @@
 import { Modal } from "../components/Modal";
-import { SHORTCUTS } from "./keyboard";
+import { SHORTCUTS, type ShortcutGroup } from "./keyboard";
 
 /** Every graph control, by input device (the "?" button and key). */
-export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
+export function ShortcutsDialog({
+  onClose,
+  groups = SHORTCUTS,
+}: {
+  onClose: () => void;
+  /** The 3D view has its own list. */
+  groups?: readonly ShortcutGroup[];
+}) {
   return (
     <Modal title="Graph controls" onClose={onClose} wide>
       <div className="shortcuts">
-        {SHORTCUTS.map((group) => (
+        {groups.map((group) => (
           <section key={group.title} className="shortcuts__group">
             <h3 className="panel__section">{group.title}</h3>
             <dl className="shortcuts__list">

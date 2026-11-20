@@ -228,6 +228,8 @@ jobs:
       - run: make web-typecheck
       - run: make web-test
       - run: make web-build
+      # The 2D graph's bundle and the lazily loaded 3D view stay within budget.
+      - run: make web-size
 
       - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}

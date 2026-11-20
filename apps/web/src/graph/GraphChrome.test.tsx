@@ -1,5 +1,5 @@
 /**
- * The chrome around the graph canvas: zoom buttons, the 2D / 3D placeholder,
+ * The chrome around the graph canvas: zoom buttons, the 2D / 3D switch,
  * and the canvas following the light/dark theme (colors only).
  */
 import { act, render, screen } from "@testing-library/react";
@@ -13,6 +13,8 @@ import { GRAPH_PALETTES } from "../theme/graphPalette";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { ThemeToggle } from "../theme/ThemeToggle";
 import type { NightloomGraph } from "./buildGraph";
+import { NO_WEBGL } from "./GraphView";
+import { MODE_STORAGE_KEY } from "./mode";
 
 vi.mock("sigma", () => import("../test/sigmaMock"));
 
@@ -57,7 +59,9 @@ describe("graph chrome", () => {
     expect(sigma.camera.angle).toBe(0);
   });
 
-  it("offers only the 2D view for now", async () => {
+  it("switches to 3D, and stays in 2D with a notice where WebGL is missing", async () => {
+    // jsdom has no WebGL: the 3D view falls back to 2D.
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
     await renderDemo();
     const view = screen.getByRole("group", { name: "View" });
     const twoD = screen.getByRole("button", { name: "2D" });
@@ -65,12 +69,18 @@ describe("graph chrome", () => {
     expect(view).toContainElement(twoD);
     expect(twoD).toHaveAttribute("aria-pressed", "true");
     expect(threeD).toHaveAttribute("aria-pressed", "false");
-    expect(threeD).toHaveAttribute("aria-disabled", "true");
-    // The explanation is reachable by keyboard: a tooltip and the description.
-    expect(threeD).toHaveAccessibleDescription("3D view coming soon");
-    expect(screen.getByRole("tooltip", { hidden: true })).toHaveTextContent("3D view coming soon");
+
     await userEvent.click(threeD);
-    expect(threeD).toHaveAttribute("aria-pressed", "false");
+    expect(threeD).toHaveAttribute("aria-pressed", "true");
+    expect(window.localStorage.getItem(MODE_STORAGE_KEY)).toBe("3d");
+    expect(screen.getByText(NO_WEBGL)).toBeInTheDocument();
+    expect(screen.getByTestId("graph-canvas")).not.toHaveAttribute("data-mode", "3d");
+    // No depth choice without a 3D view.
+    expect(screen.queryByRole("group", { name: "Depth" })).not.toBeInTheDocument();
+
+    await userEvent.click(twoD);
+    expect(screen.queryByText(NO_WEBGL)).not.toBeInTheDocument();
+    expect(window.localStorage.getItem(MODE_STORAGE_KEY)).toBe("2d");
   });
 
   it("repaints the canvas in the other theme's colors, without moving anything", async () => {

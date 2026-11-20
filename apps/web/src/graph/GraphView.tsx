@@ -1,10 +1,13 @@
 import {
+  Component,
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
-  useId,
   useState,
   type ReactNode,
   type Ref,
@@ -45,6 +48,17 @@ import {
   type LayoutRun,
 } from "./layout";
 import type { Point } from "./geometry";
+import { SHORTCUTS, type ShortcutGroup } from "./keyboard";
+import {
+  DEFAULT_DEPTH,
+  DEPTH_MODES,
+  initialMode,
+  storeMode,
+  webglSupported,
+  type Camera3D,
+  type DepthMode,
+  type ViewMode,
+} from "./mode";
 import { MINIMAP_DEFAULT_THRESHOLD } from "./minimap";
 import { NodeContextMenu } from "./NodeContextMenu";
 import { applyPins } from "./pins";
@@ -64,7 +78,42 @@ import { ViewMenu } from "./ViewMenu";
 import type { CameraSnapshot, ViewSnapshot } from "./viewSnapshot";
 
 export type { SavedViewControls } from "./savedViewContext";
+import type { GraphCanvas3DHandle } from "./three/GraphCanvas3D";
 import type { WheelSetting } from "./wheel";
+
+// three.js and the 3D view load only once someone switches to 3D.
+const GraphCanvas3D = lazy(() => import("./three/GraphCanvas3D"));
+
+export const NO_WEBGL = "3D needs WebGL, which isn’t available in this browser — showing 2D.";
+export const WEBGL_LOST = "The 3D view lost its WebGL context — showing 2D until it is restored.";
+
+/** Where a view should look once it is drawn (a saved view's camera animates there). */
+interface PendingCamera {
+  camera: CameraSnapshot | null;
+  camera3d: Camera3D | null;
+  animate?: boolean;
+}
+
+/** Either canvas: the 3D one also has a 3D camera. */
+type CanvasHandle = GraphCanvasHandle &
+  Partial<Pick<GraphCanvas3DHandle, "getCamera3d" | "setCamera3d">>;
+
+/** Falls back to 2D when the 3D view cannot start (no WebGL context, a failed shader). */
+class Graph3DBoundary extends Component<
+  { onError: () => void; children: ReactNode },
+  { failed: boolean }
+> {
+  override state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  override componentDidCatch() {
+    this.props.onError();
+  }
+  override render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
 
 /** How long the camera takes to reach a saved view (at once with reduced motion). */
 export const VIEW_CAMERA_MS = 400;
@@ -123,6 +172,12 @@ export interface GraphViewProps {
    * it reads the view's controls with `useSavedViewControls` (./savedViewContext).
    */
   savedViews?: ReactNode;
+  /**
+   * 2D or 3D, kept by the caller (the case Graph tab keeps it in the URL).
+   * Without it, the view starts from `?mode=` or the remembered choice.
+   */
+  mode?: ViewMode;
+  onModeChange?: (mode: ViewMode) => void;
   ref?: Ref<GraphViewHandle>;
 }
 
@@ -158,13 +213,47 @@ export function GraphView({
   className,
   layout,
   savedViews,
+  mode: controlledMode,
+  onModeChange,
   ref,
 }: GraphViewProps) {
   const [graph] = useState(createGraph);
   const { theme } = useTheme();
   const palette = GRAPH_PALETTES[theme];
   const layoutRef = useRef<LayoutRun | null>(null);
-  const canvasRef = useRef<GraphCanvasHandle>(null);
+  const canvas2dRef = useRef<GraphCanvasHandle>(null);
+  const canvas3dRef = useRef<GraphCanvas3DHandle>(null);
+
+  // --- 2D / 3D --------------------------------------------------------------------------
+  const [ownMode, setOwnMode] = useState<ViewMode>(() => initialMode(window.location.search));
+  const mode = controlledMode ?? ownMode;
+  const [depth, setDepth] = useState<DepthMode>(DEFAULT_DEPTH);
+  const [webgl, setWebgl] = useState<"ok" | "unavailable" | "lost">("ok");
+  const supported = useMemo(() => mode === "2d" || webglSupported(), [mode]);
+  const show3d = mode === "3d" && supported && webgl !== "unavailable";
+  // While the context is lost, 2D is shown and the 3D view waits (mounted) for it to come back.
+  const active3d = show3d && webgl === "ok";
+  const active3dRef = useRef(active3d);
+  useLayoutEffect(() => {
+    active3dRef.current = active3d;
+  }, [active3d]);
+  const canvasRef = useMemo(
+    () => ({
+      get current(): CanvasHandle | null {
+        return active3dRef.current ? canvas3dRef.current : canvas2dRef.current;
+      },
+    }),
+    [],
+  );
+  // The node with the keyboard focus ring, kept across a switch of mode.
+  const [lastFocus, setLastFocus] = useState<string | null>(null);
+  const [shortcuts3d, setShortcuts3d] = useState<readonly ShortcutGroup[] | null>(null);
+  useEffect(() => {
+    if (!show3d || shortcuts3d) return;
+    void import("./three/keyboard3d").then((module) => {
+      setShortcuts3d(module.SHORTCUTS_3D);
+    });
+  }, [show3d, shortcuts3d]);
   // What the last layout decision saw; anything else in the graph is new.
   const seenRef = useRef<{ nodes: Set<string>; edges: Set<string> }>({
     nodes: new Set(),
@@ -448,7 +537,7 @@ export function GraphView({
       selectNode(node);
       canvasRef.current?.focusNode(node);
     },
-    [graph, collapsed, selectNode, setGroupExpanded],
+    [graph, canvasRef, collapsed, selectNode, setGroupExpanded],
   );
 
   useImperativeHandle(ref, () => ({ focusNode }), [focusNode]);
@@ -477,7 +566,7 @@ export function GraphView({
         else canvasRef.current?.focusNode(request.id);
       });
     },
-    [graph, collapsed, selectNode, setGroupExpanded],
+    [graph, canvasRef, collapsed, selectNode, setGroupExpanded],
   );
 
   useEffect(() => {
@@ -491,22 +580,44 @@ export function GraphView({
     setMulti(NO_SELECTION);
     resetView();
     canvasRef.current?.resetCamera();
-  }, [resetView]);
+  }, [canvasRef, resetView]);
 
   // --- saved views ----------------------------------------------------------------------
   const [ready, setReady] = useState(false);
+  const [cameraRequest, setCameraRequest] = useState(0);
   const [viewsRequest, setViewsRequest] = useState(0);
   // A camera to move to once what a view changed is drawn (each request applied once).
-  const pendingCameraRef = useRef<CameraSnapshot | null>(null);
-  const [cameraRequest, setCameraRequest] = useState(0);
-  const capture = useCallback(
-    (): ViewSnapshot => ({
-      camera: canvasRef.current?.getCamera() ?? null,
+  const pendingCameraRef = useRef<PendingCamera | null>(null);
+  const capture = useCallback((): ViewSnapshot => {
+    const canvas = canvasRef.current;
+    return {
+      mode,
+      depth,
+      camera: canvas?.getCamera() ?? null,
+      camera3d: canvas?.getCamera3d?.() ?? null,
       filters,
       expanded: [...expanded],
       pins: pinStore.saved(),
-    }),
-    [filters, expanded, pinStore],
+    };
+  }, [canvasRef, mode, depth, filters, expanded, pinStore]);
+
+  /** Switches to `next`; `camera`: where it looks (else: where the current view does, at once). */
+  const switchMode = useCallback(
+    (next: ViewMode, camera?: PendingCamera) => {
+      if (next !== mode) {
+        setReady(false);
+        setWebgl("ok");
+        storeMode(next);
+        if (onModeChange) onModeChange(next);
+        else setOwnMode(next);
+      }
+      pendingCameraRef.current = camera ?? {
+        camera: canvasRef.current?.getCamera() ?? null,
+        camera3d: null,
+      };
+      setCameraRequest((n) => n + 1);
+    },
+    [canvasRef, mode, onModeChange],
   );
   const applySnapshot = useCallback(
     (next: ViewSnapshot) => {
@@ -515,19 +626,20 @@ export function GraphView({
       updateFilters(() => next.filters);
       setExpanded(new Set(next.expanded));
       pinStore.replace(next.pins);
-      if (next.camera) {
-        pendingCameraRef.current = next.camera;
-        setCameraRequest((n) => n + 1);
-      }
+      setDepth(next.depth);
+      switchMode(next.mode, { camera: next.camera, camera3d: next.camera3d, animate: true });
     },
-    [updateFilters, pinStore],
+    [updateFilters, pinStore, switchMode],
   );
   useEffect(() => {
-    const camera = pendingCameraRef.current;
-    if (camera === null || !ready) return;
+    const pending = pendingCameraRef.current;
+    const canvas = canvasRef.current;
+    if (pending === null || !ready || !canvas) return;
     pendingCameraRef.current = null;
-    canvasRef.current?.setCamera(camera, prefersReducedMotion() ? 0 : VIEW_CAMERA_MS);
-  }, [cameraRequest, ready, snapshot]);
+    const ms = pending.animate && !prefersReducedMotion() ? VIEW_CAMERA_MS : 0;
+    if (pending.camera3d && canvas.setCamera3d) canvas.setCamera3d(pending.camera3d, ms);
+    else if (pending.camera) canvas.setCamera(pending.camera, ms);
+  }, [canvasRef, cameraRequest, ready, snapshot]);
   const savedViewControls = useMemo<SavedViewControls>(
     () => ({ ready, capture, apply: applySnapshot, openRequest: viewsRequest }),
     [ready, capture, applySnapshot, viewsRequest],
@@ -596,6 +708,39 @@ export function GraphView({
       </section>
     );
 
+  // What both canvases take.
+  const canvasProps = {
+    graph,
+    view,
+    onHoverNode: explorer.hoverNode,
+    onSelectNode: choose,
+    onToggleNode: toggleInSelection,
+    onBoxSelect: boxSelect,
+    onNodesMoved: pins.pin,
+    onTogglePin: pins.toggle,
+    onContextMenu: openMenu,
+    onClearSelection: () => {
+      selectNode(null);
+    },
+    onShowShortcuts: () => {
+      setShortcutsOpen(true);
+    },
+    onOpenViews: () => {
+      setViewsRequest((n) => n + 1);
+    },
+    onReadyChange: setReady,
+    onFocusChange: (node: string | null) => {
+      if (node !== null) setLastFocus(node);
+    },
+    wheelSetting: wheel,
+    showMinimap: minimapShown,
+    revision: snapshot,
+    pinRevision: pins.version,
+    palette: painted,
+    theme,
+    ...(pulse ? { pulse } : {}),
+  };
+
   return (
     <div className={className ? `workspace ${className}` : "workspace"}>
       <section className="stage" aria-label="Graph">
@@ -616,7 +761,8 @@ export function GraphView({
               </span>
             )}
           </button>
-          <ViewModeSwitch />
+          <ViewModeSwitch mode={mode} onChange={switchMode} />
+          {show3d && <DepthSwitch depth={depth} onChange={setDepth} />}
           <ViewMenu
             minimap={minimapShown}
             onMinimapChange={(shown) => {
@@ -640,36 +786,42 @@ export function GraphView({
           {toolbar}
         </div>
         <div className="stage__canvas" ref={stageRef}>
-          <GraphCanvas
-            ref={canvasRef}
-            graph={graph}
-            view={view}
-            onHoverNode={explorer.hoverNode}
-            onSelectNode={choose}
-            onToggleNode={toggleInSelection}
-            onBoxSelect={boxSelect}
-            onNodesMoved={pins.pin}
-            onTogglePin={pins.toggle}
-            onContextMenu={openMenu}
-            onClearSelection={() => {
-              selectNode(null);
-            }}
-            onShowShortcuts={() => {
-              setShortcutsOpen(true);
-            }}
-            onOpenViews={() => {
-              setViewsRequest((n) => n + 1);
-            }}
-            onReadyChange={setReady}
-            wheelSetting={wheel}
-            showMinimap={minimapShown}
-            showAllLabels={snapshot.order <= SMALL_GRAPH}
-            revision={snapshot}
-            pinRevision={pins.version}
-            palette={painted}
-            theme={theme}
-            {...(pulse ? { pulse } : {})}
-          />
+          {(!show3d || webgl === "lost") && (
+            <GraphCanvas
+              ref={canvas2dRef}
+              {...canvasProps}
+              showAllLabels={snapshot.order <= SMALL_GRAPH}
+              initialFocus={lastFocus}
+            />
+          )}
+          {show3d && (
+            <Graph3DBoundary
+              onError={() => {
+                setWebgl("unavailable");
+              }}
+            >
+              <Suspense fallback={null}>
+                <GraphCanvas3D
+                  ref={canvas3dRef}
+                  {...canvasProps}
+                  depth={depth}
+                  initialFocus={lastFocus}
+                  hidden={webgl === "lost"}
+                  onContextLost={() => {
+                    setWebgl("lost");
+                  }}
+                  onContextRestored={() => {
+                    setWebgl("ok");
+                  }}
+                />
+              </Suspense>
+            </Graph3DBoundary>
+          )}
+          {mode === "3d" && !active3d && (
+            <p className="notice graph-notice" role="status">
+              {webgl === "lost" ? WEBGL_LOST : NO_WEBGL}
+            </p>
+          )}
           {(pins.saveStatus === "retrying" || pins.saveStatus === "failed") && (
             <p className="layout-status" role="status">
               {pins.saveStatus === "retrying"
@@ -826,6 +978,7 @@ export function GraphView({
       />
       {shortcutsOpen && (
         <ShortcutsDialog
+          groups={active3d && shortcuts3d ? shortcuts3d : SHORTCUTS}
           onClose={() => {
             setShortcutsOpen(false);
           }}
@@ -908,32 +1061,57 @@ function SelectionSummary({
   );
 }
 
-/**
- * Placeholder for the 2D / 3D switch: only the 2D view exists so far. 3D
- * stays focusable and does nothing; its explanation is a tooltip on hover
- * and keyboard focus, and its accessible description.
- */
-function ViewModeSwitch() {
-  const hintId = useId();
+/** The 2D / 3D switch (the choice is remembered; see ./mode). */
+function ViewModeSwitch({
+  mode,
+  onChange,
+}: {
+  mode: ViewMode;
+  onChange: (mode: ViewMode) => void;
+}) {
   return (
     <div className="segmented view-mode" role="group" aria-label="View">
-      <button type="button" className="segmented__option" aria-pressed="true">
-        2D
-      </button>
-      <span className="view-mode__soon">
+      {(["2d", "3d"] as const).map((option) => (
         <button
+          key={option}
           type="button"
           className="segmented__option"
-          aria-pressed="false"
-          aria-disabled="true"
-          aria-describedby={hintId}
+          aria-pressed={mode === option}
+          onClick={() => {
+            onChange(option);
+          }}
         >
-          3D
+          {option.toUpperCase()}
         </button>
-        <span id={hintId} role="tooltip" className="view-mode__tooltip">
-          3D view coming soon
-        </span>
-      </span>
+      ))}
+    </div>
+  );
+}
+
+/** What the third axis shows in 3D: first seen, entity type, or nothing. */
+function DepthSwitch({
+  depth,
+  onChange,
+}: {
+  depth: DepthMode;
+  onChange: (depth: DepthMode) => void;
+}) {
+  return (
+    <div className="segmented view-mode" role="group" aria-label="Depth">
+      {DEPTH_MODES.map((option) => (
+        <button
+          key={option}
+          type="button"
+          className="segmented__option"
+          aria-pressed={depth === option}
+          onClick={() => {
+            onChange(option);
+          }}
+        >
+          {option[0]?.toUpperCase()}
+          {option.slice(1)}
+        </button>
+      ))}
     </div>
   );
 }

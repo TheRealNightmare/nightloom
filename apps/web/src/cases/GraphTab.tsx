@@ -9,6 +9,7 @@ import { TypeSummary, type GraphSummary } from "../components/SidePanel";
 import type { EntityNode, InvestigationGraph } from "../domain/entities";
 import { useAuth } from "../auth/context";
 import type { FocusRequest } from "../graph/GraphView";
+import { isViewMode, MODE_PARAM, storedMode, type ViewMode } from "../graph/mode";
 import { useUrlFilters } from "../graph/useUrlFilters";
 import { VIEW_PARAM } from "../graph/viewSnapshot";
 import { useCase } from "./caseContext";
@@ -99,6 +100,22 @@ export function GraphTab() {
       { replace: true },
     );
   }, [setParams]);
+  // 2D or 3D: in the URL (shareable), else the remembered choice.
+  const modeParam = params.get(MODE_PARAM);
+  const mode: ViewMode = isViewMode(modeParam) ? modeParam : storedMode();
+  const changeMode = useCallback(
+    (next: ViewMode) => {
+      setParams(
+        (current) => {
+          const updated = new URLSearchParams(current);
+          updated.set(MODE_PARAM, next);
+          return updated;
+        },
+        { replace: true },
+      );
+    },
+    [setParams],
+  );
   const { state: auth } = useAuth();
   const userId = auth.status === "signed_in" ? auth.user.id : null;
 
@@ -397,6 +414,8 @@ export function GraphTab() {
             onFiltersChange={updateFilters}
             layout={layout}
             savedViews={savedViews}
+            mode={mode}
+            onModeChange={changeMode}
             grades={schema.admiralty}
             toolbar={
               <>
