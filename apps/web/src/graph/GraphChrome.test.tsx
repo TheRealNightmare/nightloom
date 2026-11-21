@@ -8,7 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DemoPage } from "../demo/DemoPage";
 import { sampleGraph } from "../demo/sampleGraph";
-import { FakeSigma, waitForSigma } from "../test/sigmaMock";
+import { fittedCameraState, type AnySigma } from "./interactions";
+import { cameraFromIdentity, FakeSigma, waitForSigma } from "../test/sigmaMock";
 import { GRAPH_PALETTES } from "../theme/graphPalette";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { ThemeToggle } from "../theme/ThemeToggle";
@@ -26,6 +27,7 @@ async function renderDemo() {
     </ThemeProvider>,
   );
   const sigma = await waitForSigma();
+  cameraFromIdentity(sigma);
   return { sigma, graph: sigma.graph as unknown as NightloomGraph };
 }
 
@@ -55,7 +57,10 @@ describe("graph chrome", () => {
     await userEvent.click(screen.getByRole("button", { name: "Rotate left" }));
     expect(sigma.camera.angle).toBeCloseTo(-Math.PI / 12);
     await userEvent.click(screen.getByRole("button", { name: "Reset view" }));
-    expect(sigma.camera.reset).toHaveBeenCalledTimes(1);
+    // The whole graph framed again (see fitCamera.test.ts), where the layout put it, unrotated.
+    expect(sigma.camera.getState()).toEqual(
+      fittedCameraState(sigma as unknown as AnySigma, sigma.graph.nodes()),
+    );
     expect(sigma.camera.angle).toBe(0);
   });
 

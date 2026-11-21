@@ -40,16 +40,16 @@ Passive infrastructure Shuttles from free public sources, then a graph UI good e
   - [x] R3 Release automation (one version everywhere with `make bump-version` and a CI check, CHANGELOG, tag-triggered release workflow publishing multi-architecture images to GHCR with SBOM and provenance attestations, production pulling the images by `NIGHTLOOM_VERSION`; see [RELEASING.md](RELEASING.md))
 - [x] Fix: jobs stuck in `running` (a crt.sh job outlived its timeout and its soft limit, was killed at the hard limit without a record, and the reaper only ran when the next job started). Every job now has a deadline enforced in four layers (timeout, soft limit, hard limit recorded by the worker's main process, a reaper every minute), the event loop always closes, and the *Jobs* panel marks overdue jobs. See [Deadlines](ARCHITECTURE.md#deadlines-every-job-ends).
 
-## UI redesign (Loom & thread)
+## UI redesign (Loom & thread) — done
 
-A new look for the web UI, in steps that each keep every screen working.
+A new look for the web UI, in steps that each keep every screen working. All six steps are done.
 
 - [x] U1 Design tokens, light and dark theme, self-hosted fonts, every existing screen restyled
 - [x] U2 The 2D graph in the new look (knots and threads)
 - [x] U3 2D graph interactions (drag and pin, saved per user and case; zoom, pan and rotation with mouse, trackpad, touch and keyboard; box selection and moving a selection; a minimap; shorter canvas labels)
 - [x] U4 Saved views (named snapshots of the camera, filters, expanded groups and pins, shared with the case's members; apply with undo, links that open a view)
 - [x] U5 3D graph view (React Three Fiber, lazily loaded: the same layout and pins in space, depth by first seen, type or flat, orbit / pan / zoom / fly-to with mouse, trackpad, touch and keyboard, HTML labels, a minimap, 2D fallback without WebGL; saved views remember 2D or 3D)
-- [ ] U6 The 3D loom on the sign-in page, and polish
+- [x] U6 The 3D loom on the sign-in page (lazily loaded after the form, still drawing with reduced motion, Save-Data or no WebGL), and polish: one focus ring, skeleton loading states, errors with *Try again*, page titles, a themed 404 page, app icons and a web manifest, reduced motion everywhere, contrast checked from the stylesheets, axe-core checks of every screen in both themes, README screenshots (`make screenshots`)
 
 ## Next: Milestone 2
 

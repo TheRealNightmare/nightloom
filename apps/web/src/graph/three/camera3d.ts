@@ -231,6 +231,137 @@ export function frameSphere(
   };
 }
 
+/** Pixels kept between a framed point and the edge of its share of the area (a knot's radius). */
+export const FRAME_PAD_PX = 12;
+const FIT_ITERATIONS = 48;
+
+/**
+ * The camera that frames the first `count` points of `positions` (x, y, z
+ * triples) in `area` (pixels) of a `width` × `height` viewport, looking
+ * from `direction` (unit, from the target toward the camera) with `up`:
+ * their projected bounds fill `share` of the area's width or height (the
+ * tighter one) and are centered in it, perspective included. Points closer
+ * together than a sphere of `minRadius` are framed as that sphere would be,
+ * so a tiny graph is not blown up. Null when the area has no room.
+ *
+ * Each point must fit horizontally and vertically: for a camera at
+ * distance d from its target (the sphere's center moved by s across the
+ * view), a point at offset (a, b) across and f along the view shows at
+ * (a − s) · k / (d + f) pixels from the middle, k = h / (2 tan(fov / 2)).
+ * For a given d the allowed shifts form an interval (one per axis); the
+ * smallest d where both intervals are non-empty is found by bisection, and
+ * the middle of each interval centers the points.
+ */
+export function frameInArea(
+  positions: ArrayLike<number>,
+  count: number,
+  width: number,
+  height: number,
+  area: { x: number; y: number; width: number; height: number },
+  share: number,
+  minRadius: number,
+  direction: Vec3 = RESET_DIRECTION,
+  up: Vec3 = [0, 1, 0],
+): Camera3D | null {
+  const w = Math.max(width, 1);
+  const h = Math.max(height, 1);
+  const halfW = (share * area.width) / 2 - FRAME_PAD_PX;
+  const halfH = (share * area.height) / 2 - FRAME_PAD_PX;
+  if (count === 0 || halfW <= 0 || halfH <= 0) return null;
+  const sphere = boundingSphere(positions, count);
+  const view = normalize(direction);
+  const basis = basisOf({ position: add(sphere.center, view), target: sphere.center, up });
+  const k = h / (2 * TAN_HALF_FOV);
+  // The area's center, from the viewport's (pixels, y down).
+  const ox = area.x + area.width / 2 - w / 2;
+  const oy = area.y + area.height / 2 - h / 2;
+  const across = new Float64Array(count);
+  const upward = new Float64Array(count);
+  const along = new Float64Array(count);
+  let nearest = 0;
+  for (let i = 0; i < count; i += 1) {
+    const offset: Vec3 = [
+      (positions[i * 3] ?? 0) - sphere.center[0],
+      (positions[i * 3 + 1] ?? 0) - sphere.center[1],
+      (positions[i * 3 + 2] ?? 0) - sphere.center[2],
+    ];
+    across[i] = dot(offset, basis.right);
+    upward[i] = dot(offset, basis.up);
+    along[i] = dot(offset, basis.forward);
+    nearest = Math.max(nearest, -(along[i] ?? 0));
+  }
+  /** The allowed shifts (across, up) at distance `d`, or null when there are none. */
+  const shifts = (d: number): { x: [number, number]; y: [number, number] } | null => {
+    let xLow = -Infinity;
+    let xHigh = Infinity;
+    let yLow = -Infinity;
+    let yHigh = Infinity;
+    for (let i = 0; i < count; i += 1) {
+      const depth = (d + (along[i] ?? 0)) / k;
+      if (depth <= 0) return null;
+      const a = across[i] ?? 0;
+      const b = upward[i] ?? 0;
+      xLow = Math.max(xLow, a - (ox + halfW) * depth);
+      xHigh = Math.min(xHigh, a - (ox - halfW) * depth);
+      yLow = Math.max(yLow, b + (oy - halfH) * depth);
+      yHigh = Math.min(yHigh, b + (oy + halfH) * depth);
+    }
+    return xLow <= xHigh && yLow <= yHigh ? { x: [xLow, xHigh], y: [yLow, yHigh] } : null;
+  };
+  // Never closer than a sphere of `minRadius` (around the same center) needs.
+  const half = Math.atan((TAN_HALF_FOV * Math.min(halfW, halfH) * 2) / h);
+  let low = Math.max(nearest * (1 + 1e-6) + MIN_DISTANCE, minRadius / Math.sin(half), MIN_DISTANCE);
+  let high = MAX_DISTANCE;
+  if (shifts(low) === null) {
+    if (shifts(high) === null) return null;
+    for (let n = 0; n < FIT_ITERATIONS; n += 1) {
+      const middle = Math.sqrt(low * high);
+      if (shifts(middle) === null) low = middle;
+      else high = middle;
+    }
+  } else {
+    high = low;
+  }
+  const d = high;
+  const allowed = shifts(d);
+  if (!allowed) return null;
+  /**
+   * The shift in [low, high] that centers the points' projected bounds at
+   * `middle` pixels (from the viewport's center) along `values` (offsets
+   * across, or up with `sign` −1: screen y points down).
+   */
+  const centered = (
+    values: Float64Array,
+    [from, to]: [number, number],
+    middle: number,
+    sign: number,
+  ) => {
+    const center = (shift: number) => {
+      let min = Infinity;
+      let max = -Infinity;
+      for (let i = 0; i < count; i += 1) {
+        const pixel = (sign * ((values[i] ?? 0) - shift) * k) / (d + (along[i] ?? 0));
+        if (pixel < min) min = pixel;
+        if (pixel > max) max = pixel;
+      }
+      return (min + max) / 2;
+    };
+    // The center moves against the shift (toward −sign as it grows).
+    let a = from;
+    let b = to;
+    for (let n = 0; n < FIT_ITERATIONS; n += 1) {
+      const m = (a + b) / 2;
+      if (sign * (center(m) - middle) > 0) a = m;
+      else b = m;
+    }
+    return (a + b) / 2;
+  };
+  const sx = centered(across, allowed.x, ox, 1);
+  const sy = centered(upward, allowed.y, oy, -1);
+  const target = add(sphere.center, add(scale(basis.right, sx), scale(basis.up, sy)));
+  return { position: add(target, scale(view, d)), target, up: [...up] };
+}
+
 /**
  * The camera of a fly-to: looking at `point` from the current direction,
  * at `distance` (closer than now, never further).

@@ -45,11 +45,34 @@ export function layoutSettings(graph: NightloomGraph): ForceAtlas2Settings {
   };
 }
 
+/**
+ * Runs ForceAtlas2 without touching the exact position of `fixed` nodes.
+ *
+ * graphology's ForceAtlas2 copies every position into a Float32Array and
+ * writes all of them back, fixed nodes included, which rounds a pinned
+ * node's coordinates to 32-bit precision: it would shift by a few
+ * millionths, and the saved pins would no longer match the graph.
+ */
+function assignKeepingFixed(
+  graph: NightloomGraph,
+  iterations: number,
+  settings: ForceAtlas2Settings,
+): void {
+  const kept: [string, number, number][] = [];
+  graph.forEachNode((node, attributes) => {
+    if (attributes.fixed === true) kept.push([node, attributes.x, attributes.y]);
+  });
+  forceAtlas2.assign(graph, { iterations, settings });
+  for (const [node, x, y] of kept) {
+    graph.mergeNodeAttributes(node, { x, y });
+  }
+}
+
 /** Runs `iterations` (clamped) synchronously; deterministic for the same input. */
 export function layoutSync(graph: NightloomGraph, iterations: number): void {
   const count = clampIterations(iterations);
   if (count === 0 || graph.order < 2) return;
-  forceAtlas2.assign(graph, { iterations: count, settings: layoutSettings(graph) });
+  assignKeepingFixed(graph, count, layoutSettings(graph));
 }
 
 export interface LayoutRun {
@@ -143,7 +166,7 @@ export function startLayout(
     while (remaining > 0 && ran < maxPerSlice) {
       const count = Math.min(batch, remaining, maxPerSlice - ran);
       const before = now();
-      forceAtlas2.assign(graph, { iterations: count, settings });
+      assignKeepingFixed(graph, count, settings);
       const took = now() - before;
       remaining -= count;
       ran += count;

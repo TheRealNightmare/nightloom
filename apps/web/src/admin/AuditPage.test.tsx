@@ -223,6 +223,21 @@ describe("audit log", () => {
     expect(await screen.findByText(/already running/)).toBeVisible();
   });
 
+  it("shows a load error with a way to try again", async () => {
+    let fail = true;
+    api.on("GET", auditPath({ limit: 50 }), () =>
+      fail ? json({}, 500) : json({ items: [], next_before_id: null }),
+    );
+    renderApp("/admin/audit");
+    const message = await screen.findByText(/Something went wrong/);
+    expect(document.title).toBe("Audit log · Admin · Nightloom");
+    fail = false;
+    const alert = message.closest<HTMLElement>("[role=alert]");
+    if (!alert) throw new Error("The load error is not an alert");
+    await userEvent.click(within(alert).getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("No events")).toBeVisible();
+  });
+
   it("shows an empty log", async () => {
     api.on("GET", auditPath({ limit: 50 }), () => json({ items: [], next_before_id: null }));
     renderApp("/admin/audit");

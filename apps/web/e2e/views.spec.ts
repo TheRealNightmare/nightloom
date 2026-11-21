@@ -85,12 +85,34 @@ async function entityOnScreen(page: Page, label: string): Promise<Point> {
       await page.waitForTimeout(300);
       const box = await page.locator(".graph-focus-ring").boundingBox();
       if (!box) throw new Error("no focus ring");
+      const canvas = await page.getByTestId("graph-canvas").boundingBox();
+      if (!canvas) throw new Error("no graph canvas");
       // Leave the entity again (Escape), so nothing stays highlighted.
       await page.keyboard.press("Escape");
-      return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      // Relative to the middle of the canvas, which the camera is anchored to:
+      // the canvas fills the room the page leaves it, which depends on the
+      // role (a viewer's toolbar has fewer buttons, so it can be taller).
+      return {
+        x: box.x + box.width / 2 - (canvas.x + canvas.width / 2),
+        y: box.y + box.height / 2 - (canvas.y + canvas.height / 2),
+      };
     }
   }
   throw new Error(`could not focus ${label}`);
+}
+
+/**
+ * Short enough that the graph canvas of both the owner and the viewer stays
+ * at its 520 px minimum height. Otherwise it fills the room the page leaves
+ * it, which depends on the role (a viewer's toolbar has fewer buttons), and
+ * the same camera would draw the graph at a different scale.
+ */
+const VIEWPORT = { width: 1280, height: 640 };
+
+async function canvasSize(page: Page) {
+  const canvas = await page.getByTestId("graph-canvas").boundingBox();
+  if (!canvas) throw new Error("no graph canvas");
+  return { width: Math.round(canvas.width), height: Math.round(canvas.height) };
 }
 
 function viewsMenu(page: Page) {
@@ -108,6 +130,7 @@ test("an owner saves a view; a viewer opens its link and sees the same graph", a
   const viewerPassword = `e2e viewer passphrase ${stamp}`;
 
   // --- The owner's case, a viewer, and the owner's pins ---------------------------
+  await page.setViewportSize(VIEWPORT);
   await signIn(page, email, password);
   const created = (await api(page, "POST", "/cases", {
     title: `E2E saved views ${stamp}`,
@@ -144,6 +167,7 @@ test("an owner saves a view; a viewer opens its link and sees the same graph", a
   await page.waitForTimeout(400);
   const ownerApex = await entityOnScreen(page, "example.org");
   const ownerWww = await entityOnScreen(page, "www.example.org");
+  const ownerCanvas = await canvasSize(page);
 
   await page.getByRole("button", { name: "Views" }).click();
   await expect(viewsMenu(page)).toBeVisible();
@@ -182,7 +206,7 @@ test("an owner saves a view; a viewer opens its link and sees the same graph", a
   await dialog.getByRole("button", { name: "Cancel" }).click();
 
   // --- The viewer opens the link ---------------------------------------------------
-  const viewerContext = await browser.newContext({ colorScheme: "dark" });
+  const viewerContext = await browser.newContext({ colorScheme: "dark", viewport: VIEWPORT });
   const viewerPage = await viewerContext.newPage();
   await signIn(viewerPage, viewerEmail, viewer.temporary_password);
   await viewerPage
@@ -210,6 +234,7 @@ test("an owner saves a view; a viewer opens its link and sees the same graph", a
   // Same pins and the same camera: the entities are where the owner saw them.
   const viewerApex = await entityOnScreen(viewerPage, "example.org");
   const viewerWww = await entityOnScreen(viewerPage, "www.example.org");
+  expect(await canvasSize(viewerPage)).toEqual(ownerCanvas);
   expect(Math.abs(viewerApex.x - ownerApex.x)).toBeLessThan(4);
   expect(Math.abs(viewerApex.y - ownerApex.y)).toBeLessThan(4);
   expect(Math.abs(viewerWww.x - ownerWww.x)).toBeLessThan(4);

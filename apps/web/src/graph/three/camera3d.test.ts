@@ -12,6 +12,8 @@ import {
   dollyToward,
   easeInOut,
   flyTo,
+  FRAME_PAD_PX,
+  frameInArea,
   frameSphere,
   inView2d,
   interpolateCamera,
@@ -219,5 +221,90 @@ describe("2D ↔ 3D cameras", () => {
     expect(flat.angle).toBeCloseTo(0, 6);
     expect(flat.ratio).toBeCloseTo(1, 6);
     expect(camera3dTo2d({ ...orbited, up: [0, 0, 1] }, 600).angle).toBe(0);
+  });
+});
+
+describe("frameInArea (3D framing of the visible graph)", () => {
+  const W = 1000;
+  const H = 700;
+  const SHARE = 0.85;
+  /** A wide, shallow graph with depth (as the time view makes it), off the origin. */
+  const points: number[] = [];
+  for (let i = 0; i < 60; i += 1) {
+    points.push(
+      100 + ((i * 37) % 600) - 300,
+      50 + ((i * 53) % 160) - 80,
+      20 + ((i * 29) % 240) - 120,
+    );
+  }
+  const COUNT = points.length / 3;
+
+  function onScreen(camera: Camera3D) {
+    const m = viewProjection(camera, W / H, 1, 1e5);
+    const shown = [];
+    for (let i = 0; i < COUNT; i += 1) {
+      shown.push(
+        project(m, [points[i * 3] ?? 0, points[i * 3 + 1] ?? 0, points[i * 3 + 2] ?? 0], {
+          width: W,
+          height: H,
+        }),
+      );
+    }
+    const xs = shown.map((p) => p.x);
+    const ys = shown.map((p) => p.y);
+    return {
+      minX: Math.min(...xs),
+      maxX: Math.max(...xs),
+      minY: Math.min(...ys),
+      maxY: Math.max(...ys),
+    };
+  }
+
+  it("fills 85% of the area's width or height (the tighter one), centered in it", () => {
+    const area = { x: 0, y: 0, width: W, height: H - 140 };
+    const camera = frameInArea(points, COUNT, W, H, area, SHARE, 1);
+    if (!camera) throw new Error("no fit");
+    const box = onScreen(camera);
+    const fillX = (box.maxX - box.minX + 2 * FRAME_PAD_PX) / (SHARE * area.width);
+    const fillY = (box.maxY - box.minY + 2 * FRAME_PAD_PX) / (SHARE * area.height);
+    expect(Math.max(fillX, fillY)).toBeCloseTo(1, 3);
+    expect(Math.min(fillX, fillY)).toBeLessThanOrEqual(1 + 1e-6);
+    expect((box.minX + box.maxX) / 2).toBeCloseTo(area.x + area.width / 2, 1);
+    expect((box.minY + box.maxY) / 2).toBeCloseTo(area.y + area.height / 2, 1);
+  });
+
+  it("keeps everything inside an area off the viewport's center", () => {
+    const area = { x: 72, y: 0, width: W - 72, height: H - 200 };
+    const camera = frameInArea(points, COUNT, W, H, area, SHARE, 1);
+    if (!camera) throw new Error("no fit");
+    const box = onScreen(camera);
+    expect(box.minX).toBeGreaterThanOrEqual(area.x);
+    expect(box.maxX).toBeLessThanOrEqual(area.x + area.width);
+    expect(box.minY).toBeGreaterThanOrEqual(area.y);
+    expect(box.maxY).toBeLessThanOrEqual(area.y + area.height);
+    expect((box.minX + box.maxX) / 2).toBeCloseTo(area.x + area.width / 2, 1);
+  });
+
+  it("shows a wide graph larger than a bounding sphere would", () => {
+    const area = { x: 0, y: 0, width: W, height: H };
+    const fitted = frameInArea(points, COUNT, W, H, area, SHARE, 1);
+    const sphere = frameSphere(boundingSphere(points, COUNT), W / H);
+    if (!fitted) throw new Error("no fit");
+    expect(distanceOf(fitted)).toBeLessThan(distanceOf(sphere));
+  });
+
+  it("frames a tiny graph as a sphere of the minimum radius", () => {
+    const tiny = [0, 0, 0, 1, 0.5, 0];
+    const area = { x: 0, y: 0, width: W, height: H };
+    const camera = frameInArea(tiny, 2, W, H, area, SHARE, 100);
+    if (!camera) throw new Error("no fit");
+    const half = Math.atan((Math.tan(Math.PI / 8) * (SHARE * H - 2 * FRAME_PAD_PX)) / H);
+    expect(distanceOf(camera)).toBeCloseTo(100 / Math.sin(half), 6);
+  });
+
+  it("is null without points or room", () => {
+    const area = { x: 0, y: 0, width: W, height: H };
+    expect(frameInArea(points, 0, W, H, area, SHARE, 1)).toBeNull();
+    expect(frameInArea(points, COUNT, W, H, { ...area, width: 10 }, SHARE, 1)).toBeNull();
   });
 });

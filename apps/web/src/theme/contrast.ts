@@ -25,3 +25,9 @@ export function contrastRatio(a: string, b: string): number {
   ];
   return (light + 0.05) / (dark + 0.05);
 }
+
+/** A `#rgb` / `#rrggbb` color as sRGB channels from 0 to 1 (for WebGL renderers). */
+export function hexToUnitRgb(hex: string): [number, number, number] {
+  const [r, g, b] = channels(hex);
+  return [r / 255, g / 255, b / 255];
+}

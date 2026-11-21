@@ -342,7 +342,7 @@ export function GraphTab() {
   const running = jobs.jobs.find(isActive);
 
   return (
-    <section className="case-graph" aria-label="Graph">
+    <section className="case-graph" aria-label="Case graph">
       {/* With a graph, the summary and actions sit in the graph's toolbar. */}
       {empty && (
         <div className="case-graph__bar">

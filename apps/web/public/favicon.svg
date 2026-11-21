@@ -1,20 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
-  <!-- The logo mark (src/components/LogoMark.tsx); colors are the design tokens of src/styles/tokens.css. -->
+  <!-- The app icon: a knot on a brass thread (scripts/render-icons.mjs draws the PNG sizes from it). Colors are the design tokens of src/styles/tokens.css. -->
   <style>
     .bg { fill: #12131a; }
-    .brass { stroke: #c8963e; }
-    .ink { stroke: #e8e1d3; }
+    .thread { stroke: #c8963e; }
     .knot { fill: #12131a; stroke: #e8e1d3; }
+    .dot { fill: #c8963e; }
     @media (prefers-color-scheme: light) {
       .bg { fill: #f4f0e6; }
-      .brass { stroke: #8a5a1c; }
-      .ink { stroke: #1d1c22; }
+      .thread { stroke: #8a5a1c; }
       .knot { fill: #f4f0e6; stroke: #1d1c22; }
+      .dot { fill: #8a5a1c; }
     }
   </style>
-  <rect class="bg" width="32" height="32" rx="6"/>
-  <path class="brass" d="M19 3.5a6.5 6.5 0 1 0 6.9 8.2A5.2 5.2 0 0 1 19 3.5Z" stroke-width="1.25" stroke-linejoin="round"/>
-  <path class="ink" d="M3 19.5C10 19.5 22 28.5 29 28.5" stroke-width="1.5" stroke-linecap="round"/>
-  <path class="brass" d="M3 28.5C10 28.5 22 19.5 29 19.5" stroke-width="1.5" stroke-linecap="round"/>
-  <circle class="knot" cx="16" cy="24" r="2.25" stroke-width="1.25"/>
+  <rect class="bg" width="32" height="32" rx="7"/>
+  <path class="thread" d="M3.5 21C9.5 21 11 16 16 16S22.5 11 28.5 11" stroke-width="2" stroke-linecap="round"/>
+  <circle class="knot" cx="16" cy="16" r="4.75" stroke-width="2"/>
+  <circle class="dot" cx="16" cy="16" r="1.6"/>
 </svg>

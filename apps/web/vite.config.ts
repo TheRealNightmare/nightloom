@@ -16,10 +16,13 @@ const { version } = JSON.parse(readFileSync(new URL("package.json", import.meta.
 const apiProxyTarget = process.env.NIGHTLOOM_API_PROXY_TARGET ?? "http://127.0.0.1:8000";
 
 /**
- * Writes bundle-report.json after a build: the gzip size of what the 2D
- * graph loads (the entry, the GraphView chunk and everything they import
- * statically, and the CSS) and of the lazily loaded 3D view on top of it.
- * scripts/check-bundle-size.mjs compares it with bundle-budget.json (CI).
+ * Writes bundle-report.json after a build: the gzip size of what the sign-in
+ * page loads first (the entry, everything it imports statically, and the
+ * CSS) and whether three.js is in it, of the sign-in loom loaded on top of it
+ * when the browser is idle, of what the 2D graph loads (the entry, the
+ * GraphView chunk and everything they import statically, and the CSS) and of
+ * the lazily loaded 3D view on top of it. scripts/check-bundle-size.mjs
+ * compares it with bundle-budget.json (CI).
  */
 function bundleReport(): Plugin {
   return {
@@ -49,6 +52,15 @@ function bundleReport(): Plugin {
         return sizes;
       };
       const entries = chunks.filter((chunk) => chunk.isEntry).map((chunk) => chunk.fileName);
+      const signin = closure(entries);
+      const threeModule = /node_modules[\\/](three|@react-three)[\\/]/;
+      const threeIn = (names: Iterable<string>) =>
+        [...names].filter((name) =>
+          (byName.get(name)?.moduleIds ?? []).some((id) => threeModule.test(id)),
+        );
+      const loom = new Set(
+        [...closure([chunkOf("/src/auth/loom/loomScene.ts")])].filter((name) => !signin.has(name)),
+      );
       const graph2d = closure([...entries, chunkOf("/src/graph/GraphView.tsx")]);
       const graph3d = new Set(
         [
@@ -66,9 +78,13 @@ function bundleReport(): Plugin {
       }
       const sum = (sizes: Record<string, number>) =>
         Object.values(sizes).reduce((total, size) => total + size, 0);
+      const filesSignin = { ...sizeOf(signin), ...css };
+      const filesLoom = sizeOf(loom);
       const files2d = { ...sizeOf(graph2d), ...css };
       const files3d = sizeOf(graph3d);
       const report = {
+        signin: { gzip: sum(filesSignin), files: filesSignin, threeChunks: threeIn(signin) },
+        loom: { gzip: sum(filesLoom), files: filesLoom, threeChunks: threeIn(loom) },
         graph2d: { gzip: sum(files2d), files: files2d },
         graph3d: { gzip: sum(files3d), files: files3d },
       };
@@ -114,8 +130,14 @@ export default defineConfig({
           includeDependenciesRecursively: false,
           groups: [
             { name: "graph-vendor", test: /node_modules[\\/](sigma|graphology|events[\\/])/ },
-            // three.js and React Three Fiber: only the lazily loaded 3D view uses them.
-            { name: "three-vendor", test: /node_modules[\\/](three|@react-three)[\\/]/ },
+            // three.js and React Three Fiber with the libraries R3F runs on: only
+            // the lazily loaded 3D view and the sign-in loom use them. R3F's own
+            // dependencies belong here too; elsewhere they would land in the 3D
+            // view's chunk, and the loom would load the whole graph view.
+            {
+              name: "three-vendor",
+              test: /node_modules[\\/](three|@react-three|zustand|suspend-react|its-fine|use-sync-external-store)[\\/]/,
+            },
           ],
         },
       },

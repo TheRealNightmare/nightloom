@@ -13,7 +13,7 @@ import {
 import type { AuditEvent, AuditOutcome } from "../api/cases";
 import { RequestAbortedError, type User } from "../api/client";
 import { OutcomeBadge } from "../cases/Badges";
-import { Loading } from "../cases/Feedback";
+import { LoadError, Loading } from "../cases/Feedback";
 import { RelativeTime } from "../cases/RelativeTime";
 import { Modal } from "../components/Modal";
 import { formatTimestamp } from "../domain/format";
@@ -26,6 +26,7 @@ import {
 } from "./auditFilters";
 import { ACTION_LABELS, auditActor, describeAuditEvent } from "./auditLabels";
 import { describeAdminError } from "./errors";
+import { useDocumentTitle } from "../app/documentTitle";
 
 export const AUDIT_PAGE_SIZE = 50;
 
@@ -37,6 +38,7 @@ interface Listing {
 
 /** /admin/audit: the whole audit log, newest first, with filters and verification. */
 export function AuditPage() {
+  useDocumentTitle("Audit log", "Admin");
   const [values, setValues] = useState<AuditFilterValues>(NO_FILTERS);
   const [users, setUsers] = useState<User[]>([]);
   const [listing, setListing] = useState<Listing | null>(null);
@@ -61,6 +63,8 @@ export function AuditPage() {
     to: useId(),
   };
 
+  // Bumped by "Try again" after a failed first load.
+  const [attempt, setAttempt] = useState(0);
   const converted = toAuditQuery(values);
   const key = JSON.stringify(converted.query);
   const current = listing?.key === key ? listing : null;
@@ -93,7 +97,12 @@ export function AuditPage() {
     return () => {
       controller.abort();
     };
-  }, [key]);
+  }, [key, attempt]);
+
+  const retry = () => {
+    setError(null);
+    setAttempt((n) => n + 1);
+  };
 
   const loadMore = async () => {
     if (current?.nextBefore == null || converted.query === null || loadingMore) return;
@@ -333,11 +342,14 @@ export function AuditPage() {
           </table>
         </div>
       )}
-      {errorMessage !== null && (
-        <p className="form-error" role="alert">
-          {errorMessage}
-        </p>
-      )}
+      {errorMessage !== null &&
+        (current === null && converted.error === null ? (
+          <LoadError message={errorMessage} onRetry={retry} />
+        ) : (
+          <p className="form-error" role="alert">
+            {errorMessage}
+          </p>
+        ))}
       {current?.nextBefore != null && (
         <div className="load-more">
           <button

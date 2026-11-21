@@ -69,6 +69,8 @@ describe("routing", () => {
     signedIn();
     renderApp("/nowhere");
     expect(await screen.findByRole("heading", { name: "Page not found" })).toBeVisible();
+    expect(screen.getByText("/nowhere")).toBeVisible();
+    expect(document.title).toBe("Page not found · Nightloom");
     await userEvent.click(screen.getByRole("link", { name: "Go to cases" }));
     expect(await screen.findByRole("heading", { name: "Cases", level: 1 })).toBeVisible();
   });
@@ -78,6 +80,9 @@ describe("routing", () => {
     renderApp(`/cases/${CASE_ID}/nope`);
     expect(await screen.findByRole("heading", { name: "Page not found" })).toBeVisible();
     expect(screen.getByRole("navigation", { name: "Case sections" })).toBeVisible();
+    await waitFor(() => {
+      expect(document.title).toMatch(/ · Page not found · Nightloom$/);
+    });
   });
 });
 

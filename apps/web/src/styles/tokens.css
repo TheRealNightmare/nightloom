@@ -48,6 +48,8 @@
   --surface: #1b1d27;
   --surface-2: #232634;
   --line: #2e3040;
+  /* The edge of a form control (3:1 on every surface, WCAG 1.4.11). */
+  --control-line: #6d7189;
   --hair: #4a3d26;
   --grid: #262836;
   --text: #e8e1d3;
@@ -80,6 +82,7 @@
   --surface: #fbf8f1;
   --surface-2: #ece6d8;
   --line: #d9d1bf;
+  --control-line: #857d6e;
   --hair: #c9b48a;
   --grid: #e2dbcb;
   --text: #1d1c22;

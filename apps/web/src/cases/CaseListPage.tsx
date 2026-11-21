@@ -8,9 +8,10 @@ import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { CaseRoleBadge, StatusBadge } from "./Badges";
 import { noticeFrom } from "./caseContext";
 import { describeCaseError } from "./errors";
-import { Loading } from "./Feedback";
+import { LoadError, Loading } from "./Feedback";
 import { LEGAL_BASIS_LABELS, STATUS_LABELS } from "./labels";
 import { RelativeTime } from "./RelativeTime";
+import { useDocumentTitle } from "../app/documentTitle";
 
 export const CASE_PAGE_SIZE = 25;
 export const CASES_SUBTITLE = "Every investigation starts with a stated purpose and a legal basis.";
@@ -28,6 +29,7 @@ interface Listing {
 }
 
 export function CaseListPage() {
+  useDocumentTitle("Cases");
   const { state } = useAuth();
   const location = useLocation();
   const notice = noticeFrom(location.state);
@@ -49,6 +51,8 @@ export function CaseListPage() {
     setResult((current) => ({ key: filterKey, listing: update(current.listing) }));
   };
   const [loadingMore, setLoadingMore] = useState(false);
+  // Bumped by "Try again" after a failed first load.
+  const [attempt, setAttempt] = useState(0);
   const searchId = useId();
   const statusName = useId();
 
@@ -71,7 +75,12 @@ export function CaseListPage() {
     return () => {
       controller.abort();
     };
-  }, [q, status]);
+  }, [q, status, attempt]);
+
+  const retry = () => {
+    setError(null);
+    setAttempt((n) => n + 1);
+  };
 
   const loadMore = async () => {
     if (listing?.nextCursor == null || loadingMore) return;
@@ -190,11 +199,15 @@ export function CaseListPage() {
           ))}
         </ul>
       )}
-      {errorMessage !== null && (
-        <p className="form-error" role="alert">
-          {errorMessage}
-        </p>
-      )}
+      {errorMessage !== null &&
+        (listing === null ? (
+          <LoadError message={errorMessage} onRetry={retry} />
+        ) : (
+          // "Load more" failed: its button below is the next step.
+          <p className="form-error" role="alert">
+            {errorMessage}
+          </p>
+        ))}
       {listing?.nextCursor != null && (
         <div className="load-more">
           <button

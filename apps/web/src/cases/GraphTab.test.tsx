@@ -14,7 +14,7 @@ import {
 } from "../test/caseFixtures";
 import { clearCookies, FakeApi, json, noContent } from "../test/fakeApi";
 import { renderApp } from "../test/renderApp";
-import { FakeSigma, waitForSigma } from "../test/sigmaMock";
+import { FakeSigma, spreadNodes, waitForSigma } from "../test/sigmaMock";
 import { NO_WEBGL } from "../graph/GraphView";
 import { MODE_STORAGE_KEY } from "../graph/mode";
 import { GRAPH_EMPTY_HINT, GRAPH_EMPTY_MESSAGE } from "./GraphTab";
@@ -246,9 +246,12 @@ describe("adding entities", () => {
       expect(within(details()).getByRole("heading", { level: 2 })).toHaveTextContent("example.org");
     });
     expect(instance.nodeView(created.key)).toMatchObject({ highlighted: true });
-    // A small graph is shown whole once the new node has settled.
+    // A small graph is shown whole (framed, unrotated) once the new node has settled.
     await waitFor(() => {
-      expect(instance.camera.reset).toHaveBeenCalled();
+      expect(instance.camera.animate).toHaveBeenCalledWith(
+        expect.objectContaining({ angle: 0 }),
+        expect.anything(),
+      );
     });
   });
 
@@ -461,8 +464,14 @@ describe("adding relationships", () => {
       note: null,
     });
     expect(summary()).toHaveTextContent("3 entities, 2 relationships");
-    // The selected entity's highlight includes its new neighbour.
-    expect((await sigma()).nodeView(ip.key)).toMatchObject({ labelVisibility: "visible" });
+    // The selected entity's highlight includes its new neighbour, labelled
+    // where there is room for it.
+    const instance = await sigma();
+    spreadNodes(instance);
+    act(() => {
+      instance.renderFrame();
+    });
+    expect(instance.nodeView(ip.key)).toMatchObject({ labelVisibility: "visible", opacity: 1 });
   });
 
   it("swaps the direction and refilters", async () => {

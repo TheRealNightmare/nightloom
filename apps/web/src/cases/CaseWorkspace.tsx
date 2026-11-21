@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type SubmitEvent } from "react";
-import { NavLink, Outlet, useParams } from "react-router";
+import { NavLink, Outlet, useLocation, useParams } from "react-router";
 
 import { can, getCase, updateCase, type Case } from "../api/cases";
+import { useDocumentTitle } from "../app/documentTitle";
+import { sectionTitle } from "./sectionTitle";
 import { NotFoundError, RequestAbortedError, ValidationError } from "../api/client";
 import { CaseRoleBadge, StatusBadge } from "./Badges";
 import type { CaseContextValue } from "./caseContext";
@@ -21,6 +23,11 @@ export function CaseWorkspace() {
   const { caseId = "" } = useParams();
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [generation, setGeneration] = useState(0);
+  const { pathname } = useLocation();
+  useDocumentTitle(
+    load.kind === "ready" ? load.case.title : load.kind === "not_found" ? "Case not found" : null,
+    load.kind === "ready" ? sectionTitle(pathname, encodeURIComponent(caseId)) : null,
+  );
 
   useEffect(() => {
     const controller = new AbortController();

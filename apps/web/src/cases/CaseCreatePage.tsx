@@ -19,6 +19,7 @@ import {
   type CaseFormErrors,
   type CaseFormValues,
 } from "./validation";
+import { useDocumentTitle } from "../app/documentTitle";
 
 /** Which errors go away when a field is edited. */
 const ERRORS_CLEARED_BY: Record<keyof CaseFormValues, (keyof CaseFormErrors)[]> = {
@@ -34,6 +35,7 @@ const ERRORS_CLEARED_BY: Record<keyof CaseFormValues, (keyof CaseFormErrors)[]> 
 };
 
 export function CaseCreatePage() {
+  useDocumentTitle("New case");
   const { state } = useAuth();
   const navigate = useNavigate();
   const [values, setValues] = useState<CaseFormValues>(EMPTY_CASE_FORM);

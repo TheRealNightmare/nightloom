@@ -32,6 +32,7 @@ import {
   type Point,
   type Rect,
 } from "./geometry";
+import { fit2d, FIT_SHARE, MIN_FIT_EXTENT, type ScreenKnot } from "./framing";
 import { pinchFactor, pixelDeltas, wheelAction, WheelClassifier, type WheelSetting } from "./wheel";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- any sigma instance
@@ -62,6 +63,8 @@ export const ZOOM_STEP = 1.5;
 export const ZOOM_DURATION_MS = 200;
 export const ROTATE_DURATION_MS = 200;
 export const LONG_PRESS_MS = 550;
+/** A knot's radius on screen when sigma has not drawn it yet (pixels). */
+const DEFAULT_KNOT_RADIUS = 8;
 /** A touch that moves further than this is not a long press. */
 export const LONG_PRESS_TOLERANCE_PX = 10;
 
@@ -120,6 +123,52 @@ export function freezeFrame(sigma: AnySigma): void {
 /** Lets the picture fit the whole graph again (Reset view). */
 export function releaseFrame(sigma: AnySigma): void {
   if (sigma.getCustomBBox()) sigma.setCustomBBox(null);
+}
+
+/** The camera of sigma's reset view (the whole graph, as sigma frames it). */
+const RESET_STATE = { x: 0.5, y: 0.5, ratio: 1, angle: 0 };
+
+/**
+ * The camera state that frames the visible `nodes` (see ./framing): their
+ * bounds, knots included, fill {@link FIT_SHARE} of the largest part of the
+ * viewport that the `covered` rectangles (pixels: legend, controls,
+ * minimap) leave free, centered there, unrotated. A graph narrower than
+ * {@link MIN_FIT_EXTENT} layout units is framed as if it were that wide.
+ * Null when no node is visible. The graph's frame must be current (after
+ * {@link releaseFrame}, refresh sigma first).
+ */
+export function fittedCameraState(
+  sigma: AnySigma,
+  nodes: Iterable<string>,
+  covered: readonly Rect[] = [],
+): { x: number; y: number; ratio: number; angle: number } | null {
+  const { width, height } = sigma.getDimensions();
+  if (!(width > 0) || !(height > 0)) return null;
+  const graph = sigma.getGraph();
+  const at = { cameraState: RESET_STATE };
+  const knots: ScreenKnot[] = [];
+  for (const node of nodes) {
+    if (!graph.hasNode(node)) continue;
+    const { x, y } = graph.getNodeAttributes(node) as { x: number; y: number };
+    const point = sigma.graphToViewport({ x, y }, at);
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) continue;
+    const size = (sigma.getNodeDisplayData(node) as { size?: number } | undefined)?.size;
+    knots.push({ x: point.x, y: point.y, radius: size ?? DEFAULT_KNOT_RADIUS });
+  }
+  // Pixels the minimum extent spans in the reset view.
+  const origin = sigma.graphToViewport({ x: 0, y: 0 }, at);
+  const far = sigma.graphToViewport({ x: MIN_FIT_EXTENT, y: 0 }, at);
+  const minExtentPx = Math.hypot(far.x - origin.x, far.y - origin.y);
+  const camera = sigma.getCamera();
+  // Nor closer than the camera may go (its minimum ratio).
+  const maxZoom = Math.min(
+    minExtentPx > 0 ? (FIT_SHARE * Math.min(width, height)) / minExtentPx : Infinity,
+    1 / camera.getBoundedRatio(0),
+  );
+  const fit = fit2d(knots, width, height, covered, maxZoom);
+  if (!fit) return null;
+  const center = sigma.viewportToFramedGraph(fit.anchor, at);
+  return { x: center.x, y: center.y, ratio: camera.getBoundedRatio(1 / fit.zoom), angle: 0 };
 }
 
 /** The camera in graph terms: the point at the center, graph units per pixel, the rotation. */

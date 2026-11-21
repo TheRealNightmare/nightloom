@@ -2,12 +2,13 @@ import { useEffect, useId, useRef, useState, type SubmitEvent } from "react";
 
 import { InvalidCredentialsError } from "../api/client";
 import { useAuth } from "../auth/context";
+import { LoomBackdrop } from "../auth/loom/LoomBackdrop";
 import { describeError } from "../auth/messages";
 import { ThemeToggle } from "../theme/ThemeToggle";
 import { APP_VERSION } from "../version";
-import { LoomArt } from "./LoomArt";
 import { LogoMark } from "./LogoMark";
 import { PasswordField } from "./PasswordField";
+import { useDocumentTitle } from "../app/documentTitle";
 
 export const ETHICS_URL = "https://github.com/TheRealNightmare/nightloom/blob/main/ETHICS.md";
 export const TAGLINE = "Every thread, woven into the full picture.";
@@ -18,6 +19,7 @@ export interface LoginScreenProps {
 }
 
 export function LoginScreen({ notice = null }: LoginScreenProps) {
+  useDocumentTitle("Sign in");
   const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -64,80 +66,89 @@ export function LoginScreen({ notice = null }: LoginScreenProps) {
   return (
     <main className="login login--split">
       <div className="login__art">
-        <LoomArt />
-        <p className="login__tagline">{TAGLINE}</p>
-        <p className="login__caption">Entities are knots · relationships are threads</p>
+        <LoomBackdrop />
+        <div className="login__words">
+          <p className="login__tagline">{TAGLINE}</p>
+          <p className="login__caption">Entities are knots · relationships are threads</p>
+        </div>
       </div>
       <section className="login__panel" aria-labelledby={titleId}>
-        <div className="login__panel-top">
-          <LogoMark size={40} />
+        <div className="login__theme">
           <ThemeToggle />
         </div>
-        <h1 id={titleId} className="login__title">
-          {/* Read as "Sign in to Nightloom"; the space sits outside the span so it survives. */}
-          Sign in <span className="visually-hidden">to Nightloom</span>
-        </h1>
-        <p className="login__subtitle">Open-source intelligence, mapped as a graph.</p>
-        {notice !== null && (
-          <p className="login__notice" role="status">
-            {notice}
-          </p>
-        )}
-        <form
-          className="login__form"
-          noValidate
-          aria-busy={pending}
-          onSubmit={(event) => {
-            void onSubmit(event);
-          }}
-        >
-          <div className="field">
-            <label className="field__label" htmlFor={emailId}>
-              Email
-            </label>
-            <input
-              ref={emailRef}
-              id={emailId}
-              name="email"
-              className="field__input"
-              type="email"
-              inputMode="email"
-              autoComplete="username"
-              autoCapitalize="none"
-              spellCheck={false}
-              value={email}
-              onChange={(event) => {
-                setEmail(event.target.value);
-              }}
-            />
-          </div>
-          <PasswordField
-            label="Password"
-            name="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={setPassword}
-          />
-          <div
-            ref={errorRef}
-            className="form-error"
-            aria-live="polite"
-            tabIndex={-1}
-            data-testid="login-error"
+        {/* One column: the logo, heading, form and footer share its left edge and width. */}
+        <div className="login__column">
+          <LogoMark size={40} />
+          <h1 id={titleId} className="login__title">
+            {/* Read as "Sign in to Nightloom"; the space sits outside the span so it survives. */}
+            Sign in <span className="visually-hidden">to Nightloom</span>
+          </h1>
+          <p className="login__subtitle">Open-source intelligence, mapped as a graph.</p>
+          {notice !== null && (
+            <p className="login__notice" role="status">
+              {notice}
+            </p>
+          )}
+          <form
+            className="login__form"
+            noValidate
+            aria-busy={pending}
+            onSubmit={(event) => {
+              void onSubmit(event);
+            }}
           >
-            {error}
-          </div>
-          <button type="submit" className="button button--primary login__submit" disabled={pending}>
-            {pending ? "Signing in…" : "Sign in"}
-          </button>
-        </form>
-        <p className="login__footer">
-          Use Nightloom responsibly ·{" "}
-          <a href={ETHICS_URL} target="_blank" rel="noreferrer">
-            Ethics policy
-          </a>{" "}
-          · <span className="login__version">v{APP_VERSION}</span>
-        </p>
+            <div className="field">
+              <label className="field__label" htmlFor={emailId}>
+                Email
+              </label>
+              <input
+                ref={emailRef}
+                id={emailId}
+                name="email"
+                className="field__input"
+                type="email"
+                inputMode="email"
+                autoComplete="username"
+                autoCapitalize="none"
+                spellCheck={false}
+                value={email}
+                onChange={(event) => {
+                  setEmail(event.target.value);
+                }}
+              />
+            </div>
+            <PasswordField
+              label="Password"
+              name="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={setPassword}
+            />
+            <div
+              ref={errorRef}
+              className="form-error"
+              aria-live="polite"
+              tabIndex={-1}
+              data-testid="login-error"
+            >
+              {error}
+            </div>
+            <button
+              type="submit"
+              className="button button--primary login__submit"
+              disabled={pending}
+            >
+              {pending ? "Signing in…" : "Sign in"}
+            </button>
+          </form>
+          <p className="login__footer">
+            Use Nightloom responsibly ·{" "}
+            <a href={ETHICS_URL} target="_blank" rel="noreferrer">
+              Ethics policy
+            </a>{" "}
+            · <span className="login__version">v{APP_VERSION}</span>
+          </p>
+        </div>
       </section>
     </main>
   );

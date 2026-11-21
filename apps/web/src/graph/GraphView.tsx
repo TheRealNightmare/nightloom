@@ -47,7 +47,7 @@ import {
   startLayout,
   type LayoutRun,
 } from "./layout";
-import type { Point } from "./geometry";
+import type { Point, Rect } from "./geometry";
 import { SHORTCUTS, type ShortcutGroup } from "./keyboard";
 import {
   DEFAULT_DEPTH,
@@ -473,6 +473,7 @@ export function GraphView({
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [confirmUnpinAll, setConfirmUnpinAll] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
+  const frameCover = useOverlayCover(stageRef);
   const openMenu = useCallback(
     (node: string, at: Point) => {
       if (!graph.hasNode(node)) return;
@@ -738,6 +739,7 @@ export function GraphView({
     pinRevision: pins.version,
     palette: painted,
     theme,
+    frameCover,
     ...(pulse ? { pulse } : {}),
   };
 
@@ -1017,6 +1019,73 @@ export function GraphView({
       )}
     </div>
   );
+}
+
+/** Room kept between the framed graph and the overlays over it (pixels). */
+const OVERLAY_CLEARANCE = 8;
+/** The overlays over the graph's stage that the framing keeps clear of. */
+const OVERLAYS = ":scope > .legend, :scope > .zoom-controls, :scope > .graph-minimap";
+
+const NO_COVER: readonly Rect[] = [];
+
+function sameCover(a: readonly Rect[], b: readonly Rect[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((r, i) => {
+      const o = b[i];
+      return r.x === o?.x && r.y === o.y && r.width === o.width && r.height === o.height;
+    })
+  );
+}
+
+/**
+ * What the legend, the zoom controls and the minimap cover of the stage
+ * (pixels from its top left corner, with some clearance), kept up to date
+ * as they come and go and as they and the stage change size. Both views
+ * frame the graph in the largest part left free (see ./framing).
+ */
+function useOverlayCover(stageRef: { current: HTMLDivElement | null }): readonly Rect[] {
+  const [cover, setCover] = useState<readonly Rect[]>(NO_COVER);
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage || typeof ResizeObserver === "undefined") return;
+    const overlays = () => Array.from(stage.querySelectorAll<HTMLElement>(OVERLAYS));
+    const measure = () => {
+      const box = stage.getBoundingClientRect();
+      const next = overlays()
+        .map((element) => element.getBoundingClientRect())
+        .filter((r) => r.width > 0 && r.height > 0)
+        .map((r) => ({
+          x: Math.round(r.left - box.left - OVERLAY_CLEARANCE),
+          y: Math.round(r.top - box.top - OVERLAY_CLEARANCE),
+          width: Math.round(r.width + 2 * OVERLAY_CLEARANCE),
+          height: Math.round(r.height + 2 * OVERLAY_CLEARANCE),
+        }));
+      setCover((previous) => (sameCover(previous, next) ? previous : next));
+    };
+    const resizes = new ResizeObserver(measure);
+    const observe = () => {
+      resizes.disconnect();
+      resizes.observe(stage);
+      for (const element of overlays()) resizes.observe(element);
+    };
+    // The minimap comes and goes.
+    const children =
+      typeof MutationObserver === "undefined"
+        ? null
+        : new MutationObserver(() => {
+            observe();
+            measure();
+          });
+    children?.observe(stage, { childList: true });
+    observe();
+    measure();
+    return () => {
+      resizes.disconnect();
+      children?.disconnect();
+    };
+  }, [stageRef]);
+  return cover;
 }
 
 /** The side panel while several entities are selected. */

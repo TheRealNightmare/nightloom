@@ -195,8 +195,9 @@ test("edge labels appear only for the hovered entity's relationships", async ({ 
       if (found !== "") break search;
     }
   }
-  // "203.0.113.5: within 203.0.113.0/24; …": the hovered entity's relationships.
-  expect(found).toMatch(/^[^:]+: .+/);
+  // "203.0.113.5: within 203.0.113.0/24; …": the hovered entity's relationships
+  // (a label may hold a colon itself, as "203.0.113.5:443 (https)" does).
+  expect(found).toMatch(/^.+: .+/);
   await expect(canvas).toHaveAccessibleDescription(
     new RegExp(`${found.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`),
   );

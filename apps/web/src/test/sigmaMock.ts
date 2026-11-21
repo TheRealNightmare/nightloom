@@ -6,7 +6,7 @@
  * screen like sigma does (y up), with the camera's x / y as the graph point
  * at the center, `ratio` as graph units per pixel and `angle` as rotation.
  */
-import { waitFor } from "@testing-library/react";
+import { act, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 
 type Handler = (payload: Record<string, unknown>) => void;
@@ -200,8 +200,8 @@ export class FakeSigma {
   }
 
   // Framed graph coordinates are graph coordinates here.
-  graphToViewport({ x, y }: Point): Point {
-    const { x: cx, y: cy, ratio, angle } = this.camera.getState();
+  graphToViewport({ x, y }: Point, override?: { cameraState?: CameraState }): Point {
+    const { x: cx, y: cy, ratio, angle } = override?.cameraState ?? this.camera.getState();
     const dx = (x - cx) / ratio;
     const dy = -(y - cy) / ratio;
     const cos = Math.cos(angle);
@@ -224,8 +224,17 @@ export class FakeSigma {
     return { x: cx + rx * ratio, y: cy - ry * ratio };
   }
 
-  viewportToFramedGraph(point: Point): Point {
-    return this.viewportToGraph(point);
+  viewportToFramedGraph(point: Point, override?: { cameraState?: CameraState }): Point {
+    return this.viewportToGraph(point, override);
+  }
+
+  framedGraphToViewport(point: Point, override?: { cameraState?: CameraState }): Point {
+    return this.graphToViewport(point, override);
+  }
+
+  /** Sizes are pixels whatever the zoom (itemSizesReference "screen"). */
+  scaleSize(size = 1): number {
+    return size;
   }
 
   graphToFramedGraph(point: Point): Point {
@@ -244,13 +253,31 @@ export class FakeSigma {
     };
   }
 
+  /**
+   * When true, a node's display data is what sigma would hold: the
+   * reducer's output at the node's position (tests of what is drawn).
+   * Otherwise a fixed point (tests of camera moves to a node).
+   */
+  displayFromGraph = false;
+
   getNodeDisplayData(node: string) {
-    return this.graph.nodes().includes(node) ? { x: 0.25, y: 0.75, size: 8 } : undefined;
+    if (!this.graph.nodes().includes(node)) return undefined;
+    if (!this.displayFromGraph) return { x: 0.25, y: 0.75, size: 8 };
+    const { x, y } = this.graph.getNodeAttributes(node) as { x: number; y: number };
+    const view = this.nodeView(node);
+    return { ...view, x, y, size: typeof view["size"] === "number" ? view["size"] : 8 };
   }
 
   /** What the node reducer currently returns for `node`. */
   nodeView(node: string): Record<string, unknown> {
     return this.options.nodeReducer?.(node) ?? {};
+  }
+
+  /** A render as sigma does one: the reducers run for every item, then "afterRender" fires. */
+  renderFrame(): void {
+    for (const node of this.graph.nodes()) this.nodeView(node);
+    for (const edge of this.graph.edges()) this.edgeView(edge);
+    this.emit("afterRender");
   }
 
   edgeView(edge: string): Record<string, unknown> {
@@ -294,6 +321,54 @@ export async function waitForSigma(): Promise<FakeSigma> {
     }
     return sigma;
   });
+}
+
+/**
+ * Lays the nodes out in three columns far enough apart that no two labels
+ * can meet, all on screen, and has the node display data follow them, so
+ * tests can see every label the canvas would draw where there is room
+ * (GraphCanvas leaves out labels that would overlap; see ../graph/labelLayout).
+ */
+export function spreadNodes(sigma: FakeSigma): void {
+  const COLUMNS = 3;
+  const COLUMN_PX = 250;
+  const ROW_PX = 26;
+  const graph = sigma.graph as FakeGraph & {
+    mergeNodeAttributes: (node: string, attributes: Record<string, unknown>) => void;
+  };
+  const nodes = graph.nodes();
+  act(() => {
+    nodes.forEach((node, i) => {
+      graph.mergeNodeAttributes(node, {
+        x: (i % COLUMNS) * COLUMN_PX,
+        y: -Math.floor(i / COLUMNS) * ROW_PX,
+      });
+    });
+    const rows = Math.ceil(nodes.length / COLUMNS);
+    sigma.camera.setState({
+      x: ((COLUMNS - 1) * COLUMN_PX) / 2 + 80,
+      y: (-(rows - 1) * ROW_PX) / 2,
+      ratio: 1,
+      angle: 0,
+    });
+  });
+  sigma.displayFromGraph = true;
+}
+
+/**
+ * GraphCanvas frames the graph as soon as it draws (see fittedCameraState).
+ * Returns that fitted camera, and puts the camera back at the identity view
+ * (graph point (0, 0) in the middle, 1 graph unit per pixel, unrotated),
+ * which the tests' expectations count from; the camera's mocks start afresh.
+ */
+export function cameraFromIdentity(sigma: FakeSigma): CameraState {
+  const fitted = sigma.camera.getState();
+  act(() => {
+    sigma.camera.setState({ ...INITIAL });
+  });
+  sigma.camera.setState.mockClear();
+  sigma.camera.animate.mockClear();
+  return fitted;
 }
 
 export default FakeSigma;

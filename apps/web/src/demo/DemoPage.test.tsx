@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GRAPH_HELP } from "../graph/GraphCanvas";
 import { DIM_OPACITY } from "../graph/encoding";
-import { FakeSigma, waitForSigma } from "../test/sigmaMock";
+import { FakeSigma, spreadNodes, waitForSigma } from "../test/sigmaMock";
 import { DemoPage } from "./DemoPage";
 
 vi.mock("sigma", () => import("../test/sigmaMock"));
@@ -43,9 +43,13 @@ describe("DemoPage", () => {
 
   it("highlights the hovered node's neighbors and dims the rest", async () => {
     const { sigma } = await renderApp();
+    spreadNodes(sigma);
     const refreshes = sigma.refresh.mock.calls.length;
     act(() => {
       sigma.emit("enterNode", { node: "net:203.0.113.0/24" });
+    });
+    act(() => {
+      sigma.renderFrame();
     });
     expect(sigma.refresh.mock.calls.length).toBeGreaterThan(refreshes);
     expect(sigma.nodeView("ip:203.0.113.5")).toMatchObject({
@@ -64,8 +68,14 @@ describe("DemoPage", () => {
     act(() => {
       sigma.emit("leaveNode", { node: "net:203.0.113.0/24" });
     });
-    expect(sigma.nodeView("domain:example.org")).toMatchObject({ opacity: 1 });
-    expect(sigma.nodeView("domain:example.org")["labelVisibility"]).toBeUndefined();
+    act(() => {
+      sigma.renderFrame();
+    });
+    // Nothing dimmed, and labelled again (there is room for it).
+    expect(sigma.nodeView("domain:example.org")).toMatchObject({
+      opacity: 1,
+      labelVisibility: "visible",
+    });
     expect(canvas.getAttribute("aria-describedby")?.split(" ")).toHaveLength(2);
     expect(canvas).toHaveAccessibleDescription(`${GRAPH_HELP} `);
   });
@@ -114,8 +124,14 @@ describe("DemoPage", () => {
       sigma.emit("clickNode", { node: "domain:example.org" });
     });
     await userEvent.click(screen.getByRole("button", { name: /IP address/ }));
+    sigma.camera.animate.mockClear();
     await userEvent.click(screen.getByRole("button", { name: "Reset view" }));
-    expect(sigma.camera.reset).toHaveBeenCalledOnce();
+    // The whole graph framed again, unrotated (see fitCamera.test.ts).
+    expect(sigma.camera.animate).toHaveBeenCalledOnce();
+    expect(sigma.camera.animate).toHaveBeenCalledWith(
+      expect.objectContaining({ angle: 0 }),
+      expect.anything(),
+    );
     expect(screen.getByRole("heading", { name: "Demo investigation" })).toBeVisible();
     expect(screen.getByRole("button", { name: /IP address/ })).toHaveAttribute(
       "aria-pressed",
@@ -123,9 +139,17 @@ describe("DemoPage", () => {
     );
   });
 
-  it("labels every node of a small graph", async () => {
+  it("labels every node of a small graph where there is room", async () => {
     const { sigma } = await renderApp();
-    expect(sigma.setSetting).toHaveBeenCalledWith("labelRenderedSizeThreshold", 0);
+    spreadNodes(sigma);
+    act(() => {
+      sigma.renderFrame();
+    });
+    const nodes = sigma.graph.nodes();
+    const unlabelled = nodes.filter(
+      (node) => sigma.nodeView(node)["labelVisibility"] !== "visible",
+    );
+    expect(unlabelled).toEqual([]);
   });
 
   it("tolerates a detached container instead of throwing", async () => {

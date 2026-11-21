@@ -17,6 +17,20 @@ How releases are cut is described in [docs/RELEASING.md](docs/RELEASING.md).
 - A 3D view of the case graph (*2D | 3D* on the toolbar, kept in the URL as `?mode=3d` and remembered per browser): the same layout, pins, selection, filters and groups, with depth by first seen (oldest at the back, undated entities on their own plane, a date ruler), by entity type, or flat. Orbit, pan, zoom toward the pointer, fly-to, box selection, drag to pin (the same pins as 2D), the node menu, a minimap and the full keyboard map with the same announcements. Loaded only when used (three.js and React Three Fiber in their own chunk, about 200 KiB gzip); without WebGL the graph stays in 2D with a notice.
 - Saved views store version 2 of the view state: `mode` (`2d` or `3d`), an optional `camera3d` and the `depth`. Version-1 views still load, in 2D.
 - `make web-size` (run in CI) checks the built bundle against `apps/web/bundle-budget.json`.
+- The sign-in page shows a slow 3D loom beside the form (behind it on narrow screens): a brass weft passing over and under the warp threads, knots forming where it crosses. It is fetched only after the form is ready and the browser is idle, from the 3D view's three.js chunk, at most 30 frames a second, paused while hidden or off-screen; a still drawing of the same loom is shown with reduced motion, Save-Data, without WebGL, or if it fails to load. `make web-size` also checks that the sign-in page's initial JavaScript has no three.js.
+- Every page has its own title ("Cases · Nightloom", "*case* · Graph · Nightloom", …), the 404 page has the new look and shows the address, and Nightloom has a knot-on-thread app icon (SVG and PNG sizes) and a web manifest.
+- Loading states show what is loading over still skeleton lines; a page whose list fails to load offers *Try again*.
+- `make screenshots` takes the README screenshots (`docs/images/`) on a throwaway stack of its own with fictional demo data.
+- Browser tests of the sign-in loom and axe-core accessibility checks (`@axe-core/playwright`) of every screen in both themes.
+
+### Changed
+
+- The graph's initial view and *Reset view* fill 85% of the canvas left free by the legend, the zoom controls and the minimap (2D and 3D), instead of leaving wide margins; a tiny graph is not blown up.
+- 2D labels never overlap: the canvas places them itself, keeping only those with room, except the hovered, selected and keyboard-focused entities' labels, which always show.
+- One focus ring everywhere: text fields now get the same 2px brass outline as buttons and links. The edges of text fields, selects and switches use a new `--control-line` token with at least 3:1 contrast in both themes.
+- The contrast test reads the stylesheets, so every text color in use, and every text and background pair declared together, is checked in both themes.
+- `prefers-reduced-motion` now ends every CSS animation and transition at once.
+- The case graph's outer region is named "Case graph" (it had the same name as the graph stage inside it).
 
 ## [0.1.0] - 2026-11-19
 
