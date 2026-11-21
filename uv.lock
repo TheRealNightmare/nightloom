@@ -20,6 +20,7 @@ members = [
     "nightloom-shuttle-registrable-domain",
     "nightloom-shuttle-ripestat",
     "nightloom-shuttle-wayback",
+    "nightloom-shuttle-web",
     "nightloom-worker",
 ]
 
@@ -2284,6 +2285,25 @@ requires-dist = [
 ]
 
 [[package]]
+name = "nightloom-shuttle-web"
+version = "0.2.0"
+source = { editable = "shuttles/web" }
+dependencies = [
+    { name = "httpx" },
+    { name = "nightloom-core" },
+    { name = "nightloom-sdk" },
+    { name = "nightloom-shuttle-wayback" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "nightloom-core", editable = "packages/core" },
+    { name = "nightloom-sdk", editable = "packages/sdk" },
+    { name = "nightloom-shuttle-wayback", editable = "shuttles/wayback" },
+]
+
+[[package]]
 name = "nightloom-worker"
 version = "0.2.0"
 source = { editable = "apps/worker" }
@@ -2300,6 +2320,7 @@ dependencies = [
     { name = "nightloom-shuttle-registrable-domain" },
     { name = "nightloom-shuttle-ripestat" },
     { name = "nightloom-shuttle-wayback" },
+    { name = "nightloom-shuttle-web" },
 ]
 
 [package.metadata]
@@ -2316,6 +2337,7 @@ requires-dist = [
     { name = "nightloom-shuttle-registrable-domain", editable = "shuttles/registrable-domain" },
     { name = "nightloom-shuttle-ripestat", editable = "shuttles/ripestat" },
     { name = "nightloom-shuttle-wayback", editable = "shuttles/wayback" },
+    { name = "nightloom-shuttle-web", editable = "shuttles/web" },
 ]
 
 [[package]]

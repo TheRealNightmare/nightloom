@@ -196,6 +196,40 @@ export function AutoPivotSwitch({
   );
 }
 
+export function SiteVisitsSwitch({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <div className="field">
+      <label className="switch">
+        <input
+          type="checkbox"
+          role="switch"
+          name="allow_site_visits"
+          className="switch__input"
+          checked={checked}
+          aria-describedby="site-visits-hint"
+          onChange={(event) => {
+            onChange(event.target.checked);
+          }}
+        />
+        <span className="switch__track" aria-hidden="true" />
+        <span className="switch__label">Allow website visits</span>
+      </label>
+      <p className="field__hint" id="site-visits-hint">
+        Off by default. Lets Shuttles that read a site's public pages run on any domain in this
+        case, the way a browser or a search engine would: robots.txt, security.txt, the sitemap and
+        the home page. The site can see these visits. Verified domains allow them anyway; auto-pivot
+        never visits sites.
+      </p>
+    </div>
+  );
+}
+
 export function RetentionField({
   value,
   onChange,

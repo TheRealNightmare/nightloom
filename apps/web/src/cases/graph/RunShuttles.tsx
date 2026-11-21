@@ -8,8 +8,10 @@ import { SensitivityBadge } from "./EntityDetails";
 import {
   ACTIVE_SHUTTLE_HINT,
   describeJobError,
+  MODE_LABELS,
   recentResultsHint,
   shuttleBlockedReason,
+  VISIT_SHUTTLE_HINT,
 } from "./jobText";
 
 export const NO_SHUTTLES_MESSAGE = "No installed Shuttle accepts this type of entity.";
@@ -84,7 +86,7 @@ function ShuttleCard({
       <p className="shuttle-card__description">{shuttle.description}</p>
       <p className="shuttle-card__badges">
         <span className="mode-badge" data-mode={shuttle.mode}>
-          {shuttle.mode === "passive" ? "Passive" : "Active"}
+          {MODE_LABELS[shuttle.mode]}
         </span>
         {shuttle.network && (
           <span className="mode-badge" data-network="true" title="Makes network requests">
@@ -103,6 +105,7 @@ function ShuttleCard({
         </p>
       )}
       {shuttle.mode === "active" && <p className="field__hint">{ACTIVE_SHUTTLE_HINT}</p>}
+      {shuttle.mode === "visit" && <p className="field__hint">{VISIT_SHUTTLE_HINT}</p>}
       {(shuttle.terms_url ?? shuttle.homepage) && (
         <p className="shuttle-card__links">
           {shuttle.terms_url && (

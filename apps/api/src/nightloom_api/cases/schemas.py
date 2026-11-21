@@ -118,7 +118,15 @@ EDITOR_FIELDS = frozenset({"title", "description"})
 REASON_FIELDS = frozenset({"purpose", "legal_basis", "legal_basis_note", "allow_person_entities"})
 # May be omitted, but not set to null.
 NOT_NULLABLE = frozenset(
-    {"title", "purpose", "legal_basis", "status", "allow_person_entities", "allow_auto_pivot"}
+    {
+        "title",
+        "purpose",
+        "legal_basis",
+        "status",
+        "allow_person_entities",
+        "allow_auto_pivot",
+        "allow_site_visits",
+    }
 )
 
 
@@ -140,6 +148,8 @@ class CaseUpdate(BaseModel):
     allow_person_entities: bool | None = None
     # Owners only: whether profile runs may pivot (continue from what they find).
     allow_auto_pivot: bool | None = None
+    # Owners only: whether Shuttles may visit sites' public pages, like a browser.
+    allow_site_visits: bool | None = None
     retention_days: RetentionDays | None = None
     change_reason: ChangeReason | None = None
 
@@ -187,6 +197,7 @@ class CaseOut(BaseModel):
     ethics_ack_at: datetime
     allow_person_entities: bool
     allow_auto_pivot: bool
+    allow_site_visits: bool
     status: CaseStatus
     retention_days: int | None
     created_by: uuid.UUID | None

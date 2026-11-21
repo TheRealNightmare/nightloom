@@ -138,6 +138,28 @@ def test_check_shuttle_guardrails() -> None:
         allow_person_entities=False,
         target_verified=True,
     )
+    # A Shuttle that visits the site: where the case allows visits, or on a verified target.
+    with pytest.raises(service.GuardrailError) as visit:
+        service.check_shuttle(
+            meta(mode=Mode.VISIT), input_type=EntityType.DOMAIN, allow_person_entities=True
+        )
+    assert (visit.value.status_code, visit.value.reason) == (403, "site_visits_disabled")
+    assert "allow website visits" in str(visit.value)
+    for allowed in ({"allow_site_visits": True}, {"target_verified": True}):
+        service.check_shuttle(
+            meta(mode=Mode.VISIT),
+            input_type=EntityType.DOMAIN,
+            allow_person_entities=False,
+            **allowed,
+        )
+    # Visits never let an active Shuttle run.
+    with pytest.raises(service.GuardrailError):
+        service.check_shuttle(
+            meta(mode=Mode.ACTIVE),
+            input_type=EntityType.DOMAIN,
+            allow_person_entities=False,
+            allow_site_visits=True,
+        )
     person = meta(sensitivity=Sensitivity.PERSON)
     with pytest.raises(service.GuardrailError) as gated:
         service.check_shuttle(person, input_type=EntityType.DOMAIN, allow_person_entities=False)

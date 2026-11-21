@@ -873,6 +873,20 @@ class _Addresses:
         return self.found
 
 
+async def test_site_visits_need_the_cases_permission_or_a_verified_domain(world: World) -> None:
+    visit = scripted([domain("example.co.uk")], mode=Mode.VISIT)
+    job_id = await world.queue(visit)
+    assert await run_job(job_id, world.config(visit)) == JobStatus.FAILED
+    await expect_denied(world, job_id, "site_visits_disabled", service.ERROR_VISIT)
+    await world.set_case(world.case_id, allow_site_visits=True)
+    job_id = await world.queue(visit)
+    assert await run_job(job_id, world.config(visit)) == JobStatus.SUCCEEDED
+    await world.set_case(world.case_id, allow_site_visits=False)
+    await _verify(world, "example.co.uk", [])
+    job_id = await world.queue(visit)
+    assert await run_job(job_id, world.config(visit)) == JobStatus.SUCCEEDED
+
+
 async def test_active_shuttles_run_on_verified_domains(world: World) -> None:
     active = scripted([domain("example.co.uk")], mode=Mode.ACTIVE)
     await _verify(world, "shop.example.co.uk", [])

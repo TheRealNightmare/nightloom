@@ -110,7 +110,11 @@ def clean_description(description: str) -> str:
 
 
 def check_shuttles(names: Sequence[str], registry: ShuttleRegistry) -> tuple[str, ...]:
-    """The Shuttle names, de-duplicated in order; each installed and passive (else 422)."""
+    """The Shuttle names, de-duplicated in order; each installed and not active (else 422).
+
+    A Shuttle that visits the site may be in a profile; a run plans it only
+    where the case allows website visits (and never in a pivot).
+    """
     unique = tuple(dict.fromkeys(names))
     if not 1 <= len(unique) <= MAX_SHUTTLES:
         raise ProfileError(f"A profile runs 1 to {MAX_SHUTTLES} Shuttles.")
@@ -118,7 +122,7 @@ def check_shuttles(names: Sequence[str], registry: ShuttleRegistry) -> tuple[str
         shuttle = registry.get(name)
         if shuttle is None:
             raise ProfileError(f"Unknown Shuttle: {name[:63]}.")
-        if shuttle.meta.mode != Mode.PASSIVE:
+        if shuttle.meta.mode == Mode.ACTIVE:
             raise ProfileError(
                 f"{name} is an active Shuttle; profiles may only hold passive Shuttles "
                 "(active ones run one at a time, on verified targets)."
@@ -131,7 +135,7 @@ def accepted_types(profile: Profile, registry: ShuttleRegistry) -> list[EntityTy
     types: set[EntityType] = set()
     for name in profile.shuttles:
         shuttle = registry.get(name)
-        if shuttle is not None and shuttle.meta.mode == Mode.PASSIVE:
+        if shuttle is not None and shuttle.meta.mode != Mode.ACTIVE:
             types |= set(shuttle.meta.input_types)
     return sorted(types)
 

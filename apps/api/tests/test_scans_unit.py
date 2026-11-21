@@ -61,7 +61,11 @@ class Active(_Nothing):
     meta = _meta("active", mode=Mode.ACTIVE)
 
 
-REGISTRY = ShuttleRegistry([Domains, Addresses, Emails, Active])
+class Visit(_Nothing):
+    meta = _meta("visit", mode=Mode.VISIT)
+
+
+REGISTRY = ShuttleRegistry([Domains, Addresses, Emails, Active, Visit])
 PROFILE = Profile(
     id="p",
     name="P",
@@ -119,6 +123,8 @@ def test_shuttle_lists_are_checked() -> None:
         profiles.check_shuttles(["gone"], REGISTRY)
     with pytest.raises(ProfileError, match="active Shuttle"):
         profiles.check_shuttles(["active"], REGISTRY)
+    # A Shuttle that visits the site may be in a profile.
+    assert profiles.check_shuttles(["visit"], REGISTRY) == ("visit",)
 
 
 def test_accepted_types_and_missing_shuttles() -> None:
@@ -146,3 +152,18 @@ def test_plans_go_entity_by_entity_and_skip_what_cannot_run() -> None:
     allowed = plan_run(PROFILE, entities, REGISTRY, allow_person_entities=True)
     assert {"shuttle": "emails", "entity_key": "domain:example.org"} in allowed.items
     assert allowed.skipped["person_entities_disabled"] == 0
+
+
+def test_visits_are_planned_only_where_allowed() -> None:
+    visiting = Profile(
+        id="v", name="V", description="", shuttles=("domains", "visit"), built_in=False
+    )
+    entities = [("domain:example.org", EntityType.DOMAIN)]
+    plan = plan_run(visiting, entities, REGISTRY, allow_person_entities=False)
+    assert [item["shuttle"] for item in plan.items] == ["domains"]
+    assert plan.skipped == {"site_visits_disabled": 1}
+    allowed = plan_run(
+        visiting, entities, REGISTRY, allow_person_entities=False, allow_site_visits=True
+    )
+    assert [item["shuttle"] for item in allowed.items] == ["domains", "visit"]
+    assert profiles.accepted_types(visiting, REGISTRY) == [EntityType.DOMAIN]

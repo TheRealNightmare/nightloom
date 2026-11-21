@@ -82,6 +82,19 @@ describe("settings form", () => {
     expect(await screen.findByRole("switch", { name: "Allow auto-pivot" })).toBeChecked();
   });
 
+  it("allows website visits without asking for a reason", async () => {
+    await openSettings();
+    const toggle = screen.getByRole("switch", { name: "Allow website visits" });
+    expect(toggle).not.toBeChecked();
+    expect(toggle).toHaveAccessibleDescription(/robots\.txt, security\.txt, the sitemap/);
+    await userEvent.click(toggle);
+    await save();
+    await waitFor(() => {
+      expect(patches()).toEqual([{ allow_site_visits: true }]);
+    });
+    expect(await screen.findByRole("switch", { name: "Allow website visits" })).toBeChecked();
+  });
+
   it("saves retention without asking for a reason", async () => {
     await openSettings();
     await userEvent.type(screen.getByLabelText(/Retention/), "365");

@@ -4,6 +4,13 @@ import { describeCaseError, FORBIDDEN_MESSAGE } from "../errors";
 
 export const TOO_MANY_JOBS_MESSAGE =
   "You already have the maximum number of queued or running jobs. Wait for one to finish.";
+export const VISIT_SHUTTLE_HINT =
+  "Visits the site's public pages like a browser, so it runs where a case owner allows website visits in this case's settings, or on verified domains.";
+export const MODE_LABELS = {
+  passive: "Passive",
+  visit: "Visits the site",
+  active: "Active",
+} as const;
 export const ACTIVE_SHUTTLE_HINT =
   "Touches the target itself, so it runs only on domains verified in this case's settings, their subdomains and the addresses they resolve to.";
 export const PERSON_SHUTTLE_REASON =

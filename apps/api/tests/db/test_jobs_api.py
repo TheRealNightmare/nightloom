@@ -93,7 +93,13 @@ class IPInfo(_Nothing):
     )
 
 
-REGISTRY = ShuttleRegistry([RegistrableDomain, ActiveScan, StaffEmails, IPInfo])
+class SiteVisit(_Nothing):
+    meta = _meta(
+        "site-visit", mode=Mode.VISIT, network=True, rate_limit={"requests": 1, "period_seconds": 1}
+    )
+
+
+REGISTRY = ShuttleRegistry([RegistrableDomain, ActiveScan, StaffEmails, IPInfo, SiteVisit])
 
 
 @pytest.fixture(autouse=True)
@@ -189,12 +195,13 @@ async def test_shuttles_list_metadata(world: World) -> None:
     response = await viewer.get(f"{PREFIX}/shuttles")
     assert response.status_code == 200
     names = [item["name"] for item in response.json()]
-    assert names == ["active-scan", "ip-info", "registrable-domain", "staff-emails"]
+    assert names == ["active-scan", "ip-info", "registrable-domain", "site-visit", "staff-emails"]
 
     domain = await viewer.get(f"{PREFIX}/shuttles", params={"input_type": "domain"})
     assert [item["name"] for item in domain.json()] == [
         "active-scan",
         "registrable-domain",
+        "site-visit",
         "staff-emails",
     ]
     item = domain.json()[1]
@@ -347,6 +354,28 @@ async def test_active_shuttles_need_a_verified_target(world: World, infra: Infra
     assert (event.action, event.outcome) == ("authz.denied", "denied")
     assert event.details["reason"] == "target_not_verified"
     assert event.details["shuttle"] == "active-scan"
+
+
+async def test_site_visits_need_the_owners_permission(world: World, infra: Infra) -> None:
+    mark = await last_event_id(infra)
+    editor = world.clients["editor"]
+    refused = await start(editor, world.case_id, "site-visit")
+    assert refused.status_code == 403
+    assert "allow website visits" in refused.json()["detail"]
+    (event,) = await events_since(infra, mark)
+    assert event.details["reason"] == "site_visits_disabled"
+    # Only owners change the setting.
+    url = case_url(world.case_id, "")
+    denied = await editor.patch(url, json={"allow_site_visits": True}, headers=csrf(editor))
+    assert denied.status_code == 403
+    owner = world.clients["owner"]
+    allowed = await owner.patch(url, json={"allow_site_visits": True}, headers=csrf(owner))
+    assert allowed.status_code == 200, allowed.text
+    assert allowed.json()["allow_site_visits"] is True
+    started = await start(editor, world.case_id, "site-visit")
+    assert started.status_code == 201, started.text
+    # Visits never let an active Shuttle run.
+    assert (await start(owner, world.case_id, "active-scan")).status_code == 403
 
 
 async def test_active_shuttles_run_on_verified_targets(world: World, infra: Infra) -> None:

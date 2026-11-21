@@ -8,6 +8,11 @@ How releases are cut is described in [docs/RELEASING.md](docs/RELEASING.md).
 
 ## [Unreleased]
 
+### Added
+
+- Website visits: a new Shuttle mode, `visit`, for Shuttles that read a site's own public pages like a browser. They run where a case owner turns on **Allow website visits** in the case's *Settings* (`allow_site_visits`, off by default; migration `0013_site_visits`), or on verified domains; elsewhere they get `403` with `site_visits_disabled`. They may be in scan profiles (planned only where the case allows visits) but never in auto-pivots.
+- Two Shuttles that visit the site (`shuttles/web`): **Site files** (`site-files`) reads robots.txt, security.txt and the sitemap, adds the paths and pages they list as URLs and records whether a security.txt exists, its expiry and its kinds of contact; **Web technologies** (`web-tech`) recognizes the software behind the home page (server, CMS, frameworks, analytics) and records its title and embedded analytics IDs. New Domain properties for both.
+
 ## [0.2.0] - 2026-11-21
 
 Scanning at scale, and the first active checks. Scan profiles run several Shuttles on many entities at once, auto-pivot follows what they find, a result cache spares the sources, and case owners can verify domains they control so that the first two active Shuttles may check them. The case graph gains pins, saved views and a 3D view, and the whole interface has a new look, *Loom & thread*.

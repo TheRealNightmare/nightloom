@@ -134,8 +134,10 @@ async def create_job(
         await db.rollback()
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unknown Shuttle.")
     meta = shuttle.meta
+    visits = access.case.allow_site_visits
     verified = (
-        meta.mode == Mode.ACTIVE
+        meta.mode != Mode.PASSIVE
+        and not (meta.mode == Mode.VISIT and visits)
         and await ownership.covers(db, access.case.id, body.entity_key, clock.utcnow()) is not None
     )
     try:
@@ -144,6 +146,7 @@ async def create_job(
             input_type=entity_type,
             allow_person_entities=access.case.allow_person_entities,
             target_verified=verified,
+            allow_site_visits=visits,
         )
     except service.GuardrailError as error:
         await _refuse(db, make_session, request, access, error, shuttle=meta.name)

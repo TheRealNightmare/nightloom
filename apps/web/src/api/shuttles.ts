@@ -20,7 +20,8 @@ export interface ShuttleInfo {
   input_types: EntityType[];
   output_entity_types: EntityType[];
   output_relationship_types: string[];
-  mode: "passive" | "active";
+  /** passive: third parties only; visit: reads the site's public pages; active: touches the target. */
+  mode: "passive" | "visit" | "active";
   sensitivity: Sensitivity;
   network: boolean;
   required_keys: string[];
@@ -131,7 +132,7 @@ export function isShuttleInfo(value: unknown): value is ShuttleInfo {
     isString(value["description"]) &&
     Array.isArray(value["input_types"]) &&
     value["input_types"].every((type) => isString(type) && isEntityType(type)) &&
-    (value["mode"] === "passive" || value["mode"] === "active") &&
+    (value["mode"] === "passive" || value["mode"] === "visit" || value["mode"] === "active") &&
     isString(value["sensitivity"]) &&
     (SENSITIVITIES as readonly string[]).includes(value["sensitivity"]) &&
     typeof value["network"] === "boolean" &&

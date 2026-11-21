@@ -55,10 +55,14 @@ class Mode(StrEnum):
     """How a Shuttle collects.
 
     ``passive`` Shuttles only ask third parties (or compute locally);
-    ``active`` ones touch the target itself and need verified ownership.
+    ``visit`` ones read the target's public website the way a browser does (a
+    few ordinary GET requests for public pages), and need a case that allows
+    website visits or a verified target; ``active`` ones touch the target
+    itself in other ways (probes, port checks) and need verified ownership.
     """
 
     PASSIVE = "passive"
+    VISIT = "visit"
     ACTIVE = "active"
 
 
