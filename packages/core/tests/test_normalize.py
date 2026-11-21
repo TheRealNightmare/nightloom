@@ -118,6 +118,14 @@ def test_registrable_domain(raw: str, expected: str | None) -> None:
     assert n.registrable_domain(raw) == expected
 
 
+def test_is_public_suffix() -> None:
+    assert n.is_public_suffix("co.uk")
+    assert n.is_public_suffix("CO.UK.")
+    assert not n.is_public_suffix("example.co.uk")
+    assert not n.is_public_suffix("nightloom-test.example")
+    assert not n.is_public_suffix("www.example.org")
+
+
 def test_registrable_domain_never_uses_the_network(monkeypatch: pytest.MonkeyPatch) -> None:
     def refuse(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("network access attempted")

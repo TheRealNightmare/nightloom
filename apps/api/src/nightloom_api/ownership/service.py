@@ -43,9 +43,9 @@ from nightloom_api.ownership.models import Method, OwnershipVerification, Verifi
 from nightloom_core.entities import EntityType
 from nightloom_core.normalize import (
     NormalizationError,
+    is_public_suffix,
     normalize_domain,
     parse_key,
-    registrable_domain,
 )
 
 VALIDITY = timedelta(days=30)
@@ -107,10 +107,8 @@ def clean_domain(value: str) -> str:
         raise OwnershipError("Verify the domain itself, without a wildcard.")
     if domain.startswith("_"):
         raise OwnershipError("Verify a host name, not a service label such as _dmarc.")
-    if registrable_domain(domain) is None:
-        raise OwnershipError(
-            "This is a public suffix (like co.uk) or has no known suffix; verify a domain under it."
-        )
+    if is_public_suffix(domain):
+        raise OwnershipError("This is a public suffix (like co.uk); verify a domain under it.")
     return domain
 
 
