@@ -31,7 +31,7 @@ test("an owner adds a domain to verify, checks it and removes it", async ({ page
 
   await page.goto(`${caseUrl}/settings`);
   const section = page.getByRole("region", { name: "Verified domains" });
-  await section.getByLabel("Domain").fill(dnsDomain);
+  await section.getByLabel("Domain", { exact: true }).fill(dnsDomain);
   await section.getByRole("button", { name: "Add domain" }).click();
   const item = section.getByRole("listitem", { name: dnsDomain });
   await expect(item.getByText("Not verified yet")).toBeVisible();
