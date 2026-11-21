@@ -16,7 +16,15 @@ import type { CameraState } from "sigma/types";
 import type { EdgeAttributes, NightloomGraph, NodeAttributes } from "./buildGraph";
 import { DEFAULT_GRAPH_PALETTE, type GraphPalette } from "../theme/graphPalette";
 import type { Theme } from "../theme/tokens";
-import { CURVATURE, PARALLEL_SPREAD, threadWidthStep } from "./encoding";
+import { ENTITY_TYPE_INFO } from "../domain/entities";
+import {
+  CURVATURE,
+  LABEL_FONT,
+  LABEL_FONT_STRONG,
+  LABEL_SIZE,
+  PARALLEL_SPREAD,
+  threadWidthStep,
+} from "./encoding";
 import { announceNode, focusOrder, nextFocus } from "./focusOrder";
 import type { Point, Rect } from "./geometry";
 import {
@@ -35,8 +43,16 @@ import {
 } from "./interactions";
 import { keyAction } from "./keyboard";
 import { waitForLabelFont } from "./labelFont";
+import { measureText, placeLabels, type KnotMark, type LabelCandidate } from "./labelLayout";
 import { Minimap } from "./Minimap";
-import { graphPrimitives, type GraphPrimitives } from "./primitives";
+import {
+  graphPrimitives,
+  PIN_BOX,
+  TAG_FONT_SIZE,
+  TAG_HEIGHT,
+  TAG_PADDING_X,
+  type GraphPrimitives,
+} from "./primitives";
 import {
   computeHighlight,
   edgeView,
@@ -45,6 +61,7 @@ import {
   NO_PULSE,
   nodeView,
   type Highlight,
+  type NodeView,
   type RenderContext,
   type ViewState,
 } from "./view";
@@ -113,10 +130,11 @@ export interface GraphCanvasProps {
   palette?: GraphPalette;
   theme?: Theme;
   /**
-   * What the overlays (legend, controls) cover at the canvas's edges
-   * (pixels): the initial view and Reset view fit the graph above them.
+   * What the overlays (legend, controls, minimap) cover of the canvas
+   * (pixels): the initial view and Reset view frame the graph in the
+   * largest part they leave free (see ./framing).
    */
-  frameInsets?: { bottom: number };
+  frameCover?: readonly Rect[];
   ref?: Ref<GraphCanvasHandle>;
 }
 
@@ -124,21 +142,27 @@ export interface GraphCanvasProps {
 type CanvasSigma = Sigma<NodeAttributes, EdgeAttributes, Attributes, {}, {}, {}, GraphPrimitives>;
 
 const CAMERA_DURATION_MS = 450;
-/** Room sigma keeps around the whole graph when it fits it (pixels). */
+/** Room sigma keeps around the whole graph in its own reset view (pixels). */
 const STAGE_PADDING = 64;
 const FOCUS_RETRY_FRAMES = 10;
 const FOCUS_RATIO = 0.7;
 /** Only knots drawn at least this many pixels wide get a label (all of them in small graphs). */
 const LABEL_SIZE_THRESHOLD = 8;
-/** Fewer, better-spaced labels than sigma's defaults (1 and 100), so dense graphs stay legible. */
-const LABEL_DENSITY = 0.5;
-const LABEL_GRID_CELL_SIZE = 140;
+/** A label's line box as a share of its font size. */
+const LABEL_LINE_HEIGHT = 1.2;
+/** Space sigma leaves between a label and its attachment (pin, group tag; pixels). */
+const LABEL_ATTACHMENT_GAP = 2;
 /** Space between a focused knot and its focus ring (pixels). */
 const FOCUS_RING_GAP = 5;
-/** A node focused by keyboard is brought into view when it is closer than this to an edge. */
-const FOCUS_MARGIN = 48;
+/**
+ * A node focused by keyboard is brought into view when it is closer than this
+ * to an edge: less than the room the framing leaves around the graph (see
+ * ./framing), so focusing an entity of a freshly framed graph never moves it.
+ */
+const FOCUS_MARGIN = 24;
 
 const NO_OP = () => undefined;
+const NO_COVER: readonly Rect[] = [];
 
 export const GRAPH_HELP =
   "Tab moves through the entities, Enter selects one, P pins it. Arrow keys pan, plus and minus " +
@@ -173,7 +197,7 @@ export function GraphCanvas({
   pulse = NO_PULSE,
   palette = DEFAULT_GRAPH_PALETTE,
   theme = "dark",
-  frameInsets,
+  frameCover = NO_COVER,
   ref,
 }: GraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -197,24 +221,33 @@ export function GraphCanvas({
   const callbacksRef = useRef(handlers);
   const wheelRef = useRef(wheelSetting);
   const showAllLabelsRef = useRef(showAllLabels);
-  // The whole graph is fitted above what the overlays cover (see fittedCameraState).
-  const bottomInset = frameInsets?.bottom ?? 0;
-  const insetRef = useRef(bottomInset);
+  // The visible graph is framed where the overlays leave room (see fittedCameraState).
+  const coverKey = frameCover
+    .map((r) => `${String(r.x)},${String(r.y)},${String(r.width)},${String(r.height)}`)
+    .join(";");
+  const coverRef = useRef(frameCover);
+  const coverKeyRef = useRef(coverKey);
   const fittedRef = useRef<CameraState | null>(null);
-  /** Shows the whole graph above the overlays (animated unless `duration` is 0). */
-  const fit = useCallback((sigma: CanvasSigma, duration: number) => {
-    const camera = sigma.getCamera();
-    const state = fittedCameraState(sigma, insetRef.current, STAGE_PADDING);
-    if (state === null) {
-      if (duration > 0) void camera.reset({ duration });
-      else camera.setState({ x: 0.5, y: 0.5, ratio: 1, angle: 0 });
-      fittedRef.current = null;
-      return;
-    }
-    fittedRef.current = state;
-    if (duration > 0) void camera.animate(state, { duration });
-    else camera.setState(state);
-  }, []);
+  /** Frames the visible graph (animated unless `duration` is 0). */
+  const fit = useCallback(
+    (sigma: CanvasSigma, duration: number) => {
+      const camera = sigma.getCamera();
+      const visible = graph.filterNodes((node) =>
+        isNodeVisible(graph, node, viewRef.current.state),
+      );
+      const state = fittedCameraState(sigma, visible, coverRef.current);
+      if (state === null) {
+        if (duration > 0) void camera.reset({ duration });
+        else camera.setState({ x: 0.5, y: 0.5, ratio: 1, angle: 0 });
+        fittedRef.current = null;
+        return;
+      }
+      fittedRef.current = state;
+      if (duration > 0) void camera.animate(state, { duration });
+      else camera.setState(state);
+    },
+    [graph],
+  );
   // The sigma instance once it exists (it may wait for the label font).
   const [sigmaInstance, setSigmaInstance] = useState<CanvasSigma | null>(null);
   // The node with the keyboard focus ring.
@@ -224,17 +257,126 @@ export function GraphCanvas({
   const initialFocusRef = useRef(initialFocus);
   const focusChangeRef = useRef(onFocusChange);
 
+  // Labels (see ./labelLayout): the node reducer notes which nodes may show
+  // one, planLabels picks those drawn after each render (none overlapping),
+  // and the reducer forces exactly those; sigma's own choice is off.
+  const labelsRef = useRef<{ wanted: Map<string, boolean>; shown: ReadonlySet<string> }>({
+    wanted: new Map(),
+    shown: new Set(),
+  });
+  /** Hovered, selected or keyboard-focused: labelled whatever else is near. */
+  const isLabelMandatory = useCallback((node: string) => {
+    const state = viewRef.current.state;
+    return (
+      node === state.hoveredNode ||
+      node === state.selectedNode ||
+      node === focusedRef.current ||
+      (state.selectedNodes?.has(node) ?? false)
+    );
+  }, []);
+  const withPlannedLabel = useCallback(
+    (node: string, view: NodeView): NodeView => {
+      const { wanted, shown } = labelsRef.current;
+      if (view.visibility === "hidden" || view.labelVisibility === "hidden" || !view.label) {
+        wanted.delete(node);
+        return view;
+      }
+      // "visible" from the view: asked for (a group's count, the hovered
+      // entity's neighbours), placed before the others.
+      wanted.set(node, view.labelVisibility === "visible");
+      const drawn = shown.has(node) || isLabelMandatory(node);
+      return { ...view, labelVisibility: drawn ? "visible" : "hidden" };
+    },
+    [isLabelMandatory],
+  );
+  const planLabels = useCallback(
+    (sigma: CanvasSigma) => {
+      const { wanted, shown } = labelsRef.current;
+      const { width, height } = sigma.getDimensions();
+      const threshold = showAllLabelsRef.current ? 0 : LABEL_SIZE_THRESHOLD;
+      const candidates: LabelCandidate[] = [];
+      for (const [node, asked] of wanted) {
+        if (!graph.hasNode(node)) continue;
+        const data = sigma.getNodeDisplayData(node) as
+          (NodeView & { x: number; y: number; size: number }) | undefined;
+        if (!data || typeof data.label !== "string" || data.label === "") continue;
+        const mandatory = isLabelMandatory(node);
+        const radius = sigma.scaleSize(data.size);
+        if (!mandatory && !asked && radius < threshold) continue;
+        const point = sigma.framedGraphToViewport(data);
+        const size = data.labelSize ?? LABEL_SIZE;
+        const font = data.labelFont ?? LABEL_FONT;
+        const attributes = graph.getNodeAttributes(node);
+        const group = data.labelPosition === "over";
+        candidates.push({
+          node,
+          x: point.x,
+          y: point.y,
+          radius,
+          textWidth: measureText(data.label, font, size),
+          textHeight: size * LABEL_LINE_HEIGHT,
+          position: group ? "over" : "right",
+          before: !group && attributes.pinned === true ? PIN_BOX + LABEL_ATTACHMENT_GAP : 0,
+          ...(group
+            ? {
+                below: {
+                  width:
+                    measureText(
+                      ENTITY_TYPE_INFO[attributes.entity.type].plural,
+                      LABEL_FONT_STRONG,
+                      TAG_FONT_SIZE,
+                    ) +
+                    2 * TAG_PADDING_X,
+                  height: TAG_HEIGHT + LABEL_ATTACHMENT_GAP,
+                },
+              }
+            : {}),
+          mandatory,
+          // Group counts, then labels the view asks for, then the
+          // best-connected and largest knots.
+          priority: (group ? 2e6 : 0) + (asked ? 1e6 : 0) + graph.degree(node) * 100 + radius,
+        });
+      }
+      // Every knot drawn, which other labels keep off.
+      const knots: KnotMark[] = [];
+      graph.forEachNode((node) => {
+        if (!isNodeVisible(graph, node, viewRef.current.state)) return;
+        const data = sigma.getNodeDisplayData(node) as
+          { x: number; y: number; size: number } | undefined;
+        if (!data) return;
+        const point = sigma.framedGraphToViewport(data);
+        knots.push({ node, x: point.x, y: point.y, radius: sigma.scaleSize(data.size) });
+      });
+      const next = new Set(placeLabels(candidates, { width, height }, knots).keys());
+      // Repaint only the nodes whose label the reducer now draws differently
+      // (a mandatory label is drawn either way: repainting the hovered node
+      // would make sigma pick it afresh, and could drop the hover).
+      const changed: string[] = [];
+      for (const node of next) {
+        if (!shown.has(node) && !isLabelMandatory(node)) changed.push(node);
+      }
+      for (const node of shown) {
+        if (!next.has(node) && graph.hasNode(node) && !isLabelMandatory(node)) changed.push(node);
+      }
+      labelsRef.current.shown = next;
+      if (changed.length > 0) {
+        sigma.refresh({ partialGraph: { nodes: changed }, skipIndexation: true, schedule: true });
+      }
+    },
+    [graph, isLabelMandatory],
+  );
+
   useEffect(() => {
     callbacksRef.current = handlers;
     wheelRef.current = wheelSetting;
     focusChangeRef.current = onFocusChange;
   });
 
-  // The focus ring follows its node through camera moves, drags and layouts.
-  // The overlays changed size: refit if the camera is still where the last fit put it.
+  // The overlays changed: refit if the camera is still where the last fit put it.
   useEffect(() => {
-    if (insetRef.current === bottomInset) return;
-    insetRef.current = bottomInset;
+    coverRef.current = frameCover;
+    if (coverKeyRef.current === coverKey) return;
+    coverKeyRef.current = coverKey;
     const sigma = sigmaInstance;
     const fitted = fittedRef.current;
     if (!sigma || !fitted) return;
@@ -245,9 +387,10 @@ export function GraphCanvas({
       Math.abs(now.ratio - fitted.ratio) < 1e-6 &&
       Math.abs(now.angle - fitted.angle) < 1e-6;
     if (untouched) fit(sigma, 0);
-  }, [bottomInset, sigmaInstance, fit]);
-  // (Before sigma exists the inset is only remembered: creation fits with it.)
+  }, [coverKey, frameCover, sigmaInstance, fit]);
+  // (Before sigma exists the cover is only remembered: creation fits with it.)
 
+  // The focus ring follows its node through camera moves, drags and layouts.
   const placeRing = useCallback(() => {
     const ring = ringRef.current;
     const sigma = sigmaRef.current;
@@ -285,9 +428,9 @@ export function GraphCanvas({
           // skip drawing then instead of throwing.
           allowInvalidContainer: true,
           renderEdgeLabels: true,
-          labelDensity: LABEL_DENSITY,
-          labelGridCellSize: LABEL_GRID_CELL_SIZE,
-          labelRenderedSizeThreshold: showAllLabelsRef.current ? 0 : LABEL_SIZE_THRESHOLD,
+          // Which labels show is decided here (see ./labelLayout and
+          // planLabels below): only the labels it forces are drawn.
+          labelDensity: 0,
           stagePadding: STAGE_PADDING,
           minCameraRatio: 0.08,
           maxCameraRatio: 4,
@@ -325,12 +468,15 @@ export function GraphCanvas({
           },
         },
         nodeReducer: (node) =>
-          nodeView(
-            graph,
+          withPlannedLabel(
             node,
-            viewRef.current.state,
-            viewRef.current.highlight,
-            viewRef.current.context,
+            nodeView(
+              graph,
+              node,
+              viewRef.current.state,
+              viewRef.current.highlight,
+              viewRef.current.context,
+            ),
           ),
         edgeReducer: (edge) =>
           edgeView(
@@ -374,7 +520,7 @@ export function GraphCanvas({
       // Threads get a little wider as the camera zooms in; repaint only when
       // the rounded width changes, not on every frame of a zoom.
       const camera = created.getCamera();
-      if (insetRef.current > 0) fit(created, 0);
+      fit(created, 0);
       fittedRef.current ??= camera.getState();
       let step = threadWidthStep(camera.ratio);
       camera.on("updated", ({ ratio }) => {
@@ -385,6 +531,9 @@ export function GraphCanvas({
         created.refresh({ skipIndexation: true });
       });
       created.on("afterRender", placeRing);
+      created.on("afterRender", () => {
+        planLabels(created);
+      });
       setSigmaInstance(created);
     };
 
@@ -399,7 +548,7 @@ export function GraphCanvas({
       sigmaRef.current = null;
       setSigmaInstance(null);
     };
-  }, [graph, placeRing, fit]);
+  }, [graph, placeRing, fit, withPlannedLabel, planLabels]);
 
   const readyRef = useRef(onReadyChange);
   useEffect(() => {
@@ -411,12 +560,10 @@ export function GraphCanvas({
   }, [ready]);
 
   useEffect(() => {
+    if (showAllLabelsRef.current === showAllLabels) return;
     showAllLabelsRef.current = showAllLabels;
-    sigmaInstance?.setSetting(
-      "labelRenderedSizeThreshold",
-      showAllLabels ? 0 : LABEL_SIZE_THRESHOLD,
-    );
-  }, [sigmaInstance, showAllLabels]);
+    if (sigmaInstance) planLabels(sigmaInstance);
+  }, [sigmaInstance, showAllLabels, planLabels]);
 
   const highlight = computeHighlight(graph, view);
   useEffect(() => {
@@ -553,6 +700,7 @@ export function GraphCanvas({
         return;
       case "reset":
         releaseFrame(sigma);
+        sigma.refresh();
         fit(sigma, CAMERA_DURATION_MS);
         return;
       case "moveNode": {
@@ -602,6 +750,7 @@ export function GraphCanvas({
         if (!sigma) return;
         // Fit the whole graph again, wherever nodes were dragged.
         releaseFrame(sigma);
+        sigma.refresh();
         fit(sigma, CAMERA_DURATION_MS);
       },
       zoomIn() {

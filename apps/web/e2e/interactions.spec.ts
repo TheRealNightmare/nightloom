@@ -205,6 +205,14 @@ test("box-select three entities and move them together", async ({ page }) => {
 
 test("rotate with the buttons and reset the view", async ({ page }) => {
   await openCaseGraph(page);
+  // The minimap first: Reset view frames the graph in what the overlays leave
+  // free, the minimap included, so the picture to come back to is this one.
+  await page.getByRole("button", { name: "View", exact: true }).click();
+  await page.getByRole("menuitemcheckbox", { name: "Minimap" }).click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("graph-minimap")).toBeVisible();
+  await page.getByRole("button", { name: "Reset view" }).click();
+  await page.waitForTimeout(700);
   const before = await focusEntity(page, "www.example.org");
 
   await page.getByRole("button", { name: "Rotate right" }).click();
@@ -215,10 +223,6 @@ test("rotate with the buttons and reset the view", async ({ page }) => {
   expect(Math.hypot(rotated.x - before.x, rotated.y - before.y)).toBeGreaterThan(10);
 
   // Labels stay upright, and the minimap shows the turned viewport.
-  await page.getByRole("button", { name: "View", exact: true }).click();
-  await page.getByRole("menuitemcheckbox", { name: "Minimap" }).click();
-  await page.keyboard.press("Escape");
-  await expect(page.getByTestId("graph-minimap")).toBeVisible();
   await page.waitForTimeout(300);
   await screenshot(page, "nl-u3-rotated-minimap.png");
 

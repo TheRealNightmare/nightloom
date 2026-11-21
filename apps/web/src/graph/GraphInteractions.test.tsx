@@ -10,7 +10,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { sampleGraph } from "../demo/sampleGraph";
 import type { InvestigationGraph } from "../domain/entities";
-import { FakeSigma, sigmaEvent, waitForSigma } from "../test/sigmaMock";
+import { fittedCameraState, type AnySigma } from "./interactions";
+import { cameraFromIdentity, FakeSigma, sigmaEvent, waitForSigma } from "../test/sigmaMock";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import type { NightloomGraph } from "./buildGraph";
 import { GraphView } from "./GraphView";
@@ -43,6 +44,7 @@ async function renderView({
     </ThemeProvider>,
   );
   const sigma = await waitForSigma();
+  cameraFromIdentity(sigma);
   return { sigma, graph: sigma.graph as unknown as NightloomGraph };
 }
 
@@ -498,7 +500,11 @@ describe("keyboard", () => {
     await userEvent.keyboard("qq");
     expect(sigma.camera.angle).toBeCloseTo(-Math.PI / 12);
     await userEvent.keyboard("0");
-    expect(sigma.camera.getState()).toEqual({ x: 0, y: 0, ratio: 1, angle: 0 });
+    // The whole graph framed again (see fitCamera.test.ts), where the layout put it, unrotated.
+    expect(sigma.camera.getState()).toEqual(
+      fittedCameraState(sigma as unknown as AnySigma, sigma.graph.nodes()),
+    );
+    expect(sigma.camera.angle).toBe(0);
   });
 
   it("moves a focus ring through the entities, announces them, selects and pins", async () => {

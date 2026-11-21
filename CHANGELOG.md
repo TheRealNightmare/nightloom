@@ -25,6 +25,8 @@ How releases are cut is described in [docs/RELEASING.md](docs/RELEASING.md).
 
 ### Changed
 
+- The graph's initial view and *Reset view* fill 85% of the canvas left free by the legend, the zoom controls and the minimap (2D and 3D), instead of leaving wide margins; a tiny graph is not blown up.
+- 2D labels never overlap: the canvas places them itself, keeping only those with room, except the hovered, selected and keyboard-focused entities' labels, which always show.
 - One focus ring everywhere: text fields now get the same 2px brass outline as buttons and links. The edges of text fields, selects and switches use a new `--control-line` token with at least 3:1 contrast in both themes.
 - The contrast test reads the stylesheets, so every text color in use, and every text and background pair declared together, is checked in both themes.
 - `prefers-reduced-motion` now ends every CSS animation and transition at once.

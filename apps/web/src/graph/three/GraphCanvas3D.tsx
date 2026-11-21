@@ -32,6 +32,7 @@ import { DEFAULT_GRAPH_PALETTE, type GraphPalette } from "../../theme/graphPalet
 import { token, type Theme } from "../../theme/tokens";
 import type { NightloomGraph } from "../buildGraph";
 import { announceNode, nextFocus } from "../focusOrder";
+import { FIT_SHARE, freeAreas, MIN_FIT_EXTENT } from "../framing";
 import type { Point, Rect } from "../geometry";
 import type { GraphCanvasHandle } from "../GraphCanvas";
 import { ZOOM_DURATION_MS, ZOOM_STEP, type GraphCamera } from "../interactions";
@@ -41,7 +42,6 @@ import { computeHighlight, focusSummary, isNodeVisible, NO_PULSE, type ViewState
 import type { WheelSetting } from "../wheel";
 import {
   boundedCamera,
-  boundingSphere,
   camera2dTo3d,
   camera3dTo2d,
   distanceToShow,
@@ -52,9 +52,7 @@ import {
   dollyToward,
   easeInOut,
   flyTo,
-  frameSphereInArea,
-  NO_INSETS,
-  type FrameInsets,
+  frameInArea,
   interpolateCamera,
   moveTarget,
   orbit,
@@ -128,17 +126,30 @@ export interface GraphCanvas3DProps {
   palette?: GraphPalette;
   theme?: Theme;
   /**
-   * What the overlays (legend, controls) cover at the canvas's edges: the
-   * initial view and Reset view frame the graph in the rest.
+   * What the overlays (legend, controls, minimap) cover of the canvas
+   * (pixels): the initial view and Reset view frame the graph in the
+   * largest part they leave free (see ../framing).
    */
-  frameInsets?: FrameInsets;
+  frameCover?: readonly Rect[];
   ref?: Ref<GraphCanvas3DHandle>;
 }
 
 const NO_OP = () => undefined;
-/** The focus ring's gap around its knot, and the margin that brings a focused knot into view. */
+const NO_COVER: readonly Rect[] = [];
+
+function coverKeyOf(cover: readonly Rect[]): string {
+  return cover
+    .map((r) => `${String(r.x)},${String(r.y)},${String(r.width)},${String(r.height)}`)
+    .join(";");
+}
+
+/**
+ * The focus ring's gap around its knot, and the margin that brings a focused
+ * knot into view: less than the room the framing leaves around the graph
+ * (see ../framing), so focusing an entity of a freshly framed graph never moves it.
+ */
 const FOCUS_RING_GAP = 5;
-const FOCUS_MARGIN = 48;
+const FOCUS_MARGIN = 24;
 /** Fly-to: how long (≤ 600 ms), and how much of the view the graph's radius takes. */
 export const FLY_MS = 550;
 const FLY_DISTANCE_RATIO = 0.6;
@@ -451,7 +462,7 @@ export function GraphCanvas3D({
   pulse = NO_PULSE,
   palette = DEFAULT_GRAPH_PALETTE,
   theme = "dark",
-  frameInsets = NO_INSETS,
+  frameCover = NO_COVER,
   ref,
 }: GraphCanvas3DProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -512,7 +523,7 @@ export function GraphCanvas3D({
     onFocusChange,
     onContextLost,
     onContextRestored,
-    frameInsets,
+    frameCover,
   };
   const propsRef = useRef(props);
   useEffect(() => {
@@ -576,7 +587,7 @@ export function GraphCanvas3D({
       // keep room on the left for their text (drawn left of each mark).
       const ruler = p.depth === "flat" ? [] : model.ticks;
       let points: ArrayLike<number> = model.positions;
-      let insets = p.frameInsets;
+      let areas = freeAreas(width, height, p.frameCover);
       if (ruler.length > 0) {
         const { cx, cy, radius } = r.extent;
         const margin = radius * RULER_OFFSET;
@@ -589,16 +600,29 @@ export function GraphCanvas3D({
           );
         });
         points = all;
-        insets = { ...insets, left: insets.left + RULER_TEXT_PX };
+        areas = areas.map((area) => ({
+          ...area,
+          x: area.x + RULER_TEXT_PX,
+          width: area.width - RULER_TEXT_PX,
+        }));
       }
-      return frameSphereInArea(
-        boundingSphere(points, model.count + ruler.length),
-        width,
-        height,
-        insets,
-        direction,
-        up,
-      );
+      // The free area that shows the graph largest (the camera nearest).
+      let best: Camera3D | null = null;
+      for (const area of areas) {
+        const camera = frameInArea(
+          points,
+          model.count + ruler.length,
+          width,
+          height,
+          area,
+          FIT_SHARE,
+          MIN_FIT_EXTENT / 2,
+          direction,
+          up,
+        );
+        if (camera && (best === null || distanceOf(camera) < distanceOf(best))) best = camera;
+      }
+      return best;
     },
     [],
   );
@@ -689,10 +713,10 @@ export function GraphCanvas3D({
   }, [graph, invalidate]);
 
   // The overlays changed size: the automatic framing fits the new area.
-  const insetsKey = `${String(frameInsets.top)},${String(frameInsets.right)},${String(frameInsets.bottom)},${String(frameInsets.left)}`;
+  const coverKey = coverKeyOf(frameCover);
   useEffect(() => {
     invalidate();
-  }, [insetsKey, invalidate]);
+  }, [coverKey, invalidate]);
 
   // What is drawn, and how, changed.
   useEffect(() => {
@@ -801,8 +825,7 @@ export function GraphCanvas3D({
       // Until the camera is moved, keep the whole graph framed: after a
       // layout change, and when the viewport or the overlays change size.
       if (r.autoFrame) {
-        const insets = p.frameInsets;
-        const key = `${String(viewport.width)}x${String(viewport.height)}:${String(insets.top)},${String(insets.right)},${String(insets.bottom)},${String(insets.left)}`;
+        const key = `${String(viewport.width)}x${String(viewport.height)}:${coverKeyOf(p.frameCover)}`;
         if (r.frameKey !== key) {
           const next = framed();
           if (next) {

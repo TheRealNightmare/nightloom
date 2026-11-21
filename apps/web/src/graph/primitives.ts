@@ -144,7 +144,8 @@ function hiDpiCanvas(width: number, height: number, pixelRatio: number) {
   return { canvas, context };
 }
 
-const PIN_BOX = 12;
+/** Size of the pin drawn before a pinned entity's label (pixels). */
+export const PIN_BOX = 12;
 
 /** A map pin, 12 × 12 px, in brass. */
 export function drawPin(palette: GraphPalette, pixelRatio: number): HTMLCanvasElement | null {
@@ -166,9 +167,10 @@ export function drawPin(palette: GraphPalette, pixelRatio: number): HTMLCanvasEl
   return canvas;
 }
 
-const TAG_FONT_SIZE = 11;
-const TAG_PADDING_X = 5;
-const TAG_HEIGHT = 16;
+/** The group type tag under a group's count (pixels). */
+export const TAG_FONT_SIZE = 11;
+export const TAG_PADDING_X = 5;
+export const TAG_HEIGHT = 16;
 
 /** The group's type ("URLs") in a small surface-colored tag. */
 export function drawGroupTag(

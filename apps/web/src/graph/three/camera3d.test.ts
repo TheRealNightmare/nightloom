@@ -12,8 +12,9 @@ import {
   dollyToward,
   easeInOut,
   flyTo,
+  FRAME_PAD_PX,
+  frameInArea,
   frameSphere,
-  frameSphereInArea,
   inView2d,
   interpolateCamera,
   isCamera3D,
@@ -223,66 +224,87 @@ describe("2D ↔ 3D cameras", () => {
   });
 });
 
-describe("frameSphereInArea", () => {
-  const sphere = { center: [100, 50, 20] as Vec3, radius: 300 };
+describe("frameInArea (3D framing of the visible graph)", () => {
   const W = 1000;
   const H = 700;
+  const SHARE = 0.85;
+  /** A wide, shallow graph with depth (as the time view makes it), off the origin. */
+  const points: number[] = [];
+  for (let i = 0; i < 60; i += 1) {
+    points.push(
+      100 + ((i * 37) % 600) - 300,
+      50 + ((i * 53) % 160) - 80,
+      20 + ((i * 29) % 240) - 120,
+    );
+  }
+  const COUNT = points.length / 3;
 
-  /** Screen points of the sphere's center and of many points on its surface. */
-  function shown(camera: Camera3D) {
+  function onScreen(camera: Camera3D) {
     const m = viewProjection(camera, W / H, 1, 1e5);
-    const viewport = { width: W, height: H };
-    const surface = [];
-    for (let i = 0; i < 24; i += 1) {
-      for (let j = 1; j < 12; j += 1) {
-        const theta = (i / 24) * 2 * Math.PI;
-        const phi = (j / 12) * Math.PI;
-        const offset: Vec3 = [
-          Math.sin(phi) * Math.cos(theta),
-          Math.cos(phi),
-          Math.sin(phi) * Math.sin(theta),
-        ];
-        surface.push(
-          project(
-            m,
-            [
-              sphere.center[0] + offset[0] * sphere.radius,
-              sphere.center[1] + offset[1] * sphere.radius,
-              sphere.center[2] + offset[2] * sphere.radius,
-            ],
-            viewport,
-          ),
-        );
-      }
+    const shown = [];
+    for (let i = 0; i < COUNT; i += 1) {
+      shown.push(
+        project(m, [points[i * 3] ?? 0, points[i * 3 + 1] ?? 0, points[i * 3 + 2] ?? 0], {
+          width: W,
+          height: H,
+        }),
+      );
     }
-    return { center: project(m, sphere.center, viewport), surface };
+    const xs = shown.map((p) => p.x);
+    const ys = shown.map((p) => p.y);
+    return {
+      minX: Math.min(...xs),
+      maxX: Math.max(...xs),
+      minY: Math.min(...ys),
+      maxY: Math.max(...ys),
+    };
   }
 
-  it("is frameSphere when nothing is covered", () => {
-    const plain = frameSphere(sphere, W / H);
-    const area = frameSphereInArea(sphere, W, H);
-    for (let k = 0; k < 3; k += 1) {
-      expect(area.position[k]).toBeCloseTo(plain.position[k] ?? 0, 6);
-      expect(area.target[k]).toBeCloseTo(plain.target[k] ?? 0, 6);
-    }
+  it("fills 85% of the area's width or height (the tighter one), centered in it", () => {
+    const area = { x: 0, y: 0, width: W, height: H - 140 };
+    const camera = frameInArea(points, COUNT, W, H, area, SHARE, 1);
+    if (!camera) throw new Error("no fit");
+    const box = onScreen(camera);
+    const fillX = (box.maxX - box.minX + 2 * FRAME_PAD_PX) / (SHARE * area.width);
+    const fillY = (box.maxY - box.minY + 2 * FRAME_PAD_PX) / (SHARE * area.height);
+    expect(Math.max(fillX, fillY)).toBeCloseTo(1, 3);
+    expect(Math.min(fillX, fillY)).toBeLessThanOrEqual(1 + 1e-6);
+    expect((box.minX + box.maxX) / 2).toBeCloseTo(area.x + area.width / 2, 1);
+    expect((box.minY + box.maxY) / 2).toBeCloseTo(area.y + area.height / 2, 1);
   });
 
-  it("centers the sphere in the uncovered area and keeps all of it there", () => {
-    const insets = { top: 0, right: 0, bottom: 140, left: 72 };
-    const { center, surface } = shown(frameSphereInArea(sphere, W, H, insets));
-    expect(center.x).toBeCloseTo(72 + (W - 72) / 2, 3);
-    expect(center.y).toBeCloseTo((H - 140) / 2, 3);
-    for (const point of surface) {
-      expect(point.x).toBeGreaterThanOrEqual(72);
-      expect(point.x).toBeLessThanOrEqual(W);
-      expect(point.y).toBeGreaterThanOrEqual(0);
-      expect(point.y).toBeLessThanOrEqual(H - 140);
-    }
+  it("keeps everything inside an area off the viewport's center", () => {
+    const area = { x: 72, y: 0, width: W - 72, height: H - 200 };
+    const camera = frameInArea(points, COUNT, W, H, area, SHARE, 1);
+    if (!camera) throw new Error("no fit");
+    const box = onScreen(camera);
+    expect(box.minX).toBeGreaterThanOrEqual(area.x);
+    expect(box.maxX).toBeLessThanOrEqual(area.x + area.width);
+    expect(box.minY).toBeGreaterThanOrEqual(area.y);
+    expect(box.maxY).toBeLessThanOrEqual(area.y + area.height);
+    expect((box.minX + box.maxX) / 2).toBeCloseTo(area.x + area.width / 2, 1);
   });
 
-  it("ignores insets that would leave too little room", () => {
-    const covered = frameSphereInArea(sphere, W, H, { top: 0, right: 0, bottom: 600, left: 0 });
-    const plain = frameSphere(sphere, W / H);
-    expect(distanceOf(covered)).toBeCloseTo(distanceOf(plain), 6);
+  it("shows a wide graph larger than a bounding sphere would", () => {
+    const area = { x: 0, y: 0, width: W, height: H };
+    const fitted = frameInArea(points, COUNT, W, H, area, SHARE, 1);
+    const sphere = frameSphere(boundingSphere(points, COUNT), W / H);
+    if (!fitted) throw new Error("no fit");
+    expect(distanceOf(fitted)).toBeLessThan(distanceOf(sphere));
+  });
+
+  it("frames a tiny graph as a sphere of the minimum radius", () => {
+    const tiny = [0, 0, 0, 1, 0.5, 0];
+    const area = { x: 0, y: 0, width: W, height: H };
+    const camera = frameInArea(tiny, 2, W, H, area, SHARE, 100);
+    if (!camera) throw new Error("no fit");
+    const half = Math.atan((Math.tan(Math.PI / 8) * (SHARE * H - 2 * FRAME_PAD_PX)) / H);
+    expect(distanceOf(camera)).toBeCloseTo(100 / Math.sin(half), 6);
+  });
+
+  it("is null without points or room", () => {
+    const area = { x: 0, y: 0, width: W, height: H };
+    expect(frameInArea(points, 0, W, H, area, SHARE, 1)).toBeNull();
+    expect(frameInArea(points, COUNT, W, H, { ...area, width: 10 }, SHARE, 1)).toBeNull();
   });
 });
