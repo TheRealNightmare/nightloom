@@ -133,6 +133,7 @@ def plan_run(
     registry: ShuttleRegistry,
     *,
     allow_person_entities: bool,
+    allow_site_visits: bool = False,
 ) -> Plan:
     """Every (Shuttle, entity) pair the guardrails allow, entity by entity, in profile order."""
     items: list[dict[str, str]] = []
@@ -148,6 +149,7 @@ def plan_run(
                     shuttle.meta,
                     input_type=entity_type,
                     allow_person_entities=allow_person_entities,
+                    allow_site_visits=allow_site_visits,
                 )
             except jobs.GuardrailError as error:
                 skipped[

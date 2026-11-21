@@ -131,6 +131,8 @@ class Case(Base):
     allow_person_entities: Mapped[bool] = mapped_column(default=False, server_default=false())
     # Whether profile runs here may continue from what they find (owners turn it on).
     allow_auto_pivot: Mapped[bool] = mapped_column(default=False, server_default=false())
+    # Whether Shuttles may visit sites' public pages, like a browser (owners turn it on).
+    allow_site_visits: Mapped[bool] = mapped_column(default=False, server_default=false())
     status: Mapped[CaseStatus] = mapped_column(
         Enum(CaseStatus, name="case_status", values_callable=_values, validate_strings=True),
         default=CaseStatus.OPEN,

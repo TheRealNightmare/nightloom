@@ -407,7 +407,8 @@ class JobRun:
         input_type = parse_key(self.input_key)[0]
         covering: OwnershipVerification | None = None
         async with self.locked() as (db, case):
-            if self.meta.mode == Mode.ACTIVE:
+            visits_allowed = self.meta.mode == Mode.VISIT and case.allow_site_visits
+            if self.meta.mode != Mode.PASSIVE and not visits_allowed:
                 covering = await ownership.covers(db, self.case_id, self.input_key, clock.utcnow())
             try:
                 service.check_shuttle(
@@ -415,6 +416,7 @@ class JobRun:
                     input_type=input_type,
                     allow_person_entities=case.allow_person_entities,
                     target_verified=covering is not None,
+                    allow_site_visits=case.allow_site_visits,
                 )
             except service.GuardrailError as error:
                 raise _StopRunError(_denied(str(error), error.reason)) from error
@@ -553,7 +555,7 @@ class JobRun:
         """Whether this Shuttle's results may be cached at all."""
         return (
             self.config.cache_scope != result_cache.CacheScope.OFF
-            and self.meta.mode == Mode.PASSIVE
+            and self.meta.mode != Mode.ACTIVE
             and self.meta.cache_ttl_seconds > 0
         )
 
