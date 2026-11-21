@@ -161,6 +161,8 @@ def test_errors_and_stats() -> None:
     assert JobStats.parse(None) == JobStats()
     assert JobStats.parse(empty_stats()).model_dump() == empty_stats()
     assert ShuttleOut.build(meta()).rate_limit is None
+    assert ShuttleOut.build(meta()).cache_ttl_seconds == 0
+    assert ShuttleOut.build(meta(cache_ttl_seconds=3600)).cache_ttl_seconds == 3600
 
 
 async def test_finish_job_needs_a_final_status() -> None:

@@ -145,6 +145,8 @@ class DnsShuttle(Shuttle):
         # public resolvers expect from one client.
         rate_limit=RESOLVER_RATE_LIMIT,
         timeout_seconds=60,
+        # An hour: records change, and typical record TTLs are shorter than a day.
+        cache_ttl_seconds=3600,
         homepage=RESOLVER_HOMEPAGE,
         terms_url=RESOLVER_TERMS_URL,
         # A recursive resolver's answer: usually reliable, probably true (not

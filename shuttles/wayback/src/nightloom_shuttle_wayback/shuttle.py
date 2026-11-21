@@ -171,6 +171,8 @@ class WaybackShuttle(Shuttle):
         network=True,
         rate_limit=RateLimit(requests=1, period_seconds=1),
         timeout_seconds=TIMEOUT_SECONDS,
+        # A week: the archive only grows.
+        cache_ttl_seconds=7 * 24 * 3600,
         homepage="https://web.archive.org",
         terms_url="https://archive.org/about/terms",
         usage_note=USAGE_NOTE,

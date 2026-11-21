@@ -57,7 +57,7 @@ A new look for the web UI, in steps that each keep every screen working. All six
 
 - [ ] Auto-pivot with depth, budget, type allowlist and passive-only mode
 - [ ] Scan profiles
-- [ ] Result cache
+- [x] Result cache (per-Shuttle lifetimes, per case by default, replay through the case's checks, *Run fresh*, admin and owner clearing)
 - [ ] Ownership verification before active Shuttles may run against a target
 
 ## M3 — Web recon and monitoring

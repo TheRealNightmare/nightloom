@@ -134,6 +134,19 @@ describe("describeAuditEvent", () => {
     [ev("job.cancel"), "cancelled a Shuttle job"],
     [ev("job.finish", { status: "succeeded" }), "finished a Shuttle job (succeeded)"],
     [ev("job.finish", {}), "finished a Shuttle job (success)"],
+    [
+      ev("result_cache.clear", { shuttle: "all", deleted: 3 }),
+      "cleared the result cache (3 entries)",
+    ],
+    [
+      ev("result_cache.clear", { shuttle: "crtsh", deleted: 1 }),
+      "cleared the cached results of crtsh (1 entry)",
+    ],
+    [ev("result_cache.clear", {}), "cleared the result cache"],
+    [
+      ev("result_cache.clear", { shuttle: "all", deleted: 2 }, { case_id: "c-1" }),
+      "cleared the case's cached Shuttle results",
+    ],
     [ev("case.status_change", { to: "closed" }), "closed the case"],
     [ev("something.new"), "something.new"],
   ])("%#: %s", (event, expected) => {

@@ -39,6 +39,7 @@ export const ACTION_LABELS: Record<AuditAction, string> = {
   "job.create": "Shuttle job queued",
   "job.cancel": "Shuttle job cancelled",
   "job.finish": "Shuttle job finished",
+  "result_cache.clear": "Result cache cleared",
 };
 
 /** `reason` codes of failed sign-ins and admin actions. */
@@ -172,6 +173,18 @@ export function describeAuditEvent(event: AuditEvent, users: readonly User[] = [
       return "cancelled a Shuttle job";
     case "job.finish":
       return `finished a Shuttle job (${text(details["status"]) ?? outcome})`;
+    case "result_cache.clear": {
+      if (event.case_id !== null) return describeEvent(event);
+      const shuttle = text(details["shuttle"]);
+      const deleted = details["deleted"];
+      const count =
+        typeof deleted === "number"
+          ? ` (${String(deleted)} ${deleted === 1 ? "entry" : "entries"})`
+          : "";
+      return shuttle === null || shuttle === "all"
+        ? `cleared the result cache${count}`
+        : `cleared the cached results of ${shuttle}${count}`;
+    }
     default:
       // case.create, case.update, case.status_change, case.delete, case.member_*.
       return event.action.startsWith("case.") ? describeEvent(event) : event.action;

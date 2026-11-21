@@ -182,7 +182,7 @@ async def _reset_state(infra: Infra) -> None:
         await conn.execute(text(f"ALTER TABLE audit_events DISABLE TRIGGER {APPEND_ONLY_TRIGGER}"))
         await conn.execute(
             text(
-                "TRUNCATE audit_events, jobs, case_members, cases, users, sessions "
+                "TRUNCATE audit_events, jobs, result_cache, case_members, cases, users, sessions "
                 "RESTART IDENTITY CASCADE"
             )
         )

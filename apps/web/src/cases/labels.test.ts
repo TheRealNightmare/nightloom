@@ -102,6 +102,13 @@ describe("describeEvent", () => {
     ["view.create", "success", {}, {}, "saved a graph view"],
     ["view.update", "success", {}, {}, "changed a saved graph view"],
     ["view.delete", "success", {}, {}, "deleted a saved graph view"],
+    [
+      "result_cache.clear",
+      "success",
+      { deleted: 2 },
+      {},
+      "cleared the case's cached Shuttle results",
+    ],
     ["user.update", "success", {}, {}, "user.update"],
   ] as const)("%s (%s) %j", (action, outcome, details, extra, expected) => {
     expect(describeEvent(makeEvent({ action, outcome, details, ...extra }), members)).toBe(

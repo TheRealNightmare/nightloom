@@ -585,6 +585,7 @@ Every Shuttle subclasses `Shuttle` and declares a frozen `ShuttleMeta`, validate
 | `required_keys` | names of the API keys it needs (none may be supplied yet; `ctx.keys` is empty) |
 | `rate_limit` | `{requests, period_seconds}` per destination host |
 | `timeout_seconds` | 1–600, default 60 |
+| `cache_ttl_seconds` | 0–2,592,000 (30 days), default 0 (never cached): how long a successful run's results may be reused for the same entity (see [The result cache](#the-result-cache)). Must be 0 for an `active` Shuttle. Output must depend only on the input entity's type and value |
 | `terms_url`, `homepage` | optional `http(s)` URLs |
 | `usage_note` | optional conditions of use of the source (e.g. *Free for non-commercial use.*): one line of plain text, at most 300 characters, no control characters, `<` or `>`. `GET /shuttles` returns it and the *Run Shuttle* panel shows it under the description, next to the terms link |
 | `default_admiralty`, `default_confidence` | the provenance of its findings (default `F6`, 0.5); a finding may override them |
@@ -825,10 +826,26 @@ In the web UI's *Jobs* panel, a running job's elapsed time stops at its deadline
 | Endpoint (under `/api/v1`) | Who | Notes |
 | --- | --- | --- |
 | `GET /shuttles` | signed in | installed Shuttles' metadata, by name; `?input_type=domain` keeps those accepting it |
-| `POST /cases/{id}/jobs` | editor, owner; case `open` | `{shuttle, entity_key}` → `201` with the queued job; `403` active or person-gated Shuttle (recorded as `authz.denied`), `409` case not open, `422` unknown Shuttle, type not accepted or no such entity, `429` too many jobs, `503` Neo4j or the queue unavailable |
+| `POST /cases/{id}/jobs` | editor, owner; case `open` | `{shuttle, entity_key, fresh?}` → `201` with the queued job (`fresh: true` skips the [result cache](#the-result-cache)); `403` active or person-gated Shuttle (recorded as `authz.denied`), `409` case not open, `422` unknown Shuttle, type not accepted or no such entity, `429` too many jobs, `503` Neo4j or the queue unavailable |
 | `GET /cases/{id}/jobs` | member | newest first, `{items, next_cursor}`; `limit` 1–200, `status` filter |
-| `GET /cases/{id}/jobs/{job_id}` | member | one job, with `stats.entities_touched`, the Shuttle's `timeout_seconds`, `deadline` and `overdue_at` (null until it starts); `404` for a job of another case |
+| `GET /cases/{id}/jobs/{job_id}` | member | one job, with `stats.entities_touched`, the Shuttle's `timeout_seconds`, `deadline` and `overdue_at` (null until it starts), `use_cache`, `from_cache` and `cached_fetched_at`; `404` for a job of another case |
+| `GET /admin/result-cache` | admin | the result cache's scope and limits, and per Shuttle its entries, size, hits and recent jobs from the cache |
+| `DELETE /admin/result-cache` | admin | clears every entry, or one Shuttle's (`?shuttle=dns`); `{deleted}`; audited |
+| `DELETE /cases/{id}/result-cache` | owner (also when the case is closed) | clears the case's entries; `{deleted}`; audited |
 | `POST /cases/{id}/jobs/{job_id}/cancel` | editor, owner (also when the case is closed) | a queued job becomes `cancelled` at once; a running one gets `cancel_requested` and stops between findings; `409` once finished |
+
+#### The result cache
+
+A passive Shuttle with a `cache_ttl_seconds` (DNS and reverse DNS 1 hour; crt.sh, RIPEstat and InternetDB 24 hours; RDAP and Wayback 7 days; registrable-domain never) does not ask its source again for the same entity while a recent result exists ([`result_cache.py`](../apps/api/src/nightloom_api/jobs/result_cache.py)).
+
+- **What is stored.** After a live run **succeeds** (not failed, cancelled, cut by the deadline or over the findings limit), the worker stores what the Shuttle *yielded*, in order, and its notes (PostgreSQL table `result_cache`, migration `0009`), within the job's deadline and never at the cost of the job. These are the raw findings, before any check that depends on the case.
+- **Key.** SHA-256 of the scope, the Shuttle's **name and version** (a new version never reuses an older one's results), the input entity's canonical key and the run's options (none yet; normalized, so their order never matters).
+- **Scope** (`NIGHTLOOM_RESULT_CACHE_SCOPE`): `case` (default) keeps each case's entries apart and deletes them with the case; `instance` shares them across cases; `off` disables the cache. Per case is the default because a shared entry's fetch time would tell one case's members that someone else on the instance looked the same target up. Entries of another scope are never served.
+- **Replay.** A job that may reuse results (`use_cache`, true unless the user asked for a fresh run) and finds a valid entry after the start checks writes the entry's findings through **exactly the same checks and writes as a live run**: declared types, normalization, the allow-list, endpoints, and the case's person gate *as it is now*. A case that does not allow person entities therefore rejects an entry's person findings even when another case's run stored them. Provenance records the time the source was asked (`fetched_at`), not the replay, so a replay never makes an entity look more recently seen. The job is marked `from_cache` with `cached_fetched_at`; its notes are the entry's.
+- **Fresh runs.** `POST /cases/{id}/jobs` with `fresh: true` (*Run fresh* in the Jobs panel, or unticking *Use recent results*) runs the Shuttle and replaces the entry; the `job.create` event records `fresh`.
+- **Failure is harmless.** A cache that cannot be read means a live run; one that cannot be written means a job that still succeeds. Both are logged by error type only.
+- **Limits.** A run whose results are larger than `NIGHTLOOM_RESULT_CACHE_MAX_ENTRY_BYTES` (5 MiB) is not stored. Every 10 minutes the reaper's thread purges, under its own Valkey lock (`nightloom:worker:result-cache-purge`), expired entries and then the least recently used ones beyond `NIGHTLOOM_RESULT_CACHE_MAX_BYTES` (512 MiB).
+- **Clearing.** Admins see the scope, the limits and per Shuttle the entries, size, reuse and how many of the last 30 days' successful jobs came from the cache (`GET /admin/result-cache`, the *Cache* page), and clear everything or one Shuttle's entries (`DELETE /admin/result-cache[?shuttle=]`). Case owners clear their case's entries (`DELETE /cases/{id}/result-cache`, *Settings → Cached Shuttle results*). Both are audited as `result_cache.clear` with the Shuttle name and a count, never entity keys.
 
 The Compose stack runs the worker as the `worker` service (same image as the API, 4 processes by default, health-checked with `celery inspect ping`, with `NIGHTLOOM_DNS_RESOLVERS` for the [DNS](#the-dns-shuttle) and [reverse DNS](#the-reverse-dns-shuttle) Shuttles); `make worker` runs one on your machine against the stack's services.
 

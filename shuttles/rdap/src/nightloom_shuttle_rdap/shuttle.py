@@ -161,6 +161,8 @@ class RdapShuttle(Shuttle):
         # Registries publish no common limit; once a second per server is polite.
         rate_limit=RateLimit(requests=1, period_seconds=1),
         timeout_seconds=TIMEOUT_SECONDS,
+        # A week: registration data changes rarely.
+        cache_ttl_seconds=7 * 24 * 3600,
         homepage="https://data.iana.org/rdap/",
         terms_url="https://www.iana.org/help/rdap-faq",
         # The registry is the authoritative source, but its data may be

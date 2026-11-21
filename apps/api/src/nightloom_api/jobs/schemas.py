@@ -36,6 +36,8 @@ class ShuttleOut(BaseModel):
     required_keys: list[str]
     rate_limit: RateLimitOut | None
     timeout_seconds: int
+    # How long a successful run's results may be reused (0: never cached).
+    cache_ttl_seconds: int
     terms_url: str | None
     homepage: str | None
     # Conditions of use of the source (plain text, at most 300 characters).
@@ -66,6 +68,7 @@ class ShuttleOut(BaseModel):
                 else None
             ),
             timeout_seconds=meta.timeout_seconds,
+            cache_ttl_seconds=meta.cache_ttl_seconds,
             terms_url=meta.terms_url,
             homepage=meta.homepage,
             usage_note=meta.usage_note,
@@ -83,6 +86,8 @@ class JobCreate(BaseModel):
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=NAME_MAX_LENGTH)
     ]
     entity_key: Annotated[str, StringConstraints(min_length=1, max_length=MAX_KEY_LENGTH)]
+    # Run the Shuttle even if recent results are cached (the run refreshes them).
+    fresh: bool = False
 
 
 class JobStats(BaseModel):
@@ -127,6 +132,12 @@ class JobOut(BaseModel):
     # still running after this has most likely lost its worker; the worker's
     # reaper fails it about a minute later.
     overdue_at: datetime | None
+    # Answered from the result cache instead of running the Shuttle, and when
+    # the source was asked for those results.
+    from_cache: bool
+    cached_fetched_at: datetime | None
+    # False when the user asked for a fresh run.
+    use_cache: bool
 
     @classmethod
     def build(cls, job: Job, registry: ShuttleRegistry) -> "JobOut":
@@ -149,9 +160,41 @@ class JobOut(BaseModel):
             timeout_seconds=timeout,
             deadline=deadlines.deadline(started, timeout) if started else None,
             overdue_at=deadlines.overdue_at(started, timeout) if started else None,
+            from_cache=job.from_cache,
+            cached_fetched_at=job.cached_fetched_at,
+            use_cache=job.use_cache,
         )
 
 
 class JobPage(BaseModel):
     items: list[JobOut]
     next_cursor: str | None
+
+
+class ShuttleCacheStatsOut(BaseModel):
+    shuttle: str
+    # The installed Shuttle's cache lifetime (null if it is no longer installed).
+    cache_ttl_seconds: int | None
+    entries: int
+    size_bytes: int
+    # Times entries were reused.
+    hits: int
+    # Jobs of this Shuttle that succeeded in the last 30 days, and how many of
+    # them were answered from the cache.
+    jobs: int
+    jobs_from_cache: int
+
+
+class ResultCacheOut(BaseModel):
+    """The result cache's settings and contents (admins only)."""
+
+    scope: str
+    max_bytes: int
+    max_entry_bytes: int
+    entries: int
+    size_bytes: int
+    shuttles: list[ShuttleCacheStatsOut]
+
+
+class ResultCacheCleared(BaseModel):
+    deleted: int

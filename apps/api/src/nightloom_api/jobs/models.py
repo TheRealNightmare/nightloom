@@ -5,7 +5,18 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import CheckConstraint, DateTime, Enum, ForeignKey, Index, Text, false, func, text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Text,
+    false,
+    func,
+    text,
+    true,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -93,6 +104,12 @@ class Job(Base):
     error: Mapped[str | None] = mapped_column(Text)
     stats: Mapped[dict[str, Any]] = mapped_column(JSONB, default=empty_stats, server_default="{}")
     cancel_requested: Mapped[bool] = mapped_column(default=False, server_default=false())
+    # Whether the run may reuse recent results (False when the user asked for
+    # a fresh run); see nightloom_api.jobs.result_cache.
+    use_cache: Mapped[bool] = mapped_column(default=True, server_default=true())
+    # Answered from the result cache, with the time the source was asked.
+    from_cache: Mapped[bool] = mapped_column(default=False, server_default=false())
+    cached_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     def __repr__(self) -> str:
         # No input key: it can be personal data, and reprs end up in logs.

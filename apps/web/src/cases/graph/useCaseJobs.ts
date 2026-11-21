@@ -47,8 +47,11 @@ export interface CaseJobs {
   loadingMore: boolean;
   activeCount: number;
   loadMore: () => void;
-  /** Queues a job; rejects with the API's error so the caller can show it. */
-  start: (shuttle: string, entityKey: string) => Promise<Job>;
+  /**
+   * Queues a job (`fresh`: even if recent results are cached); rejects with
+   * the API's error so the caller can show it.
+   */
+  start: (shuttle: string, entityKey: string, options?: { fresh?: boolean }) => Promise<Job>;
   /** Cancels a job; rejects with the API's error. */
   cancel: (jobId: string) => Promise<Job>;
 }
@@ -157,8 +160,12 @@ export function useCaseJobs(caseId: string, onFinished: (job: Job) => void): Cas
   }, [caseId, cursor, loadingMore]);
 
   const start = useCallback(
-    async (shuttle: string, entityKey: string) => {
-      const job = await createJob(caseId, { shuttle, entity_key: entityKey });
+    async (shuttle: string, entityKey: string, { fresh = false }: { fresh?: boolean } = {}) => {
+      const job = await createJob(caseId, {
+        shuttle,
+        entity_key: entityKey,
+        ...(fresh ? { fresh: true } : {}),
+      });
       setJobs((previous) => mergeJobs(previous, [job]));
       report([job]);
       return job;

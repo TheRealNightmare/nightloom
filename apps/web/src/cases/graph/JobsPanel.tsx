@@ -12,6 +12,7 @@ import {
   statsText,
 } from "./jobText";
 
+export const FROM_CACHE_LABEL = "From cache";
 export const NO_JOBS_MESSAGE =
   "No Shuttles have run in this case yet. Select an entity and choose a Shuttle in the side panel.";
 
@@ -118,18 +119,46 @@ export function RunningJobChip({ job, canCancel, onCancel, onOpen }: RunningJobC
   );
 }
 
+/** Starts a fresh run of a cached job's Shuttle; `error` is null or what went wrong. */
+function useRunFresh(job: Job, onRunFresh: ((job: Job) => Promise<unknown>) | undefined) {
+  const [running, setRunning] = useState(false);
+  const [started, setStarted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const runFresh = () => {
+    if (!onRunFresh) return;
+    setRunning(true);
+    setStarted(false);
+    setError(null);
+    onRunFresh(job).then(
+      () => {
+        setRunning(false);
+        setStarted(true);
+      },
+      (caught: unknown) => {
+        setRunning(false);
+        setError(describeJobError(caught));
+      },
+    );
+  };
+  return { runFresh, running, started, error };
+}
+
 function JobRow({
   job,
   canCancel,
   onCancel,
+  onRunFresh,
 }: {
   job: Job;
   canCancel: boolean;
   onCancel: (jobId: string) => Promise<unknown>;
+  onRunFresh: ((job: Job) => Promise<unknown>) | undefined;
 }) {
   const active = isActive(job);
   const now = useNow(active);
   const { cancel, cancelling, error } = useCancel(job, onCancel);
+  const fresh = useRunFresh(job, onRunFresh);
+  const fetchedAt = job.from_cache === true ? (job.cached_fetched_at ?? null) : null;
   const label = `${job.shuttle_name} on ${valueOf(job.input_key)}`;
   const notes = job.stats.notes ?? [];
 
@@ -159,6 +188,34 @@ function JobRow({
         </span>{" "}
         · started <RelativeTime iso={job.created_at} /> · v{job.shuttle_version}
       </p>
+      {fetchedAt !== null && (
+        <p className="job__cached">
+          <span>
+            {FROM_CACHE_LABEL} · fetched <RelativeTime iso={fetchedAt} />
+          </span>
+          {onRunFresh && !active && (
+            <button
+              type="button"
+              className="button button--ghost button--small"
+              aria-label={`Run ${job.shuttle_name} fresh on ${valueOf(job.input_key)}`}
+              disabled={fresh.running}
+              onClick={fresh.runFresh}
+            >
+              {fresh.running ? "Starting…" : "Run fresh"}
+            </button>
+          )}
+          {fresh.started && (
+            <span className="shuttle-card__started" role="status">
+              Queued.
+            </span>
+          )}
+        </p>
+      )}
+      {fresh.error && (
+        <p className="form-error" role="alert">
+          {fresh.error}
+        </p>
+      )}
       {isOverdue(job, now) && (
         <p className="job__overdue" title="Past the worker's time limit; it will be failed soon.">
           {OVERDUE_MESSAGE}
@@ -194,6 +251,8 @@ export interface JobsPanelProps {
   loadingMore: boolean;
   canCancel: boolean;
   onCancel: (jobId: string) => Promise<unknown>;
+  /** Runs a cached job's Shuttle again, asking the source (omitted: no "Run fresh"). */
+  onRunFresh?: (job: Job) => Promise<unknown>;
   onLoadMore: () => void;
   onClose: () => void;
 }
@@ -207,6 +266,7 @@ export function JobsPanel({
   loadingMore,
   canCancel,
   onCancel,
+  onRunFresh,
   onLoadMore,
   onClose,
 }: JobsPanelProps) {
@@ -234,7 +294,13 @@ export function JobsPanel({
       ) : (
         <ol className="jobs-list" aria-label="Job history">
           {jobs.map((job) => (
-            <JobRow key={job.id} job={job} canCancel={canCancel} onCancel={onCancel} />
+            <JobRow
+              key={job.id}
+              job={job}
+              canCancel={canCancel}
+              onCancel={onCancel}
+              onRunFresh={onRunFresh}
+            />
           ))}
         </ol>
       )}

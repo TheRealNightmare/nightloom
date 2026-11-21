@@ -5,9 +5,10 @@ import { getShuttlesFor, type ShuttleInfo } from "../../api/shuttles";
 import type { EntityNode, EntityType } from "../../domain/entities";
 import { describeCaseError } from "../errors";
 import { SensitivityBadge } from "./EntityDetails";
-import { describeJobError, shuttleBlockedReason } from "./jobText";
+import { describeJobError, recentResultsHint, shuttleBlockedReason } from "./jobText";
 
 export const NO_SHUTTLES_MESSAGE = "No installed Shuttle accepts this type of entity.";
+export const USE_RECENT_LABEL = "Use recent results";
 /** Read by screen readers before a Shuttle's usage note. */
 export const USAGE_NOTE_LABEL = "Usage conditions";
 
@@ -43,10 +44,12 @@ function ShuttleCard({
 }: {
   shuttle: ShuttleInfo;
   blocked: string | null;
-  onRun: (shuttle: ShuttleInfo) => Promise<unknown>;
+  onRun: (shuttle: ShuttleInfo, options: { fresh: boolean }) => Promise<unknown>;
 }) {
   const id = useId();
   const [busy, setBusy] = useState(false);
+  const recentHint = recentResultsHint(shuttle);
+  const [useRecent, setUseRecent] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [started, setStarted] = useState(false);
 
@@ -54,7 +57,7 @@ function ShuttleCard({
     setBusy(true);
     setError(null);
     setStarted(false);
-    onRun(shuttle).then(
+    onRun(shuttle, { fresh: recentHint !== null && !useRecent }).then(
       () => {
         setBusy(false);
         setStarted(true);
@@ -108,6 +111,24 @@ function ShuttleCard({
           )}
         </p>
       )}
+      {recentHint !== null && blocked === null && (
+        <div className="shuttle-card__recent">
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={useRecent}
+              aria-describedby={`${id}-recent`}
+              onChange={(event) => {
+                setUseRecent(event.target.checked);
+              }}
+            />
+            <span>{USE_RECENT_LABEL}</span>
+          </label>
+          <p className="field__hint" id={`${id}-recent`}>
+            {recentHint}
+          </p>
+        </div>
+      )}
       {blocked !== null && (
         <p className="field__hint" id={`${id}-blocked`}>
           {blocked}
@@ -141,7 +162,12 @@ function ShuttleCard({
 export interface RunShuttlesProps {
   entity: EntityNode;
   allowPersonEntities: boolean;
-  onRun: (shuttle: ShuttleInfo, entity: EntityNode) => Promise<unknown>;
+  /** `fresh`: run even if recent results are cached (the user unticked "Use recent results"). */
+  onRun: (
+    shuttle: ShuttleInfo,
+    entity: EntityNode,
+    options: { fresh: boolean },
+  ) => Promise<unknown>;
 }
 
 /** The Shuttles that accept the selected entity's type, each with a Run button. */
@@ -187,7 +213,7 @@ export function RunShuttles({ entity, allowPersonEntities, onRun }: RunShuttlesP
               key={`${entity.id}|${shuttle.name}`}
               shuttle={shuttle}
               blocked={shuttleBlockedReason(shuttle, allowPersonEntities)}
-              onRun={(chosen) => onRun(chosen, entity)}
+              onRun={(chosen, options) => onRun(chosen, entity, options)}
             />
           ))}
         </ul>

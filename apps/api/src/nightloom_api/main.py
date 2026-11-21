@@ -30,6 +30,7 @@ from nightloom_api.routers import (
     jobs,
     layouts,
     readiness,
+    result_cache,
     schema,
     shuttles,
     users,
@@ -91,6 +92,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(schema.router, prefix=resolved.api_prefix)
     app.include_router(shuttles.router, prefix=resolved.api_prefix)
     app.include_router(jobs.router, prefix=resolved.api_prefix)
+    app.include_router(result_cache.admin_router, prefix=resolved.api_prefix)
+    app.include_router(result_cache.case_router, prefix=resolved.api_prefix)
     return app
 
 

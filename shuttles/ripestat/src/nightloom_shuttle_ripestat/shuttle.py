@@ -187,6 +187,8 @@ class RipeStatShuttle(Shuttle):
         # and asks regular users to send a sourceapp; 2 a second is polite.
         rate_limit=RateLimit(requests=2, period_seconds=1),
         timeout_seconds=TIMEOUT_SECONDS,
+        # A day: routing and allocation data changes slowly.
+        cache_ttl_seconds=24 * 3600,
         homepage="https://stat.ripe.net/",
         terms_url="https://www.ripe.net/about-us/legal/ripestat-service-terms-and-conditions/",
         # RIS collectors are a usually reliable observer; routing changes over time.

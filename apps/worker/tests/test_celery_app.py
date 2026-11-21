@@ -1,6 +1,7 @@
 """The Celery task wrapper; one test runs the real task against the test databases."""
 
 import asyncio
+import logging
 import threading
 import time
 import uuid
@@ -15,6 +16,7 @@ from pydantic import SecretStr
 from redis.asyncio import Redis
 
 from nightloom_api.config import Settings, get_settings
+from nightloom_api.jobs import result_cache
 from nightloom_api.jobs.queue import TASK_NAME
 from nightloom_worker import celery_app
 from support import TEST_DATABASE_URL, TEST_VALKEY_URL, graph_test_settings, run_in_thread
@@ -200,9 +202,13 @@ class _FakeReap:
         return result
 
 
+async def _no_purge(settings: Settings) -> None:
+    return None
+
+
 def test_reaper_runs_now_and_then_every_interval(caplog: pytest.LogCaptureFixture) -> None:
     fake = _FakeReap(3, OSError("down"), None)
-    reaper = celery_app.Reaper(Settings(env="test"), interval=0.05, reap=fake)
+    reaper = celery_app.Reaper(Settings(env="test"), interval=0.05, reap=fake, purge=_no_purge)
     reaper.start()
     try:
         deadline = time.monotonic() + 5
@@ -277,6 +283,75 @@ def test_only_one_worker_reaps_at_a_time(
     get_settings.cache_clear()
     assert while_held is None
     assert isinstance(free, int)
+    assert stolen is None
+
+
+def test_reaper_purges_the_result_cache_every_purge_interval(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger=celery_app.__name__)
+    now = [100.0]
+    results: list[Any] = [
+        result_cache.PurgeResult(expired=2, evicted=1),
+        OSError("down"),
+        result_cache.PurgeResult(expired=0, evicted=0),
+    ]
+    calls: list[Settings] = []
+
+    async def purge(settings: Settings) -> result_cache.PurgeResult | None:
+        calls.append(settings)
+        result = results.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result  # type: ignore[no-any-return]
+
+    reaper = celery_app.Reaper(
+        Settings(env="test"), purge=purge, purge_interval=600, monotonic=lambda: now[0]
+    )
+    assert reaper.purge() == result_cache.PurgeResult(expired=2, evicted=1)
+    assert "removed 2 expired and 1 least recently used entries" in caplog.text
+    now[0] += 599
+    assert reaper.purge() is None  # not yet
+    assert len(calls) == 1
+    now[0] += 1
+    assert reaper.purge() is None  # failed, logged by type only
+    assert "Purging the result cache failed: OSError." in caplog.text
+    now[0] += 600
+    assert reaper.purge() == result_cache.PurgeResult(expired=0, evicted=0)
+    assert len(calls) == 3
+
+
+@pytest.mark.db
+def test_only_one_worker_purges_the_cache_at_a_time(
+    monkeypatch: pytest.MonkeyPatch, migrated_database: str
+) -> None:
+    monkeypatch.setenv("NIGHTLOOM_DATABASE_URL", TEST_DATABASE_URL)
+    monkeypatch.setenv("NIGHTLOOM_VALKEY_URL", TEST_VALKEY_URL)
+    get_settings.cache_clear()
+    settings = get_settings()
+    lock_name = f"{celery_app.PURGE_LOCK}:test:{uuid.uuid4()}"
+    monkeypatch.setattr(celery_app, "PURGE_LOCK", lock_name)
+
+    async def scenario() -> tuple[Any, Any, Any]:
+        other = Redis.from_url(TEST_VALKEY_URL)
+        try:
+            held = other.lock(lock_name, timeout=30, blocking=False)
+            assert await held.acquire()
+            while_held = await celery_app.purge_cache_once(settings)
+            await held.release()
+            free = await celery_app.purge_cache_once(settings)
+            assert await other.get(lock_name) is None
+            await other.set(lock_name, "someone else", ex=30)
+            stolen = await celery_app.purge_cache_once(settings)
+            return while_held, free, stolen
+        finally:
+            await other.delete(lock_name)
+            await other.aclose()
+
+    while_held, free, stolen = run_in_thread(scenario)
+    get_settings.cache_clear()
+    assert while_held is None
+    assert isinstance(free, result_cache.PurgeResult)
     assert stolen is None
 
 

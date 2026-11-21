@@ -88,6 +88,10 @@ for (const theme of ["dark", "light"] as const satisfies readonly Theme[]) {
     await expect(page.getByRole("table", { name: "Audit events, newest first" })).toBeVisible();
     found.push(...(await check(page, "admin audit")));
 
+    await page.goto("/admin/result-cache");
+    await expect(page.getByRole("heading", { name: "Result cache", level: 1 })).toBeVisible();
+    found.push(...(await check(page, "admin result cache")));
+
     await page.goto("/no-such-page");
     await expect(page.getByRole("heading", { name: "Page not found" })).toBeVisible();
     await expect(page).toHaveTitle("Page not found · Nightloom");

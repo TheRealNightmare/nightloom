@@ -75,6 +75,15 @@ class Settings(BaseSettings):
     # Queued or running Shuttle jobs one user may have at once (429 beyond).
     max_active_jobs_per_user: int = Field(default=5, ge=1)
 
+    # --- Result cache (see nightloom_api.jobs.result_cache) ---
+    # Who shares cached Shuttle results: each case on its own (default), the
+    # whole instance, or nobody ("off").
+    result_cache_scope: Literal["case", "instance", "off"] = "case"
+    # Total size kept (least recently used entries go first), and the largest
+    # single entry stored.
+    result_cache_max_bytes: int = Field(default=512 * 1024 * 1024, ge=0)
+    result_cache_max_entry_bytes: int = Field(default=5 * 1024 * 1024, ge=0)
+
     @field_validator("log_level", mode="before")
     @classmethod
     def _upper_log_level(cls, value: object) -> object:

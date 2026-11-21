@@ -10,6 +10,9 @@ How releases are cut is described in [docs/RELEASING.md](docs/RELEASING.md).
 
 ### Added
 
+- A result cache for passive Shuttles: running a Shuttle again on the same entity reuses its recent results instead of asking the source again. Shuttles declare how long (`cache_ttl_seconds`: DNS and reverse DNS 1 hour; crt.sh, RIPEstat and InternetDB 24 hours; RDAP and Wayback 7 days; never for active Shuttles), and the key includes the Shuttle's version. Cached findings are replayed through the same checks as a live run, so the case's person gate applies again, and provenance keeps when the source was asked. Per case by default (`NIGHTLOOM_RESULT_CACHE_SCOPE=case`; `instance` or `off`), with a size cap and a purge every 10 minutes (migration `0009_result_cache`).
+- *Use recent results* before a run, and *From cache · fetched …* with *Run fresh* in the Jobs panel (`fresh` on `POST /cases/{id}/jobs`; jobs report `use_cache`, `from_cache` and `cached_fetched_at`, Shuttles `cache_ttl_seconds`).
+- An admin *Cache* page (`GET`/`DELETE /admin/result-cache`) and *Settings → Cached Shuttle results* for case owners (`DELETE /cases/{id}/result-cache`), audited as `result_cache.clear` with counts only.
 - 2D graph interactions: drag an entity to pin it where you drop it (or a whole selection), saved per user and case (`GET`/`PUT /cases/{id}/layout`, migration `0007_graph_layouts`); unpin from the side panel, a node menu or *View → Unpin all*.
 - Zoom toward the pointer, trackpad two-finger panning (with a *Scroll wheel* setting), rotation (Alt or right-drag, ⟲ / ⟳, twist), Ctrl/⌘+click and Shift+drag selection, a minimap, and full keyboard control with announcements and a shortcuts dialog.
 - Shorter labels on the canvas: certificates show their subject's common name or a short fingerprint, long values are cut in the middle.
