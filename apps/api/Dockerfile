@@ -30,6 +30,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=apps/worker/pyproject.toml,target=apps/worker/pyproject.toml \
     --mount=type=bind,source=packages/core/pyproject.toml,target=packages/core/pyproject.toml \
     --mount=type=bind,source=packages/sdk/pyproject.toml,target=packages/sdk/pyproject.toml \
+    --mount=type=bind,source=shuttles/active/pyproject.toml,target=shuttles/active/pyproject.toml \
     --mount=type=bind,source=shuttles/crtsh/pyproject.toml,target=shuttles/crtsh/pyproject.toml \
     --mount=type=bind,source=shuttles/dns/pyproject.toml,target=shuttles/dns/pyproject.toml \
     --mount=type=bind,source=shuttles/internetdb/pyproject.toml,target=shuttles/internetdb/pyproject.toml \

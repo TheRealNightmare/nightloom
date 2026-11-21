@@ -131,6 +131,10 @@ Handle = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, m
 UrlText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2048)]
 
 
+# Web server data on a domain: at most this many security header names.
+SECURITY_HEADERS_MAX = 20
+
+
 class DomainProperties(Properties):
     """What public DNS and the registration data say about the name. Every field is optional.
 
@@ -146,6 +150,17 @@ class DomainProperties(Properties):
     such as ``client transfer prohibited``), ``dnssec_signed``, the
     ``registrar``'s name and ``registrar_iana_id``, and the ``rdap_server``
     that answered.
+
+    From the HTTP headers and TLS Shuttle (active: it connects to the site
+    itself, so only on verified domains): ``http_checked_at``, the status of
+    ``https://<name>/`` (``https_status``, after same-host redirects),
+    whether its certificate was valid (``https_valid``), whether
+    ``http://<name>/`` redirects to HTTPS (``http_redirects_to_https``), the
+    negotiated ``tls_version``, the ``Server`` and ``X-Powered-By`` headers
+    (``server``, ``powered_by``), the ``Strict-Transport-Security`` value
+    (``hsts``), and which of the common security headers were sent
+    (``security_headers``) or not (``missing_security_headers``), by lower-case
+    name.
 
     From the Wayback Machine (Internet Archive): ``wayback_first_capture`` and
     ``wayback_last_capture`` (the earliest and the latest capture of the name
@@ -177,6 +192,20 @@ class DomainProperties(Properties):
     wayback_first_capture: AwareDatetime | None = None
     wayback_last_capture: AwareDatetime | None = None
     wayback_url_count: int | None = Field(default=None, ge=0, le=10_000_000)
+    http_checked_at: AwareDatetime | None = None
+    https_status: int | None = Field(default=None, ge=100, le=599)
+    https_valid: bool | None = None
+    http_redirects_to_https: bool | None = None
+    tls_version: ShortText | None = None
+    server: ShortText | None = None
+    powered_by: ShortText | None = None
+    hsts: LongText | None = None
+    security_headers: Annotated[list[ShortText], Field(max_length=SECURITY_HEADERS_MAX)] | None = (
+        None
+    )
+    missing_security_headers: (
+        Annotated[list[ShortText], Field(max_length=SECURITY_HEADERS_MAX)] | None
+    ) = None
 
 
 # Exposure data on an IP address (Shodan InternetDB): at most this many of each.
@@ -184,6 +213,8 @@ EXPOSURE_MAX_PORTS = 200
 EXPOSURE_MAX_CPES = 100
 EXPOSURE_MAX_VULNS = 500
 EXPOSURE_MAX_TAGS = 50
+# The TCP port check: at most this many ports tried.
+PORT_CHECK_MAX_PORTS = 50
 Port = Annotated[int, Field(ge=1, le=65535)]
 CpeText = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=5, max_length=300, pattern=r"^cpe:")
@@ -206,6 +237,11 @@ class IPAddressProperties(Properties):
 
     From reverse DNS: ``ptr_checked_at`` (when the address's PTR records were
     last looked up, whether or not it had any).
+
+    From the TCP port check (active: it connects to the address itself, so
+    only on verified targets): ``tcp_checked_ports`` (the ports it tried),
+    ``tcp_open_ports`` (those that accepted a connection) and
+    ``tcp_checked_at``.
     """
 
     scope: Literal["public", "private"] | None = None
@@ -215,6 +251,9 @@ class IPAddressProperties(Properties):
     tags: Annotated[list[ShortText], Field(max_length=EXPOSURE_MAX_TAGS)] | None = None
     internetdb_checked_at: AwareDatetime | None = None
     ptr_checked_at: AwareDatetime | None = None
+    tcp_open_ports: Annotated[list[Port], Field(max_length=PORT_CHECK_MAX_PORTS)] | None = None
+    tcp_checked_ports: Annotated[list[Port], Field(max_length=PORT_CHECK_MAX_PORTS)] | None = None
+    tcp_checked_at: AwareDatetime | None = None
 
 
 class NetblockProperties(Properties):
@@ -752,6 +791,8 @@ def build_entity(
 __all__ = [
     "ASN",
     "ENTITY_MODELS",
+    "PORT_CHECK_MAX_PORTS",
+    "SECURITY_HEADERS_MAX",
     "URL",
     "AnyEntity",
     "Breach",
