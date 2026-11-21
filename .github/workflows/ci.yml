@@ -330,7 +330,7 @@ jobs:
           docker run --rm nightloom-api:ci celery --version
           shuttles=$(docker run --rm nightloom-api:ci python -m nightloom_sdk.registry list)
           echo "$shuttles"
-          for name in crtsh dns http-headers internetdb port-check rdap registrable-domain reverse-dns ripestat wayback; do
+          for name in crtsh dns http-headers internetdb port-check rdap registrable-domain reverse-dns ripestat site-files wayback web-tech; do
             if ! grep -q "^$name " <<< "$shuttles"; then
               echo "::error title=Shuttles::$name is not installed in the image."
               exit 1

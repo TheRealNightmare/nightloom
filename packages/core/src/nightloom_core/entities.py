@@ -133,6 +133,9 @@ UrlText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, 
 
 # Web server data on a domain: at most this many security header names.
 SECURITY_HEADERS_MAX = 20
+# From a site's own pages: at most this many security.txt contact kinds and analytics IDs.
+SECURITY_TXT_MAX_KINDS = 5
+ANALYTICS_IDS_MAX = 20
 
 
 class DomainProperties(Properties):
@@ -161,6 +164,22 @@ class DomainProperties(Properties):
     (``hsts``), and which of the common security headers were sent
     (``security_headers``) or not (``missing_security_headers``), by lower-case
     name.
+
+    From the site files Shuttle (it visits the site's public files, like a
+    browser): ``site_files_checked_at``, whether ``/robots.txt`` exists
+    (``robots_txt``) and how many ``Disallow`` rules it has
+    (``robots_disallow_count``), how many page addresses the sitemap listed
+    (``sitemap_url_count``), whether a valid ``security.txt`` exists
+    (``security_txt``), its ``Expires`` date (``security_txt_expires``) and
+    the kinds of contact it gives (``security_txt_contact_kinds``: ``email``,
+    ``url``, ``phone``; never the contacts themselves).
+
+    From the web technologies Shuttle (it visits the home page, like a
+    browser): ``web_checked_at``, the page's ``<title>`` (``web_title``), its
+    ``generator`` meta tag (``web_generator``) and the web analytics and
+    advertising IDs it embeds (``analytics_ids``: Google Analytics ``UA-`` and
+    ``G-``, Tag Manager ``GTM-``, Ads ``AW-``, AdSense ``ca-pub-``), which
+    often link sites run by the same owner.
 
     From the Wayback Machine (Internet Archive): ``wayback_first_capture`` and
     ``wayback_last_capture`` (the earliest and the latest capture of the name
@@ -206,6 +225,19 @@ class DomainProperties(Properties):
     missing_security_headers: (
         Annotated[list[ShortText], Field(max_length=SECURITY_HEADERS_MAX)] | None
     ) = None
+    site_files_checked_at: AwareDatetime | None = None
+    robots_txt: bool | None = None
+    robots_disallow_count: int | None = Field(default=None, ge=0, le=100_000)
+    sitemap_url_count: int | None = Field(default=None, ge=0, le=10_000_000)
+    security_txt: bool | None = None
+    security_txt_expires: AwareDatetime | None = None
+    security_txt_contact_kinds: (
+        Annotated[list[ShortText], Field(max_length=SECURITY_TXT_MAX_KINDS)] | None
+    ) = None
+    web_checked_at: AwareDatetime | None = None
+    web_title: LongText | None = None
+    web_generator: ShortText | None = None
+    analytics_ids: Annotated[list[ShortText], Field(max_length=ANALYTICS_IDS_MAX)] | None = None
 
 
 # Exposure data on an IP address (Shodan InternetDB): at most this many of each.
@@ -789,10 +821,12 @@ def build_entity(
 
 
 __all__ = [
+    "ANALYTICS_IDS_MAX",
     "ASN",
     "ENTITY_MODELS",
     "PORT_CHECK_MAX_PORTS",
     "SECURITY_HEADERS_MAX",
+    "SECURITY_TXT_MAX_KINDS",
     "URL",
     "AnyEntity",
     "Breach",
