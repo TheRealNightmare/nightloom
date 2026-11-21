@@ -348,6 +348,172 @@ async def test_orphaned_runs_stop_and_running_users_are_listed(world: World) -> 
         assert await scans.users_with_running_runs(db) == []
 
 
+# --- pivots ----------------------------------------------------------------------------------
+
+PIVOT_PROFILE = Profile(
+    id="pivot-test", name="Pivot", description="", shuttles=("lookup", "addresses"), built_in=False
+)
+SEED = "domain:example.org"
+
+
+async def _new_pivot(world: World) -> ScanRun:
+    user = world.users["editor"]
+    plan = scans.plan_run(
+        PIVOT_PROFILE, [(SEED, EntityType.DOMAIN)], REGISTRY, allow_person_entities=False
+    )
+    async with world.infra.sessionmaker() as db:
+        return await scans.create_run(
+            db,
+            case=await world.case(),
+            profile=PIVOT_PROFILE,
+            plan=plan,
+            entities=1,
+            user=user,
+            actor=Actor.for_user(user, None),
+            use_cache=True,
+            pivot=True,
+            seeds=[SEED],
+        )
+
+
+async def _found(
+    world: World, job_id: uuid.UUID, keys: list[str], status: str = "succeeded"
+) -> None:
+    async with world.infra.sessionmaker() as db:
+        await db.execute(
+            update(Job)
+            .where(Job.id == job_id)
+            .values(
+                status=status,
+                started_at=text("now()"),
+                finished_at=text("now()"),
+                stats={"entities_touched": keys},
+            )
+        )
+        await db.commit()
+
+
+async def test_a_pivot_continues_from_what_it_finds_up_to_two_hops(world: World) -> None:
+    run = await _new_pivot(world)
+    assert (run.pivot, run.max_depth, run.max_jobs, run.max_entities) == (True, 2, 200, 500)
+    assert run.plan == [{"shuttle": "lookup", "entity_key": SEED, "depth": 0}]
+    assert run.seen == [SEED]
+    await world.release()
+    [seed_job] = await world.jobs(run.id)
+    assert seed_job.pivot_depth == 0
+    # The seed's job found a subdomain, an address, an email (person), an
+    # organization, and the seed itself again.
+    await _found(
+        world,
+        seed_job.id,
+        [
+            SEED,
+            "domain:www.example.org",
+            "ip_address:192.0.2.10",
+            "email:alex@example.org",
+            "organization:example inc",
+        ],
+    )
+    released = await world.release()
+    assert len(released) == 2
+    hop1 = await world.run(run.id)
+    assert hop1.discovered == 2
+    assert hop1.plan[1:] == [
+        {"shuttle": "lookup", "entity_key": "domain:www.example.org", "depth": 1},
+        {"shuttle": "addresses", "entity_key": "ip_address:192.0.2.10", "depth": 1},
+    ]
+    jobs = {job.input_key: job for job in await world.jobs(run.id)}
+    assert jobs["domain:www.example.org"].pivot_depth == 1
+    assert jobs[SEED].pivot_expanded is True
+
+    # Hop 2 is planned from hop 1; nothing is planned from hop 2.
+    await _found(world, jobs["domain:www.example.org"].id, ["domain:api.example.org"])
+    await _found(world, jobs["ip_address:192.0.2.10"].id, ["domain:www.example.org"], "failed")
+    assert len(await world.release()) == 1
+    hop2 = {job.input_key: job for job in await world.jobs(run.id)}["domain:api.example.org"]
+    assert hop2.pivot_depth == 2
+    assert (await world.run(run.id)).status == "running"
+    await _found(world, hop2.id, ["domain:deep.example.org"])
+    assert await world.release() == []
+    done = await world.run(run.id)
+    assert (done.status, done.discovered, done.total, done.capped) == ("finished", 3, 4, None)
+    response = await world.clients["viewer"].get(
+        f"{PREFIX}/cases/{world.case_id}/scan-runs/{run.id}"
+    )
+    body = response.json()
+    assert (body["pivot"], body["discovered"], body["depth"], body["max_depth"]) == (
+        True,
+        3,
+        2,
+        2,
+    )
+    [created] = await world.events("scan_run.create")
+    assert created.details["pivot"] is True
+
+
+async def test_a_pivot_stops_planning_at_its_limits(world: World) -> None:
+    run = await _new_pivot(world)
+    async with world.infra.sessionmaker() as db:
+        await db.execute(update(ScanRun).where(ScanRun.id == run.id).values(max_entities=2))
+        await db.commit()
+    await world.release()
+    [seed_job] = await world.jobs(run.id)
+    await _found(world, seed_job.id, [f"domain:h{i}.example.org" for i in range(5)])
+    await world.release()
+    capped = await world.run(run.id)
+    assert (capped.capped, capped.discovered, capped.total) == ("entities", 2, 3)
+    # Once capped, finished jobs add nothing more.
+    for job in await world.jobs(run.id):
+        if job.status == JobStatus.QUEUED:
+            await _found(world, job.id, ["domain:more.example.org"])
+    assert await world.release() == []
+    assert (await world.run(run.id)).status == "finished"
+
+    other = await _new_pivot(world)
+    async with world.infra.sessionmaker() as db:
+        await db.execute(update(ScanRun).where(ScanRun.id == other.id).values(max_jobs=2))
+        await db.commit()
+    await world.release()
+    [seed_job] = await world.jobs(other.id)
+    await _found(world, seed_job.id, ["domain:a.example.org", "domain:b.example.org"])
+    await world.release()
+    jobs_capped = await world.run(other.id)
+    assert (jobs_capped.capped, jobs_capped.total, jobs_capped.discovered) == ("jobs", 2, 1)
+
+
+async def test_cancelled_jobs_and_ordinary_runs_do_not_expand(world: World) -> None:
+    run = await _new_pivot(world)
+    await world.release()
+    [seed_job] = await world.jobs(run.id)
+    await _found(world, seed_job.id, ["domain:www.example.org"], "cancelled")
+    await world.release()
+    assert (await world.run(run.id)).total == 1
+    plain = await world.new_run(1)
+    await world.release()
+    [job] = await world.jobs(plain.id)
+    assert job.pivot_depth is None
+    await _found(world, job.id, ["domain:www.example.org"])
+    await world.release()
+    assert (await world.run(plain.id)).total == 1
+
+
+async def test_owners_turn_auto_pivot_on(world: World) -> None:
+    url = f"{PREFIX}/cases/{world.case_id}"
+    editor = world.clients["editor"]
+    assert (await editor.get(url)).json()["allow_auto_pivot"] is False
+    refused = await editor.patch(url, json={"allow_auto_pivot": True}, headers=csrf(editor))
+    assert refused.status_code == 403
+    owner = world.clients["owner"]
+    turned = await owner.patch(url, json={"allow_auto_pivot": True}, headers=csrf(owner))
+    assert turned.status_code == 200, turned.text
+    assert turned.json()["allow_auto_pivot"] is True
+    assert (
+        await owner.patch(url, json={"allow_auto_pivot": None}, headers=csrf(owner))
+    ).status_code == 422
+    [event] = [e for e in await world.events("case.update") if e.details.get("fields")]
+    assert event.details["fields"] == ["allow_auto_pivot"]
+
+
 # --- runs API (reading, cancelling) ----------------------------------------------------------
 
 
@@ -566,6 +732,17 @@ async def test_starting_a_run(world: World) -> None:
     [event] = await world.events("scan_run.create")
     assert event.details["fresh"] is True
 
+    # Pivots need the case owner's permission.
+    refused = await editor.post(
+        url,
+        json={"profile_id": profile_id, "entity_keys": keys[:1], "pivot": True},
+        headers=csrf(editor),
+    )
+    assert refused.status_code == 403
+    assert "Auto-pivot is off" in refused.text
+    denied = [e for e in await world.events("scan_run.create") if e.outcome == "denied"]
+    assert [e.details["reason"] for e in denied] == ["auto_pivot_disabled"]
+
     bad_bodies: list[tuple[dict[str, Any], int]] = [
         ({"profile_id": "nope", "entity_keys": keys}, 422),
         ({"profile_id": profile_id, "entity_keys": ["domain:missing.example.org"]}, 422),
@@ -605,3 +782,41 @@ async def test_starting_a_run(world: World) -> None:
         headers=csrf(world.clients["owner"]),
     )
     assert closed.status_code == 409
+
+
+@pytest.mark.graph
+async def test_starting_a_pivot(world: World) -> None:
+    owner = world.clients["owner"]
+    turned = await owner.patch(
+        f"{PREFIX}/cases/{world.case_id}", json={"allow_auto_pivot": True}, headers=csrf(owner)
+    )
+    assert turned.status_code == 200, turned.text
+    editor = world.clients["editor"]
+    domain = await _add_entity(editor, world.case_id, "domain", "example.org")
+    email = await _add_entity(editor, world.case_id, "email", "alex@example.org")
+    url = f"{PREFIX}/cases/{world.case_id}/scan-runs"
+
+    person = await editor.post(
+        url,
+        json={"profile_id": "quick-domain-recon", "entity_keys": [domain, email], "pivot": True},
+        headers=csrf(editor),
+    )
+    assert person.status_code == 422
+    assert "infrastructure" in person.text
+
+    started = await editor.post(
+        url,
+        json={"profile_id": "quick-domain-recon", "entity_keys": [domain], "pivot": True},
+        headers=csrf(editor),
+    )
+    assert started.status_code == 201, started.text
+    run = started.json()
+    assert (run["pivot"], run["max_depth"], run["max_jobs"], run["max_entities"]) == (
+        True,
+        2,
+        200,
+        500,
+    )
+    assert (run["discovered"], run["depth"], run["capped"]) == (0, 0, None)
+    [event] = [e for e in await world.events("scan_run.create") if e.outcome == "success"]
+    assert event.details["pivot"] is True

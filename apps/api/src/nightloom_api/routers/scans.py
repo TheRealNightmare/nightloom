@@ -57,6 +57,12 @@ Runner = Annotated[CaseAccess, Depends(case_access(Capability.RUN_SHUTTLES))]
 BUILT_IN_READ_ONLY = "Built-in profiles cannot be changed or deleted."
 UNKNOWN_PROFILE = "Unknown profile."
 NAME_TAKEN = "A profile with this name already exists."
+PIVOT_INFRASTRUCTURE_ONLY = (
+    "Auto-pivot starts only from infrastructure entities, such as domains and IP addresses."
+)
+AUTO_PIVOT_OFF = (
+    "Auto-pivot is off for this case. A case owner can turn it on in the case's settings."
+)
 # pg_advisory_xact_lock key for "scan profile changes" ("nsp").
 _PROFILES_LOCK = 0x6E7370
 
@@ -250,10 +256,25 @@ async def create_run(
     Every (Shuttle, entity) pair the guardrails allow is planned; the jobs are
     queued as the caller's job slots free up (at most 100 per run, two runs
     in progress per user). ``fresh: true`` skips the result cache.
+    ``pivot: true`` (only where the case allows auto-pivot, else 403) also
+    continues from the infrastructure entities the run finds, up to 2 hops,
+    200 jobs and 500 new entities.
     """
     await ensure_open(db, access)
     # A rollback expires the loaded case and user: keep what is needed after one.
     case_id, user_id, actor = access.case.id, access.user.id, access.actor
+    if body.pivot and not access.case.allow_auto_pivot:
+        await db.rollback()
+        await audit.record_standalone(
+            make_session,
+            action=AuditAction.SCAN_RUN_CREATE,
+            outcome=AuditOutcome.DENIED,
+            actor=actor,
+            target_type=TargetType.SCAN_RUN,
+            case_id=case_id,
+            details={"profile": body.profile_id[:64], "reason": "auto_pivot_disabled"},
+        )
+        raise HTTPException(status.HTTP_403_FORBIDDEN, AUTO_PIVOT_OFF)
     profile = await profiles.get_profile(db, body.profile_id)
     if profile is None:
         await db.rollback()
@@ -275,11 +296,15 @@ async def create_run(
                 "entity_keys must name entities in this case.",
             )
         entities.append((key, entity_type))
+    if body.pivot and any(not service.pivots_through(t) for _, t in entities):
+        await db.rollback()
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, PIVOT_INFRASTRUCTURE_ONLY)
     plan = service.plan_run(
         profile,
         entities,
         registry,
-        allow_person_entities=access.case.allow_person_entities,
+        # Person-related Shuttles never run in a pivot, whatever the case allows.
+        allow_person_entities=access.case.allow_person_entities and not body.pivot,
     )
     try:
         run = await service.create_run(
@@ -291,6 +316,8 @@ async def create_run(
             user=access.user,
             actor=access.actor,
             use_cache=not body.fresh,
+            pivot=body.pivot,
+            seeds=keys,
         )
     except service.RunError as error:
         await db.rollback()

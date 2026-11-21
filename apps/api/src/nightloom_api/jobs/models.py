@@ -114,6 +114,10 @@ class Job(Base):
     run_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("scan_runs.id", ondelete="SET NULL"), index=True
     )
+    # For a pivot's jobs: hops from the seed entities (0 for the seeds), and
+    # whether what the job found has been added to the pivot's plan.
+    pivot_depth: Mapped[int | None] = mapped_column()
+    pivot_expanded: Mapped[bool] = mapped_column(default=False, server_default=false())
 
     def __repr__(self) -> str:
         # No input key: it can be personal data, and reprs end up in logs.

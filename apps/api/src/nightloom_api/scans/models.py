@@ -94,6 +94,19 @@ class ScanRun(Base):
     entities: Mapped[int] = mapped_column(Integer)
     use_cache: Mapped[bool] = mapped_column(default=True, server_default=text("true"))
     stop_reason: Mapped[str | None] = mapped_column(Text)
+    # The profile's Shuttles when the run started (later hops of a pivot use them).
+    profile_shuttles: Mapped[list[str]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    # A pivot continues from the infrastructure entities its jobs find, up to
+    # max_depth hops, max_jobs planned jobs and max_entities new entities.
+    pivot: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
+    max_depth: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    max_jobs: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    max_entities: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    # Entity keys already planned (seeds included), and how many new ones a pivot found.
+    seen: Mapped[list[str]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    discovered: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    # Which limit a pivot reached, if any: "jobs" or "entities".
+    capped: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, server_default=func.now()
     )

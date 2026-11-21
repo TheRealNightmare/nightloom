@@ -16,6 +16,17 @@ worker when it starts. A run whose case is no longer open, or whose
 requester may no longer run Shuttles, is **stopped**; one whose jobs have all
 been released and finished is **finished**; cancelling a run cancels its
 queued jobs, asks its running ones to stop and releases nothing more.
+
+A **pivot** (a run started with ``pivot``, in a case whose owner allows
+auto-pivot) also continues from what its jobs find. Each time jobs are
+released, the pivot's finished jobs are **expanded** first: the
+infrastructure entities a job created or updated (never person-related types
+or organizations) that the pivot has not seen yet are planned with the same
+profile's Shuttles, one hop further, up to :data:`PIVOT_MAX_DEPTH` hops from
+the seeds. A pivot plans at most :data:`PIVOT_MAX_JOBS` jobs and
+:data:`PIVOT_MAX_ENTITIES` new entities; reaching either stops the expansion
+(``capped``) while what was planned runs to the end. Expanding happens under
+the same locks as releasing, before the run can be called finished.
 """
 
 import logging
@@ -35,11 +46,18 @@ from nightloom_api.auth import clock
 from nightloom_api.auth.models import User
 from nightloom_api.cases.models import Case
 from nightloom_api.jobs import service as jobs
-from nightloom_api.jobs.models import ACTIVE_STATUSES, Job, JobStatus, empty_stats
+from nightloom_api.jobs.models import (
+    ACTIVE_STATUSES,
+    FINISHED_STATUSES,
+    Job,
+    JobStatus,
+    empty_stats,
+)
 from nightloom_api.jobs.queue import JobQueue
 from nightloom_api.scans.models import RunStatus, ScanRun
 from nightloom_api.scans.profiles import Profile
-from nightloom_core.entities import EntityType
+from nightloom_core.entities import EntityType, Sensitivity, sensitivity_of
+from nightloom_core.normalize import NormalizationError, parse_key
 from nightloom_sdk.registry import ShuttleRegistry
 
 logger = logging.getLogger(__name__)
@@ -47,6 +65,10 @@ logger = logging.getLogger(__name__)
 MAX_RUN_ENTITIES = 25
 MAX_RUN_JOBS = 100
 MAX_ACTIVE_RUNS_PER_USER = 2
+# A pivot: hops from the seeds, and at most this many planned jobs and new entities.
+PIVOT_MAX_DEPTH = 2
+PIVOT_MAX_JOBS = 200
+PIVOT_MAX_ENTITIES = 500
 
 # Who queues a run's later jobs in the audit log (the requester is in the job).
 RELEASE_ACTOR = Actor.system("scan-run")
@@ -158,8 +180,14 @@ async def create_run(
     user: User,
     actor: Actor,
     use_cache: bool,
+    pivot: bool = False,
+    seeds: Sequence[str] = (),
 ) -> ScanRun:
-    """Insert a running run (nothing released yet) and its ``scan_run.create`` event; commits."""
+    """Insert a running run (nothing released yet) and its ``scan_run.create`` event; commits.
+
+    With ``pivot`` the run also continues from what it finds (see the module
+    docstring); ``seeds`` are the entities it starts from.
+    """
     if not plan.items:
         raise RunError(
             "None of this profile's Shuttles can run on the selected entities.", reason="empty"
@@ -179,11 +207,18 @@ async def create_run(
         profile_name=profile.name,
         requested_by=user.id,
         status=RunStatus.RUNNING.value,
-        plan=plan.items,
+        plan=[{**item, "depth": 0} for item in plan.items] if pivot else plan.items,
         released=0,
         skipped=sum(plan.skipped.values()),
         entities=entities,
         use_cache=use_cache,
+        profile_shuttles=list(profile.shuttles),
+        pivot=pivot,
+        max_depth=PIVOT_MAX_DEPTH if pivot else 0,
+        max_jobs=PIVOT_MAX_JOBS if pivot else len(plan.items),
+        max_entities=PIVOT_MAX_ENTITIES if pivot else 0,
+        seen=list(dict.fromkeys(seeds)),
+        discovered=0,
     )
     db.add(run)
     await db.flush()
@@ -202,6 +237,7 @@ async def create_run(
             "jobs": len(plan.items),
             "skipped": dict(sorted(plan.skipped.items())),
             **({} if use_cache else {"fresh": True}),
+            **({"pivot": True} if pivot else {}),
         },
     )
     await db.commit()
@@ -224,6 +260,80 @@ async def _active_in_run(db: AsyncSession, run_id: uuid.UUID) -> int:
         .where(Job.run_id == run_id, Job.status.in_(ACTIVE_STATUSES))
     )
     return int(count or 0)
+
+
+def pivots_through(entity_type: EntityType) -> bool:
+    """Whether a pivot may start from or continue through entities of this type."""
+    return sensitivity_of(entity_type) == Sensitivity.INFRASTRUCTURE
+
+
+async def expand(db: AsyncSession, run: ScanRun, registry: ShuttleRegistry) -> int:
+    """Plan what a pivot's finished jobs found, one hop further. Returns how many entities.
+
+    Every finished job is expanded once (``pivot_expanded``). The run and its
+    jobs must be locked by the caller (see :func:`release`).
+    """
+    jobs_done = list(
+        (
+            await db.execute(
+                select(Job)
+                .where(
+                    Job.run_id == run.id,
+                    Job.pivot_expanded.is_(False),
+                    Job.status.in_(FINISHED_STATUSES),
+                )
+                .order_by(Job.created_at, Job.id)
+                .with_for_update()
+            )
+        ).scalars()
+    )
+    if not jobs_done:
+        return 0
+    profile = Profile(
+        id=run.profile_id,
+        name=run.profile_name,
+        description="",
+        shuttles=tuple(run.profile_shuttles),
+        built_in=False,
+    )
+    seen = list(run.seen)
+    known = set(seen)
+    items = list(run.plan)
+    found = 0
+    for job in jobs_done:
+        job.pivot_expanded = True
+        depth = job.pivot_depth
+        if run.capped or job.status == JobStatus.CANCELLED:
+            continue
+        if depth is None or depth >= run.max_depth:
+            continue
+        for key in job.stats.get("entities_touched") or []:
+            if not isinstance(key, str) or key in known:
+                continue
+            try:
+                entity_type = parse_key(key)[0]
+            except NormalizationError:
+                continue
+            # Only infrastructure: never person-related types or organizations.
+            if not pivots_through(entity_type):
+                continue
+            if run.discovered >= run.max_entities:
+                run.capped = "entities"
+                break
+            plan = plan_run(profile, [(key, entity_type)], registry, allow_person_entities=False)
+            if len(items) + len(plan.items) > run.max_jobs:
+                run.capped = "jobs"
+                break
+            known.add(key)
+            seen.append(key)
+            run.discovered += 1
+            found += 1
+            run.skipped += sum(plan.skipped.values())
+            items.extend({**item, "depth": depth + 1} for item in plan.items)
+    # New lists, so the JSON columns are written.
+    run.plan = items
+    run.seen = seen
+    return found
 
 
 def _end(run: ScanRun, status: RunStatus, reason: str | None = None) -> None:
@@ -263,6 +373,8 @@ async def release(
             ).scalars()
         )
         for run in runs:
+            if run.pivot:
+                await expand(db, run, registry)
             if run.released < run.total:
                 case = await jobs.lock_case_for_job(db, run.case_id)
                 if not jobs.case_is_open(case):
@@ -288,6 +400,7 @@ async def release(
                     stats=empty_stats(),
                     use_cache=run.use_cache,
                     run_id=run.id,
+                    pivot_depth=int(item.get("depth", 0)) if run.pivot else None,
                 )
                 db.add(job)
                 await db.flush()
@@ -465,6 +578,9 @@ __all__ = [
     "MAX_ACTIVE_RUNS_PER_USER",
     "MAX_RUN_ENTITIES",
     "MAX_RUN_JOBS",
+    "PIVOT_MAX_DEPTH",
+    "PIVOT_MAX_ENTITIES",
+    "PIVOT_MAX_JOBS",
     "Plan",
     "Released",
     "RunError",
@@ -474,9 +590,11 @@ __all__ = [
     "cancel_run",
     "create_run",
     "enqueue",
+    "expand",
     "get_run",
     "job_counts",
     "list_runs",
+    "pivots_through",
     "plan_run",
     "release",
     "release_and_enqueue",
