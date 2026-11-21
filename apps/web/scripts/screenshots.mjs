@@ -8,9 +8,11 @@
 // real people. Deterministic: every entity is pinned at a fixed position (no
 // force layout), the stored dates are set to fixed values afterwards, the
 // page clock is fixed, the sign-in loom runs on a fake clock for a fixed time,
-// and the only jobs run Shuttles that need no internet (the stack's DNS
-// resolver is the test server, which answers nothing for these names), all
-// finished before any capture.
+// and the only jobs (and the one profile run) run Shuttles that need no
+// internet (the stack's DNS resolver is the test server, which answers
+// nothing for these names), all finished before any capture. The verified
+// domains' state is set in the database: the throwaway stack cannot prove
+// ownership of example.org.
 //
 // Environment: NIGHTLOOM_SHOTS_URL, NIGHTLOOM_SHOTS_EMAIL,
 // NIGHTLOOM_SHOTS_PASSWORD, NIGHTLOOM_SHOTS_COMPOSE (the docker compose
@@ -142,6 +144,21 @@ const JOBS = [
 ];
 
 const VIEWS = ["Mail and DNS", "Hosting at AS64496", "Shop (example.com)"];
+
+/** An admin's scan profile of an offline Shuttle, run on three subdomains of the demo case. */
+const PROFILE = {
+  name: "Parent domains",
+  description: "Links each subdomain to the domain it belongs to. No network: quick and quiet.",
+  shuttles: ["registrable-domain"],
+};
+const RUN_ON = ["mail.example.org", "shop.example.com", "cdn.example.net"];
+const RUN_DATES = ["2026-11-17T16:39:00Z", "2026-11-17T16:39:40Z"];
+
+/** Verified domains of the demo case: [domain, method, status, error]. */
+const VERIFICATIONS = [
+  ["example.org", "dns_txt", "verified", null],
+  ["example.net", "http_file", "failed", "file_not_found"],
+];
 
 // --- helpers ------------------------------------------------------------------------------
 
@@ -288,6 +305,26 @@ try {
     await setup.waitForTimeout(1000);
   }
 
+  // A profile run, waited on like the jobs.
+  const profile = await apiCall(setup, "POST", "/scan-profiles", PROFILE);
+  const scanRun = await apiCall(setup, "POST", `/cases/${demoId}/scan-runs`, {
+    profile_id: profile.id,
+    entity_keys: RUN_ON.map((value) => keys.get(value)),
+  });
+  for (let attempt = 0; ; attempt += 1) {
+    const current = await apiCall(setup, "GET", `/cases/${demoId}/scan-runs/${scanRun.id}`);
+    if (current.status !== "running") break;
+    if (attempt > 120) throw new Error("The demo profile run did not finish within two minutes");
+    await setup.waitForTimeout(1000);
+  }
+
+  // Domains to verify; their state is set below (the stack cannot prove them).
+  const verificationIds = [];
+  for (const [domain, method] of VERIFICATIONS) {
+    const item = await apiCall(setup, "POST", `/cases/${demoId}/verifications`, { domain, method });
+    verificationIds.push(item.id);
+  }
+
   // Saved views, through the UI (the snapshot is whatever the graph shows).
   await setup.goto(`/cases/${demoId}/graph`);
   await setup.getByTestId("graph-canvas").waitFor();
@@ -318,6 +355,21 @@ try {
       }),
       `UPDATE saved_views SET created_at = '2026-11-16T11:00:00Z', ` +
         `updated_at = '2026-11-16T11:00:00Z' WHERE case_id = ${sqlText(demoId)};`,
+      `UPDATE scan_runs SET created_at = ${sqlText(RUN_DATES[0])}, ` +
+        `finished_at = ${sqlText(RUN_DATES[1])} WHERE id = ${sqlText(scanRun.id)};`,
+      `UPDATE jobs SET created_at = ${sqlText(RUN_DATES[0])}, started_at = ${sqlText(RUN_DATES[0])}, ` +
+        `finished_at = ${sqlText(RUN_DATES[1])} WHERE run_id = ${sqlText(scanRun.id)};`,
+      // checked_at is now, so the stack's daily re-check leaves them alone.
+      ...VERIFICATIONS.map(([, , status, error], index) =>
+        status === "verified"
+          ? `UPDATE ownership_verifications SET status = 'verified', checked_at = now(), ` +
+            `verified_at = '2026-11-16T09:30:00Z', expires_at = '2026-12-16T09:30:00Z', ` +
+            `addresses = '["192.0.2.10", "2001:db8::10"]'::jsonb, created_at = '2026-11-16T09:10:00Z' ` +
+            `WHERE id = ${sqlText(verificationIds[index])};`
+          : `UPDATE ownership_verifications SET status = ${sqlText(status)}, checked_at = now(), ` +
+            `last_error = ${sqlText(error)}, created_at = '2026-11-17T15:00:00Z' ` +
+            `WHERE id = ${sqlText(verificationIds[index])};`,
+      ),
     ].join("\n"),
   );
   cypher(
@@ -385,8 +437,28 @@ try {
   await graphReady(jobs);
   await jobs.getByRole("button", { name: "Jobs" }).click();
   await jobs.getByRole("list", { name: "Job history" }).waitFor();
+  await jobs.getByRole("listitem", { name: `${PROFILE.name} on 3 entities` }).waitFor();
   await shot(jobs, "jobs-dark.png");
   await jobs.context().close();
+
+  const settings = await open("light", `/cases/${demoId}/settings`);
+  const verified = settings.getByRole("region", { name: "Verified domains" });
+  await verified.getByRole("listitem", { name: "example.org" }).waitFor();
+  await verified
+    .getByRole("listitem", { name: "example.org" })
+    .getByRole("button", { name: "Show proof" })
+    .click();
+  await verified.evaluate((element) => {
+    element.scrollIntoView({ block: "start" });
+  });
+  await shot(settings, "verified-domains-light.png");
+  await settings.context().close();
+
+  const profiles = await open("dark", "/admin/profiles");
+  await profiles.getByRole("heading", { name: "Scan profiles", level: 1 }).waitFor();
+  await profiles.getByText(PROFILE.name).first().waitFor();
+  await shot(profiles, "profiles-dark.png");
+  await profiles.context().close();
 } finally {
   await browser.close();
 }
