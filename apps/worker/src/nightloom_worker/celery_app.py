@@ -27,6 +27,10 @@ Every job reaches a final status (see :mod:`nightloom_api.jobs.deadlines`):
   (``docker compose kill`` / ``start``) fails the jobs its previous run left,
   at once, before taking new ones.
 
+After each job of a **scan run** (and from the reaper's thread every
+interval), the run's next planned jobs are queued while the requester has
+free job slots (see :mod:`nightloom_api.scans.service`).
+
 The reaper's thread also purges the **result cache** every
 :data:`PURGE_INTERVAL_SECONDS` (expired entries, then least recently used
 ones beyond ``NIGHTLOOM_RESULT_CACHE_MAX_BYTES``), under its own lock.
@@ -46,6 +50,8 @@ from celery.signals import setup_logging, task_failure, worker_init, worker_read
 from redis import Redis as SyncRedis
 from redis.asyncio import Redis
 from redis.exceptions import LockError, RedisError
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from nightloom_api.auth import clock
 from nightloom_api.config import Settings, get_settings
@@ -53,9 +59,10 @@ from nightloom_api.graph.repository import GraphRepository
 from nightloom_api.infra import db as db_infra
 from nightloom_api.infra import graph as graph_infra
 from nightloom_api.jobs import deadlines, result_cache
-from nightloom_api.jobs.models import JobStatus
-from nightloom_api.jobs.queue import TASK_NAME, create_celery
+from nightloom_api.jobs.models import Job, JobStatus
+from nightloom_api.jobs.queue import TASK_NAME, CeleryJobQueue, create_celery
 from nightloom_api.logging import configure_logging
+from nightloom_api.scans import service as scans
 from nightloom_sdk.meta import MAX_TIMEOUT_SECONDS
 from nightloom_sdk.registry import RegistryError, default_registry
 from nightloom_worker.loop import run_bounded
@@ -87,6 +94,8 @@ REAPER_LOCK_SECONDS = 50
 PURGE_INTERVAL_SECONDS = 600.0
 PURGE_LOCK = "nightloom:worker:result-cache-purge"
 PURGE_LOCK_SECONDS = 50
+# Releasing a scan run's next jobs after a job, and from the reaper's thread.
+RELEASE_SECONDS = 20.0
 # Which worker runs a job: the node name, until the job ends or the longest
 # possible run is over.
 RUNNING_KEY = "nightloom:worker:running:{job_id}"
@@ -131,22 +140,56 @@ def _check_shuttles(**_: Any) -> None:
 # --- running a job (pool process) -----------------------------------------------------------
 
 
+async def release_after(
+    settings: Settings, sessionmaker: async_sessionmaker[AsyncSession], job_id: uuid.UUID
+) -> int:
+    """Queue the next planned jobs of the job's scan run, if it belongs to one. Returns how many."""
+    async with sessionmaker() as db:
+        row = (
+            await db.execute(select(Job.run_id, Job.requested_by).where(Job.id == job_id))
+        ).first()
+    if row is None or row.run_id is None or row.requested_by is None:
+        return 0
+    queue = CeleryJobQueue(settings)
+    try:
+        return await scans.release_and_enqueue(
+            sessionmaker,
+            queue,
+            user_id=row.requested_by,
+            limit=settings.max_active_jobs_per_user,
+            registry=default_registry(),
+        )
+    finally:
+        queue.close()
+
+
 async def _with_config(settings: Settings, job_id: uuid.UUID, *, abandoned: bool) -> str | None:
     engine = db_infra.create_engine(settings)
     driver = graph_infra.create_driver(settings)
+    sessionmaker = db_infra.create_sessionmaker(engine)
     try:
         if abandoned:
-            sessionmaker = db_infra.create_sessionmaker(engine)
             await finish_abandoned(sessionmaker, job_id, TIME_LIMIT_OUTCOME)
+            await bounded(
+                release_after(settings, sessionmaker, job_id),
+                RELEASE_SECONDS,
+                f"Job {job_id}: releasing its scan run's next jobs",
+            )
             return JobStatus.FAILED.value
         config = RunnerConfig(
-            sessionmaker=db_infra.create_sessionmaker(engine),
+            sessionmaker=sessionmaker,
             graph=GraphRepository(driver),
             registry=default_registry(),
             cache_scope=result_cache.CacheScope(settings.result_cache_scope),
             cache_max_entry_bytes=settings.result_cache_max_entry_bytes,
         )
         status = await run_job(job_id, config)
+        # A finished job frees a job slot: its scan run (if any) may queue the next.
+        await bounded(
+            release_after(settings, sessionmaker, job_id),
+            RELEASE_SECONDS,
+            f"Job {job_id}: releasing its scan run's next jobs",
+        )
         return status.value if status is not None else None
     finally:
         await bounded(driver.close(), CLOSE_SECONDS, "Closing the Neo4j driver")
@@ -328,6 +371,35 @@ async def purge_cache_once(settings: Settings) -> result_cache.PurgeResult | Non
         await bounded(client.aclose(), CLOSE_SECONDS, "Closing the Valkey client")
 
 
+async def release_all_runs(settings: Settings) -> int:
+    """Queue what every running scan run may queue now; end runs nobody can release.
+
+    The safety net for releases missed after a job (a worker that died, a
+    queue that was down). Returns how many jobs were released.
+    """
+    engine = db_infra.create_engine(settings, statement_timeout_seconds=RECORD_STATEMENT_SECONDS)
+    queue = CeleryJobQueue(settings)
+    released = 0
+    try:
+        sessionmaker = db_infra.create_sessionmaker(engine)
+        async with sessionmaker() as db, db.begin():
+            await scans.stop_orphaned_runs(db)
+        async with sessionmaker() as db:
+            users = await scans.users_with_running_runs(db)
+        for user_id in users:
+            released += await scans.release_and_enqueue(
+                sessionmaker,
+                queue,
+                user_id=user_id,
+                limit=settings.max_active_jobs_per_user,
+                registry=default_registry(),
+            )
+    finally:
+        queue.close()
+        await bounded(engine.dispose(), CLOSE_SECONDS, "Closing the database engine")
+    return released
+
+
 async def reap_own(settings: Settings, hostname: str) -> int:
     """Fail the jobs this worker's previous run (same node name) left running. Returns how many.
 
@@ -386,6 +458,7 @@ class Reaper(threading.Thread):
             [Settings], Coroutine[Any, Any, result_cache.PurgeResult | None]
         ] = purge_cache_once,
         monotonic: Callable[[], float] = time.monotonic,
+        release: Callable[[Settings], Coroutine[Any, Any, int]] = release_all_runs,
     ) -> None:
         super().__init__(name="nightloom-reaper", daemon=True)
         self.settings = settings
@@ -397,6 +470,7 @@ class Reaper(threading.Thread):
         self._purge = purge
         self._monotonic = monotonic
         self._last_purge: float | None = None
+        self._release = release
         self.stopped = threading.Event()
 
     def reap_previous_run(self) -> int | None:
@@ -439,10 +513,22 @@ class Reaper(threading.Thread):
             )
         return purged
 
+    def release(self) -> int | None:
+        """Queue what running scan runs may queue now (after the reaper freed job slots)."""
+        try:
+            released = run_bounded(asyncio.wait_for(self._release(self.settings), RELEASE_SECONDS))
+        except Exception as error:  # the reaper keeps going
+            logger.warning("Releasing scan run jobs failed: %s.", type(error).__name__)
+            return None
+        if released:
+            logger.info("Released %d scan run job(s).", released)
+        return released
+
     def run(self) -> None:
         self.reap_previous_run()
         while not self.stopped.is_set():
             self.reap()
+            self.release()
             self.purge()
             self.stopped.wait(self.interval)
 

@@ -138,6 +138,8 @@ class JobOut(BaseModel):
     cached_fetched_at: datetime | None
     # False when the user asked for a fresh run.
     use_cache: bool
+    # The profile run that queued this job (null for a single run).
+    run_id: uuid.UUID | None
 
     @classmethod
     def build(cls, job: Job, registry: ShuttleRegistry) -> "JobOut":
@@ -163,6 +165,7 @@ class JobOut(BaseModel):
             from_cache=job.from_cache,
             cached_fetched_at=job.cached_fetched_at,
             use_cache=job.use_cache,
+            run_id=job.run_id,
         )
 
 

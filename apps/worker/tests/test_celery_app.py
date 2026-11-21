@@ -206,9 +206,15 @@ async def _no_purge(settings: Settings) -> None:
     return None
 
 
+async def _no_release(settings: Settings) -> int:
+    return 0
+
+
 def test_reaper_runs_now_and_then_every_interval(caplog: pytest.LogCaptureFixture) -> None:
     fake = _FakeReap(3, OSError("down"), None)
-    reaper = celery_app.Reaper(Settings(env="test"), interval=0.05, reap=fake, purge=_no_purge)
+    reaper = celery_app.Reaper(
+        Settings(env="test"), interval=0.05, reap=fake, purge=_no_purge, release=_no_release
+    )
     reaper.start()
     try:
         deadline = time.monotonic() + 5
@@ -353,6 +359,152 @@ def test_only_one_worker_purges_the_cache_at_a_time(
     assert while_held is None
     assert isinstance(free, result_cache.PurgeResult)
     assert stolen is None
+
+
+def test_reaper_releases_scan_run_jobs_and_logs_failures(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger=celery_app.__name__)
+    results: list[Any] = [3, OSError("down"), 0]
+
+    async def release(settings: Settings) -> int:
+        result = results.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return int(result)
+
+    reaper = celery_app.Reaper(Settings(env="test"), release=release)
+    assert reaper.release() == 3
+    assert "Released 3 scan run job(s)." in caplog.text
+    assert reaper.release() is None
+    assert "Releasing scan run jobs failed: OSError." in caplog.text
+    assert reaper.release() == 0
+
+
+class _SentQueue:
+    def __init__(self, settings: Settings) -> None:
+        self.sent: list[uuid.UUID] = []
+        _SentQueue.last = self
+
+    last: "_SentQueue | None" = None
+
+    async def enqueue(self, job_id: uuid.UUID, *, timeout_seconds: int) -> None:
+        self.sent.append(job_id)
+
+    def close(self) -> None:
+        pass
+
+
+@pytest.mark.db
+def test_a_finished_run_job_releases_the_next_ones(
+    monkeypatch: pytest.MonkeyPatch, migrated_database: str
+) -> None:
+    """After a job of a scan run, the requester's next planned jobs are queued."""
+    from sqlalchemy import text as sql
+
+    from nightloom_api.infra import db as db_infra
+    from nightloom_api.jobs.models import Job, JobStatus
+    from nightloom_api.scans.models import ScanRun
+
+    monkeypatch.setenv("NIGHTLOOM_DATABASE_URL", TEST_DATABASE_URL)
+    monkeypatch.setenv("NIGHTLOOM_VALKEY_URL", TEST_VALKEY_URL)
+    get_settings.cache_clear()
+    settings = get_settings()
+    monkeypatch.setattr(celery_app, "CeleryJobQueue", _SentQueue)
+
+    async def scenario() -> tuple[int, int, int, list[str]]:
+        engine = db_infra.create_engine(settings)
+        sessionmaker = db_infra.create_sessionmaker(engine)
+        user_id, case_id = uuid.uuid4(), uuid.uuid4()
+        try:
+            async with sessionmaker() as db:
+                await db.execute(
+                    sql(
+                        "INSERT INTO users (id, email, display_name, password_hash, role,"
+                        " is_active) VALUES (:id, :email, 'Run tester', 'x', 'analyst', true)"
+                    ),
+                    {"id": user_id, "email": f"runs-{user_id.hex[:8]}@example.org"},
+                )
+                await db.execute(
+                    sql(
+                        "INSERT INTO cases (id, title, purpose, legal_basis, ethics_ack_version,"
+                        " ethics_ack_at, created_by) VALUES (:id, 'Runs',"
+                        " 'Check that scan runs release their next planned jobs.',"
+                        " 'owned_assets', '1', now(), :user)"
+                    ),
+                    {"id": case_id, "user": user_id},
+                )
+                await db.execute(
+                    sql(
+                        "INSERT INTO case_members (case_id, user_id, role) "
+                        "VALUES (:case, :user, 'owner')"
+                    ),
+                    {"case": case_id, "user": user_id},
+                )
+                run = ScanRun(
+                    case_id=case_id,
+                    profile_id="quick-domain-recon",
+                    profile_name="Quick domain recon",
+                    requested_by=user_id,
+                    plan=[
+                        {"shuttle": "registrable-domain", "entity_key": f"domain:h{i}.example.org"}
+                        for i in range(7)
+                    ],
+                    entities=7,
+                )
+                db.add(run)
+                await db.commit()
+                single = Job(
+                    case_id=case_id,
+                    shuttle_name="registrable-domain",
+                    shuttle_version="1.0.0",
+                    input_key="domain:example.org",
+                    requested_by=user_id,
+                    status=JobStatus.SUCCEEDED,
+                    stats={},
+                    started_at=sql("now()"),
+                    finished_at=sql("now()"),
+                )
+                db.add(single)
+                await db.commit()
+            # A job outside any run releases nothing.
+            assert await celery_app.release_after(settings, sessionmaker, single.id) == 0
+            assert await celery_app.release_after(settings, sessionmaker, uuid.uuid4()) == 0
+            first = await celery_app.release_all_runs(settings)
+            queue = _SentQueue.last
+            assert queue is not None
+            sent = [str(job_id) for job_id in queue.sent]
+            async with sessionmaker() as db:
+                await db.execute(
+                    sql(
+                        "UPDATE jobs SET status = 'succeeded', started_at = now(), "
+                        "finished_at = now() WHERE id = :id"
+                    ),
+                    {"id": queue.sent[0]},
+                )
+                await db.commit()
+            after = await celery_app.release_after(settings, sessionmaker, queue.sent[0])
+            async with sessionmaker() as db:
+                released = await db.scalar(
+                    sql("SELECT released FROM scan_runs WHERE id = :id"), {"id": run.id}
+                )
+            return first, after, int(released or 0), sent
+        finally:
+            async with sessionmaker() as db:
+                await db.execute(sql("DELETE FROM jobs WHERE case_id = :id"), {"id": case_id})
+                await db.execute(sql("DELETE FROM scan_runs WHERE case_id = :id"), {"id": case_id})
+                await db.execute(
+                    sql("DELETE FROM case_members WHERE case_id = :id"), {"id": case_id}
+                )
+                await db.execute(sql("DELETE FROM cases WHERE id = :id"), {"id": case_id})
+                await db.execute(sql("DELETE FROM users WHERE id = :id"), {"id": user_id})
+                await db.commit()
+            await engine.dispose()
+
+    first, after, released, sent = run_in_thread(scenario)
+    get_settings.cache_clear()
+    assert (first, after, released) == (5, 1, 6)
+    assert len(sent) == 5
 
 
 def test_reaper_first_fails_what_the_previous_run_left(caplog: pytest.LogCaptureFixture) -> None:

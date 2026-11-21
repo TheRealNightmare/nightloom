@@ -110,6 +110,10 @@ class Job(Base):
     # Answered from the result cache, with the time the source was asked.
     from_cache: Mapped[bool] = mapped_column(default=False, server_default=false())
     cached_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The scan run that released this job (see nightloom_api.scans), if any.
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("scan_runs.id", ondelete="SET NULL"), index=True
+    )
 
     def __repr__(self) -> str:
         # No input key: it can be personal data, and reprs end up in logs.
