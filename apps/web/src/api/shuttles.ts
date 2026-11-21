@@ -26,6 +26,11 @@ export interface ShuttleInfo {
   required_keys: string[];
   rate_limit: { requests: number; period_seconds: number } | null;
   timeout_seconds: number;
+  /**
+   * How long a successful run's results may be reused for the same entity
+   * (0: never cached). Missing from older servers.
+   */
+  cache_ttl_seconds?: number;
   terms_url: string | null;
   homepage: string | null;
   /**
@@ -89,6 +94,12 @@ export interface Job {
    * still running after this has most likely lost its worker.
    */
   overdue_at: string | null;
+  /** False when the user asked for a fresh run (missing from older servers: true). */
+  use_cache?: boolean;
+  /** Answered from the result cache instead of running the Shuttle. */
+  from_cache?: boolean;
+  /** When the source was asked for the cached results; null for a live run. */
+  cached_fetched_at?: string | null;
 }
 
 /** Mirrors `JobPage`. */
@@ -217,10 +228,13 @@ export function resetShuttleCache(): void {
   shuttleLists.clear();
 }
 
-/** POST /cases/{id}/jobs (editors, open case): queue a Shuttle run on an entity. */
+/**
+ * POST /cases/{id}/jobs (editors, open case): queue a Shuttle run on an entity.
+ * `fresh: true` runs the Shuttle even if its recent results are cached.
+ */
 export async function createJob(
   caseId: string,
-  body: { shuttle: string; entity_key: string },
+  body: { shuttle: string; entity_key: string; fresh?: boolean },
   options: CallOptions = {},
 ): Promise<Job> {
   return expect(await apiRequest(jobsPath(caseId), { ...options, method: "POST", body }), isJob);

@@ -84,12 +84,38 @@ test("run the DNS Shuttle on a domain from the graph", async ({ page }) => {
   await page.waitForTimeout(1500); // let the short layout settle
   await screenshot(page, "nightloom-dns-results.png");
 
-  // The job stays in the history after a reload.
+  // Running it again reuses the recent results (DNS keeps them for an hour)...
+  await expect(card.getByRole("checkbox", { name: "Use recent results" })).toBeChecked();
+  await card.getByRole("button", { name: "Run DNS records" }).click();
+  const runs = jobs.getByRole("listitem", { name: `dns on ${dnsDomain}` });
+  await expect(runs).toHaveCount(2);
+  await expect(runs.first().getByText("Succeeded")).toBeVisible({ timeout: 60_000 });
+  await expect(runs.first().getByText(/^From cache · fetched/)).toBeVisible();
+  // ... and "Run fresh" asks the source again.
+  await runs
+    .first()
+    .getByRole("button", { name: `Run dns fresh on ${dnsDomain}` })
+    .click();
+  await expect(runs).toHaveCount(3);
+  await expect(runs.first().getByText("Succeeded")).toBeVisible({ timeout: 60_000 });
+  await expect(runs.first().getByText(/^From cache/)).toHaveCount(0);
+
+  // The jobs stay in the history after a reload.
   await page.reload();
   await page.getByRole("button", { name: /^Jobs/ }).click();
-  await expect(job.getByText("Succeeded")).toBeVisible();
+  await expect(runs).toHaveCount(3);
+  await expect(runs.last().getByText("Succeeded")).toBeVisible();
 
+  // The owner can clear the case's cached results (the fresh run replaced the entry).
   await page.goto(`${caseUrl}/settings`);
+  const cachedResults = page.getByRole("region", { name: "Cached Shuttle results" });
+  await cachedResults.getByRole("button", { name: "Clear cached results" }).click();
+  await page
+    .getByRole("dialog", { name: "Clear this case's cached results?" })
+    .getByRole("button", { name: "Clear" })
+    .click();
+  await expect(cachedResults.getByRole("status")).toHaveText("Cleared 1 cached result.");
+
   await page.getByLabel(/Type the case title/).fill(title);
   await page.getByRole("button", { name: "Delete case" }).click();
   await expect(page).toHaveURL(/\/cases$/);

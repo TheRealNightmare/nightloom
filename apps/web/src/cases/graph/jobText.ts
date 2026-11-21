@@ -30,6 +30,21 @@ export function shuttleBlockedReason(
   return null;
 }
 
+/** "1 hour", "24 hours", "7 days", "30 minutes": how long a Shuttle's results are reused. */
+export function formatLifetime(seconds: number): string {
+  const unit = (count: number, word: string) => `${String(count)} ${word}${count === 1 ? "" : "s"}`;
+  if (seconds >= 2 * 86_400 && seconds % 86_400 === 0) return unit(seconds / 86_400, "day");
+  if (seconds >= 3600 && seconds % 3600 === 0) return unit(seconds / 3600, "hour");
+  return unit(Math.max(1, Math.round(seconds / 60)), "minute");
+}
+
+/** The "Use recent results" choice before a run, or null for a Shuttle that is never cached. */
+export function recentResultsHint(shuttle: ShuttleInfo): string | null {
+  const seconds = shuttle.cache_ttl_seconds ?? 0;
+  if (seconds <= 0) return null;
+  return `Reuse results from the last ${formatLifetime(seconds)} if this Shuttle already ran on this entity.`;
+}
+
 export const JOB_STATUS_LABELS: Record<JobStatus, string> = {
   queued: "Queued",
   running: "Running",

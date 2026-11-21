@@ -282,3 +282,48 @@ describe("settings error clearing", () => {
     expect(screen.queryByText("Purpose must be at least 30 characters.")).not.toBeInTheDocument();
   });
 });
+
+describe("cached Shuttle results", () => {
+  const url = `${path}/result-cache`;
+
+  it("lets the owner clear the case's cached results after confirming", async () => {
+    let deleted = 2;
+    api.on("DELETE", url, () => json({ deleted }));
+    await openSettings();
+    const section = screen.getByRole("region", { name: "Cached Shuttle results" });
+    await userEvent.click(within(section).getByRole("button", { name: "Clear cached results" }));
+    const dialog = screen.getByRole("dialog", { name: "Clear this case's cached results?" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(api.callsTo("DELETE", url)).toHaveLength(0);
+
+    await userEvent.click(within(section).getByRole("button", { name: "Clear cached results" }));
+    await userEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Clear" }),
+    );
+    expect(await within(section).findByRole("status")).toHaveTextContent(
+      "Cleared 2 cached results.",
+    );
+    deleted = 0;
+    await userEvent.click(within(section).getByRole("button", { name: "Clear cached results" }));
+    await userEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Clear" }),
+    );
+    await waitFor(() => {
+      expect(within(section).getByRole("status")).toHaveTextContent(
+        "There were no cached results to clear.",
+      );
+    });
+    expect(api.callsTo("DELETE", url)).toHaveLength(2);
+  });
+
+  it("shows a refused clear", async () => {
+    api.on("DELETE", url, () => json({ detail: "Not allowed." }, 403));
+    await openSettings();
+    const section = screen.getByRole("region", { name: "Cached Shuttle results" });
+    await userEvent.click(within(section).getByRole("button", { name: "Clear cached results" }));
+    await userEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Clear" }),
+    );
+    expect(await within(section).findByRole("alert")).not.toBeEmptyDOMElement();
+  });
+});

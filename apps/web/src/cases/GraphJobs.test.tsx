@@ -21,9 +21,9 @@ import { clearCookies, FakeApi, json } from "../test/fakeApi";
 import { renderApp } from "../test/renderApp";
 import { FakeSigma, waitForSigma } from "../test/sigmaMock";
 import { PULSE_MS } from "./GraphTab";
-import { NO_JOBS_MESSAGE } from "./graph/JobsPanel";
+import { FROM_CACHE_LABEL, NO_JOBS_MESSAGE } from "./graph/JobsPanel";
 import { PERSON_SHUTTLE_REASON } from "./graph/jobText";
-import { NO_SHUTTLES_MESSAGE, USAGE_NOTE_LABEL } from "./graph/RunShuttles";
+import { NO_SHUTTLES_MESSAGE, USAGE_NOTE_LABEL, USE_RECENT_LABEL } from "./graph/RunShuttles";
 import { JOB_POLL_MS } from "./graph/useCaseJobs";
 
 vi.mock("sigma", () => import("../test/sigmaMock"));
@@ -460,5 +460,94 @@ describe("jobs", () => {
     renderApp(`${path}/graph`);
     await userEvent.click(await screen.findByRole("button", { name: /Jobs/ }));
     expect(await within(jobsPanel()).findByRole("alert")).toHaveTextContent("Something went wrong");
+  });
+});
+
+describe("result cache", () => {
+  const CACHED_DNS = makeShuttle({ cache_ttl_seconds: 3600 });
+  const cached = makeJob({
+    status: "succeeded",
+    started_at: "2026-11-12T08:30:01Z",
+    finished_at: "2026-11-12T08:30:02Z",
+    from_cache: true,
+    cached_fetched_at: "2026-11-12T07:50:00Z",
+    use_cache: true,
+  });
+
+  const lastBody = () =>
+    JSON.parse(api.callsTo("POST", `${path}/jobs`).at(-1)?.init.body as string) as unknown;
+
+  it("offers recent results for a cached Shuttle, and a fresh run when unticked", async () => {
+    api.on("POST", `${path}/jobs`, () => json(queued, 201));
+    await openGraph({ shuttles: [CACHED_DNS] });
+    await select(apex.key);
+    const card = await within(details()).findByRole("listitem", { name: "DNS records" });
+    const box = within(card).getByRole("checkbox", { name: USE_RECENT_LABEL });
+    expect(box).toBeChecked();
+    expect(box).toHaveAccessibleDescription(
+      "Reuse results from the last 1 hour if this Shuttle already ran on this entity.",
+    );
+    await userEvent.click(within(card).getByRole("button", { name: "Run DNS records" }));
+    expect(lastBody()).toEqual({ shuttle: "dns", entity_key: apex.key });
+
+    await userEvent.click(box);
+    expect(box).not.toBeChecked();
+    await userEvent.click(within(card).getByRole("button", { name: "Run DNS records" }));
+    expect(lastBody()).toEqual({ shuttle: "dns", entity_key: apex.key, fresh: true });
+  });
+
+  it("does not offer recent results for a Shuttle that is never cached", async () => {
+    await openGraph({ shuttles: [makeShuttle({ cache_ttl_seconds: 0 })] });
+    await select(apex.key);
+    const card = await within(details()).findByRole("listitem", { name: "DNS records" });
+    expect(within(card).queryByRole("checkbox", { name: USE_RECENT_LABEL })).toBeNull();
+    // Nor from a server that does not report a lifetime.
+    expect(DNS_SHUTTLE.cache_ttl_seconds).toBeUndefined();
+  });
+
+  it("marks a job answered from the cache and runs it fresh", async () => {
+    const fresh = makeJob({ id: "5d2c1b0a-9e8f-4a7b-8c6d-5e4f3a2b1c0d", use_cache: false });
+    api.on("POST", `${path}/jobs`, () => json(fresh, 201));
+    await openGraph({ jobs: [cached] });
+    await userEvent.click(screen.getByRole("button", { name: /Jobs/ }));
+    const row = jobRow();
+    expect(within(row).getByText(new RegExp(`^${FROM_CACHE_LABEL} · fetched`))).toBeVisible();
+    const time = within(row).getAllByRole("time").at(-1);
+    expect(time).toHaveAttribute("datetime", cached.cached_fetched_at);
+    expect(time).toHaveAttribute("title");
+
+    await userEvent.click(
+      within(row).getByRole("button", { name: "Run dns fresh on example.org" }),
+    );
+    expect(lastBody()).toEqual({ shuttle: "dns", entity_key: apex.key, fresh: true });
+    expect(await within(jobsPanel()).findByText("Queued.")).toBeVisible();
+    expect(
+      within(jobsPanel()).getAllByRole("listitem", { name: "dns on example.org" }),
+    ).toHaveLength(2);
+  });
+
+  it("shows a refused fresh run inline", async () => {
+    api.on("POST", `${path}/jobs`, () =>
+      json({ detail: "This case is not open. Reopen it to run Shuttles." }, 409),
+    );
+    await openGraph({ jobs: [cached] });
+    await userEvent.click(screen.getByRole("button", { name: /Jobs/ }));
+    await userEvent.click(
+      within(jobRow()).getByRole("button", { name: "Run dns fresh on example.org" }),
+    );
+    expect(await within(jobRow()).findByRole("alert")).toHaveTextContent(/not open/);
+  });
+
+  it("has no Run fresh for viewers, nor for jobs that ran live", async () => {
+    await openGraph({ jobs: [cached], role: "viewer" });
+    await userEvent.click(screen.getByRole("button", { name: /Jobs/ }));
+    expect(within(jobRow()).getByText(new RegExp(`^${FROM_CACHE_LABEL}`))).toBeVisible();
+    expect(within(jobRow()).queryByRole("button", { name: /Run dns fresh/ })).toBeNull();
+  });
+
+  it("shows nothing about the cache for a live job", async () => {
+    await openGraph({ jobs: [succeeded] });
+    await userEvent.click(screen.getByRole("button", { name: /Jobs/ }));
+    expect(within(jobRow()).queryByText(new RegExp(FROM_CACHE_LABEL))).toBeNull();
   });
 });

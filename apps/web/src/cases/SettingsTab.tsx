@@ -13,6 +13,8 @@ import {
   type LegalBasis,
 } from "../api/cases";
 import { ValidationError } from "../api/client";
+import { clearCaseResultCache } from "../api/resultCache";
+import { Modal } from "../components/Modal";
 import { LegalBasisFields, PersonEntitiesSwitch, PurposeField, RetentionField } from "./CaseFields";
 import { useCase } from "./caseContext";
 import { ChangeReasonDialog } from "./ChangeReasonDialog";
@@ -84,6 +86,7 @@ export function SettingsTab() {
     <div className="settings">
       <SettingsForm key={current.updated_at} value={current} onSaved={setCase} />
       <StatusActions value={current} onChanged={setCase} />
+      <CachedResults value={current} />
       <DangerZone value={current} />
     </div>
   );
@@ -283,6 +286,94 @@ function StatusActions({ value, onChanged }: { value: Case; onChanged: (next: Ca
       <div className="form-error" role="alert">
         {error}
       </div>
+    </section>
+  );
+}
+
+export const CACHED_RESULTS_HINT =
+  "Some Shuttles reuse their recent results for the same entity instead of asking their source again. Clear this case's cached results to make the next jobs ask again; the graph does not change.";
+
+function CachedResults({ value }: { value: Case }) {
+  const [confirming, setConfirming] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const clear = async () => {
+    setConfirming(false);
+    setPending(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const deleted = await clearCaseResultCache(value.id);
+      setNotice(
+        deleted === 0
+          ? "There were no cached results to clear."
+          : `Cleared ${String(deleted)} cached result${deleted === 1 ? "" : "s"}.`,
+      );
+    } catch (caught) {
+      setError(describeCaseError(caught));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <section aria-labelledby="cached-results-title" className="section">
+      <h2 id="cached-results-title" className="section__title">
+        Cached Shuttle results
+      </h2>
+      <p className="section__hint">{CACHED_RESULTS_HINT}</p>
+      <div className="button-row">
+        <button
+          type="button"
+          className="button"
+          disabled={pending}
+          onClick={() => {
+            setConfirming(true);
+          }}
+        >
+          {pending ? "Clearing…" : "Clear cached results"}
+        </button>
+      </div>
+      {notice !== null && (
+        <p className="notice" role="status">
+          {notice}
+        </p>
+      )}
+      <div className="form-error" role="alert">
+        {error}
+      </div>
+      {confirming && (
+        <Modal
+          title="Clear this case's cached results?"
+          description="The next job on each entity asks its source again."
+          onClose={() => {
+            setConfirming(false);
+          }}
+        >
+          <div className="dialog__actions">
+            <button
+              type="button"
+              className="button"
+              onClick={() => {
+                setConfirming(false);
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="button button--primary"
+              onClick={() => {
+                void clear();
+              }}
+            >
+              Clear
+            </button>
+          </div>
+        </Modal>
+      )}
     </section>
   );
 }

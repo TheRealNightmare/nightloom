@@ -205,11 +205,16 @@ export function GraphTab() {
 
   const allowPersonEntities = current.allow_person_entities;
   const runShuttle = useCallback(
-    async (shuttle: ShuttleInfo, entity: EntityNode) => {
-      const job = await startJob(shuttle.name, entity.id);
+    async (shuttle: ShuttleInfo, entity: EntityNode, options: { fresh?: boolean } = {}) => {
+      const job = await startJob(shuttle.name, entity.id, options);
       setJobsOpen(true);
       return job;
     },
+    [startJob],
+  );
+  // Runs a cached job's Shuttle again on the same entity, asking the source.
+  const runFresh = useCallback(
+    (job: Job) => startJob(job.shuttle_name, job.input_key, { fresh: true }),
     [startJob],
   );
 
@@ -374,6 +379,8 @@ export function GraphTab() {
             // Editors and owners may cancel, also while the case is closed.
             canCancel={canCancel}
             onCancel={jobs.cancel}
+            // Running again needs an open case, like any new job.
+            {...(canEdit ? { onRunFresh: runFresh } : {})}
             onLoadMore={jobs.loadMore}
             onClose={() => {
               setJobsOpen(false);

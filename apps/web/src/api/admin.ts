@@ -48,6 +48,7 @@ export const AUDIT_ACTIONS = [
   "job.create",
   "job.cancel",
   "job.finish",
+  "result_cache.clear",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 

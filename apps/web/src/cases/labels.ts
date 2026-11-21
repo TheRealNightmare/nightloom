@@ -141,6 +141,8 @@ export function describeEvent(event: AuditEvent, members: readonly Member[] = []
       return "changed a saved graph view";
     case "view.delete":
       return "deleted a saved graph view";
+    case "result_cache.clear":
+      return "cleared the case's cached Shuttle results";
     case "authz.denied": {
       if (details["reason"] === "not_a_member") return "was refused access (not a member)";
       if (details["reason"] === "not_view_creator") {

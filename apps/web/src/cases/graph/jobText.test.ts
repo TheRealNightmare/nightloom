@@ -16,7 +16,9 @@ import {
   isOverdue,
   OVERDUE_MESSAGE,
   formatDuration,
+  formatLifetime,
   PERSON_SHUTTLE_REASON,
+  recentResultsHint,
   shuttleBlockedReason,
   statsText,
   TOO_MANY_JOBS_MESSAGE,
@@ -120,5 +122,28 @@ describe("job text", () => {
       ["a", "running"],
       ["b", "queued"],
     ]);
+  });
+});
+
+describe("cache lifetimes", () => {
+  it.each([
+    [60, "1 minute"],
+    [90, "2 minutes"],
+    [3600, "1 hour"],
+    [24 * 3600, "24 hours"],
+    [2 * 86_400, "2 days"],
+    [7 * 86_400, "7 days"],
+    [30 * 86_400, "30 days"],
+    [5400, "90 minutes"],
+  ])("%i s reads %s", (seconds, text) => {
+    expect(formatLifetime(seconds)).toBe(text);
+  });
+
+  it("offers recent results only for cached Shuttles", () => {
+    expect(recentResultsHint(makeShuttle({ cache_ttl_seconds: 7 * 86_400 }))).toBe(
+      "Reuse results from the last 7 days if this Shuttle already ran on this entity.",
+    );
+    expect(recentResultsHint(makeShuttle({ cache_ttl_seconds: 0 }))).toBeNull();
+    expect(recentResultsHint(makeShuttle())).toBeNull();
   });
 });

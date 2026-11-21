@@ -2909,6 +2909,17 @@ button.admiralty__code {
   font-size: 13px;
 }
 
+.shuttle-card__recent {
+  display: grid;
+  gap: 4px;
+  font-size: 14px;
+}
+
+.shuttle-card__recent .field__hint {
+  margin: 0;
+  padding-left: 26px;
+}
+
 /* --- Jobs panel ---------------------------------------------------------- */
 
 .jobs-panel {
@@ -2999,6 +3010,16 @@ button.admiralty__code {
 }
 
 /* Running past the worker's hard time limit: its worker most likely stopped. */
+.job__cached {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 0;
+  color: var(--brass-text);
+  font-size: 13px;
+}
+
 .job__overdue {
   margin: 0;
   color: var(--copper);
