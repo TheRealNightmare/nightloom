@@ -150,6 +150,19 @@ describe("describeAuditEvent", () => {
       ev("scan_run.create", { profile_name: "Exposure check", jobs: 4 }, { case_id: "c-1" }),
       "ran Exposure check (4 jobs)",
     ],
+    [
+      ev("scan_run.create", { profile_name: "Quick", jobs: 1, pivot: true }, { case_id: "c-1" }),
+      "started a pivot with Quick (1 job)",
+    ],
+    [
+      ev(
+        "scan_run.create",
+        { profile: "quick", reason: "auto_pivot_disabled" },
+        { case_id: "c-1", outcome: "denied" },
+      ),
+      "tried to run a profile (auto-pivot is off for this case)",
+    ],
+    [ev("case.update", { fields: ["allow_auto_pivot"] }), "changed auto-pivot setting"],
     [ev("scan_run.cancel", {}, { case_id: "c-1" }), "cancelled a profile run"],
     [
       ev("result_cache.clear", { shuttle: "all", deleted: 2 }, { case_id: "c-1" }),

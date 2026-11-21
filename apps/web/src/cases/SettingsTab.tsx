@@ -15,7 +15,13 @@ import {
 import { ValidationError } from "../api/client";
 import { clearCaseResultCache } from "../api/resultCache";
 import { Modal } from "../components/Modal";
-import { LegalBasisFields, PersonEntitiesSwitch, PurposeField, RetentionField } from "./CaseFields";
+import {
+  AutoPivotSwitch,
+  LegalBasisFields,
+  PersonEntitiesSwitch,
+  PurposeField,
+  RetentionField,
+} from "./CaseFields";
 import { useCase } from "./caseContext";
 import { ChangeReasonDialog } from "./ChangeReasonDialog";
 import { describeCaseError } from "./errors";
@@ -28,6 +34,7 @@ interface SettingsValues {
   legalBasis: LegalBasis | "";
   legalBasisNote: string;
   allowPersonEntities: boolean;
+  allowAutoPivot: boolean;
   retentionDays: string;
 }
 
@@ -40,6 +47,7 @@ const SETTINGS_ERRORS_CLEARED_BY: Record<keyof SettingsValues, (keyof SettingsEr
   legalBasis: ["legal_basis", "legal_basis_note"],
   legalBasisNote: ["legal_basis_note"],
   allowPersonEntities: [],
+  allowAutoPivot: [],
   retentionDays: ["retention_days"],
 };
 
@@ -56,6 +64,7 @@ function valuesOf(value: Case): SettingsValues {
     legalBasis: value.legal_basis,
     legalBasisNote: value.legal_basis_note ?? "",
     allowPersonEntities: value.allow_person_entities,
+    allowAutoPivot: value.allow_auto_pivot,
     retentionDays: value.retention_days === null ? "" : String(value.retention_days),
   };
 }
@@ -73,12 +82,15 @@ function settingsChanges(original: Case, values: SettingsValues): CaseUpdate {
   if (values.allowPersonEntities !== original.allow_person_entities) {
     changes.allow_person_entities = values.allowPersonEntities;
   }
+  if (values.allowAutoPivot !== original.allow_auto_pivot) {
+    changes.allow_auto_pivot = values.allowAutoPivot;
+  }
   const retention = values.retentionDays.trim() === "" ? null : Number(values.retentionDays);
   if (retention !== original.retention_days) changes.retention_days = retention;
   return changes;
 }
 
-/** Owner-only: purpose, legal basis, person entities, retention, status and deletion. */
+/** Owner-only: purpose, legal basis, person entities, auto-pivot, retention, status, deletion. */
 export function SettingsTab() {
   const { case: current, setCase } = useCase();
   if (!can(current.my_role, "manage")) return <Forbidden />;
@@ -195,6 +207,12 @@ function SettingsForm({ value, onSaved }: { value: Case; onSaved: (next: Case) =
           checked={values.allowPersonEntities}
           onChange={(next) => {
             set("allowPersonEntities", next);
+          }}
+        />
+        <AutoPivotSwitch
+          checked={values.allowAutoPivot}
+          onChange={(next) => {
+            set("allowAutoPivot", next);
           }}
         />
         <RetentionField

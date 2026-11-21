@@ -11,8 +11,8 @@ test.skip(
   "Set NIGHTLOOM_E2E_EMAIL and NIGHTLOOM_E2E_PASSWORD (make e2e does this check too).",
 );
 
-test("an admin adds a scan profile and runs it on a domain", async ({ page }) => {
-  test.setTimeout(120_000);
+test("an admin adds a scan profile, runs it on a domain and pivots from it", async ({ page }) => {
+  test.setTimeout(240_000);
   const stamp = Date.now().toString(36);
   const profileName = `E2E local ${stamp}`;
   const title = `E2E profile run ${stamp}`;
@@ -44,6 +44,12 @@ test("an admin adds a scan profile and runs it on a domain", async ({ page }) =>
   await page.getByRole("button", { name: "Create case" }).click();
   await expect(page).toHaveURL(/\/cases\/[0-9a-f-]{36}\/graph$/);
   const caseUrl = new URL(page.url()).pathname.replace(/\/graph$/, "");
+  // The owner allows auto-pivot (no reason asked).
+  await page.goto(`${caseUrl}/settings`);
+  await page.getByRole("switch", { name: "Allow auto-pivot" }).check();
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByRole("switch", { name: "Allow auto-pivot" })).toBeChecked();
+  await page.goto(`${caseUrl}/graph`);
   await page.getByRole("button", { name: "Add your first entity" }).click();
   const add = page.getByRole("dialog", { name: "Add entity" });
   await add.getByRole("combobox", { name: "Type" }).selectOption({ label: "Domain" });
@@ -66,6 +72,16 @@ test("an admin adds a scan profile and runs it on a domain", async ({ page }) =>
   await expect(run.getByTestId("run-progress")).toHaveText("2 of 2 done");
   await run.getByRole("button", { name: "Show its jobs (2)" }).click();
   await expect(run.getByRole("list", { name: /^Jobs of / }).getByText("Succeeded")).toHaveCount(2);
+
+  // Pivot from the domain: the same profile, then on what it finds.
+  await section.getByRole("button", { name: "Pivot from here" }).click();
+  await expect(section.getByRole("status")).toHaveText(/^Queued 2 jobs\./);
+  const pivot = page
+    .getByRole("region", { name: "Jobs" })
+    .getByRole("listitem", { name: `${profileName} on 1 entity` })
+    .first();
+  await expect(pivot.getByTestId("run-pivot")).toHaveText(/^Pivot · \d+ new entit(y|ies) · hop/);
+  await expect(pivot.getByText("Finished")).toBeVisible({ timeout: 90_000 });
 
   // Clean up: the case, then the profile.
   await page.goto(`${caseUrl}/settings`);

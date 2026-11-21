@@ -129,6 +129,8 @@ class Case(Base):
     ethics_ack_version: Mapped[str] = mapped_column(Text)
     ethics_ack_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     allow_person_entities: Mapped[bool] = mapped_column(default=False, server_default=false())
+    # Whether profile runs here may continue from what they find (owners turn it on).
+    allow_auto_pivot: Mapped[bool] = mapped_column(default=False, server_default=false())
     status: Mapped[CaseStatus] = mapped_column(
         Enum(CaseStatus, name="case_status", values_callable=_values, validate_strings=True),
         default=CaseStatus.OPEN,

@@ -87,6 +87,8 @@ export interface Case {
   ethics_ack_version: string;
   ethics_ack_at: string;
   allow_person_entities: boolean;
+  /** Whether profile runs may pivot (continue from what they find); owners decide. */
+  allow_auto_pivot: boolean;
   status: CaseStatus;
   retention_days: number | null;
   created_by: string | null;
@@ -124,6 +126,7 @@ export interface CaseUpdate {
   legal_basis_note?: string | null;
   status?: CaseStatus;
   allow_person_entities?: boolean;
+  allow_auto_pivot?: boolean;
   retention_days?: number | null;
   change_reason?: string;
 }
@@ -203,6 +206,7 @@ export function isCase(value: unknown): value is Case {
     isLegalBasis(value["legal_basis"]) &&
     isNullableString(value["legal_basis_note"]) &&
     typeof value["allow_person_entities"] === "boolean" &&
+    typeof value["allow_auto_pivot"] === "boolean" &&
     isStatus(value["status"]) &&
     (value["retention_days"] === null || typeof value["retention_days"] === "number") &&
     isString(value["updated_at"]) &&

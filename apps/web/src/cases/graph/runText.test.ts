@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { makeJob, makeRun } from "../../test/caseFixtures";
-import { panelEntries, runProgressText, runStartedText } from "./runText";
+import {
+  panelEntries,
+  pivotCappedText,
+  pivotText,
+  runProgressText,
+  runStartedText,
+} from "./runText";
 
 describe("run text", () => {
   it("summarizes a run's progress", () => {
@@ -20,6 +26,19 @@ describe("run text", () => {
     expect(runStartedText(makeRun({ total: 1, released: 1 }))).toBe("Queued 1 job.");
     expect(runStartedText(makeRun({ total: 7, released: 5, skipped: 2 }))).toBe(
       "Queued 5 of 7 jobs; the other 2 start as these finish. 2 skipped.",
+    );
+  });
+
+  it("describes a pivot", () => {
+    expect(pivotText(makeRun())).toBeNull();
+    expect(pivotCappedText(makeRun())).toBeNull();
+    const pivot = makeRun({ pivot: true, max_depth: 2, max_jobs: 200, max_entities: 500 });
+    expect(pivotText({ ...pivot, discovered: 1 })).toBe("Pivot · 1 new entity · hop 0 of 2");
+    expect(pivotText({ ...pivot, discovered: 7, depth: 2 })).toBe(
+      "Pivot · 7 new entities · hop 2 of 2",
+    );
+    expect(pivotCappedText({ ...pivot, capped: "jobs" })).toBe(
+      "Reached the limit of 200 jobs, so it stopped adding entities.",
     );
   });
 

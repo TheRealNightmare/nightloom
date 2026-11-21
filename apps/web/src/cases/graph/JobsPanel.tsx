@@ -12,7 +12,13 @@ import {
   OVERDUE_MESSAGE,
   statsText,
 } from "./jobText";
-import { panelEntries, RUN_STATUS_LABELS, runProgressText } from "./runText";
+import {
+  panelEntries,
+  pivotCappedText,
+  pivotText,
+  RUN_STATUS_LABELS,
+  runProgressText,
+} from "./runText";
 
 export const FROM_CACHE_LABEL = "From cache";
 export const NO_JOBS_MESSAGE =
@@ -269,6 +275,8 @@ function RunRow({
   const [error, setError] = useState<string | null>(null);
   const label = runLabel(run);
   const done = run.jobs.succeeded + run.jobs.failed + run.jobs.cancelled;
+  const pivot = pivotText(run);
+  const capped = pivotCappedText(run);
   const cancel = () => {
     if (!onCancelRun) return;
     setCancelling(true);
@@ -317,6 +325,16 @@ function RunRow({
       <p className="job__stats" data-testid="run-progress">
         {runProgressText(run)}
       </p>
+      {pivot !== null && (
+        <p className="job__stats" data-testid="run-pivot">
+          {pivot}
+        </p>
+      )}
+      {capped !== null && (
+        <p className="job__meta" role="note">
+          {capped}
+        </p>
+      )}
       <p className="job__meta">
         started <RelativeTime iso={run.created_at} />
         {run.skipped > 0 && ` · ${String(run.skipped)} skipped`}

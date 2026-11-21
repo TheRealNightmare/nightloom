@@ -51,12 +51,26 @@ export interface ScanRun {
   skipped: number;
   jobs: Record<"queued" | "running" | "succeeded" | "failed" | "cancelled", number>;
   use_cache: boolean;
+  /** A pivot also scans the infrastructure entities it finds, within these limits. */
+  pivot: boolean;
+  max_depth: number;
+  max_jobs: number;
+  max_entities: number;
+  /** New entities a pivot found and planned, and the furthest hop queued so far. */
+  discovered: number;
+  depth: number;
+  /** Which limit stopped a pivot from adding more: "jobs" or "entities". */
+  capped: "jobs" | "entities" | null;
   created_at: string;
   finished_at: string | null;
 }
 
 /** At most this many entities per run (the API's limit). */
 export const MAX_RUN_ENTITIES = 25;
+/** A pivot's limits (the API's): hops from the starting entities, jobs, new entities. */
+export const PIVOT_MAX_DEPTH = 2;
+export const PIVOT_MAX_JOBS = 200;
+export const PIVOT_MAX_ENTITIES = 500;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -93,7 +107,20 @@ export function isScanRun(value: unknown): value is ScanRun {
     isString(value["status"]) &&
     (RUN_STATUSES as readonly string[]).includes(value["status"]) &&
     (value["stop_reason"] === null || isString(value["stop_reason"])) &&
-    ["entities", "total", "released", "waiting", "skipped"].every((key) => isCount(value[key])) &&
+    [
+      "entities",
+      "total",
+      "released",
+      "waiting",
+      "skipped",
+      "max_depth",
+      "max_jobs",
+      "max_entities",
+      "discovered",
+      "depth",
+    ].every((key) => isCount(value[key])) &&
+    typeof value["pivot"] === "boolean" &&
+    (value["capped"] === null || value["capped"] === "jobs" || value["capped"] === "entities") &&
     ["queued", "running", "succeeded", "failed", "cancelled"].every((key) => isCount(jobs[key])) &&
     typeof value["use_cache"] === "boolean" &&
     isString(value["created_at"]) &&
@@ -171,7 +198,7 @@ export async function deleteProfile(id: string, options: CallOptions = {}): Prom
 /** POST /cases/{id}/scan-runs (editors, open case): run a profile on entities. */
 export async function createRun(
   caseId: string,
-  body: { profile_id: string; entity_keys: string[]; fresh?: boolean },
+  body: { profile_id: string; entity_keys: string[]; fresh?: boolean; pivot?: boolean },
   options: CallOptions = {},
 ): Promise<ScanRun> {
   return expect(

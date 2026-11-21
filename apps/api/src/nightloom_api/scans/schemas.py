@@ -84,6 +84,8 @@ class RunCreate(BaseModel):
     ] = Field(min_length=1, max_length=MAX_RUN_ENTITIES)
     # Run every Shuttle even if its recent results are cached.
     fresh: bool = False
+    # Also continue from the infrastructure entities it finds (the case must allow it).
+    pivot: bool = False
 
 
 class RunJobs(BaseModel):
@@ -116,6 +118,15 @@ class RunOut(BaseModel):
     skipped: int
     jobs: RunJobs
     use_cache: bool
+    # A pivot: its limits, how many new entities it found, the furthest hop
+    # released so far, and which limit stopped its expansion ("jobs" or "entities").
+    pivot: bool
+    max_depth: int
+    max_jobs: int
+    max_entities: int
+    discovered: int
+    depth: int
+    capped: str | None
     created_at: datetime
     finished_at: datetime | None
 
@@ -136,6 +147,13 @@ class RunOut(BaseModel):
             skipped=run.skipped,
             jobs=RunJobs(**{status: counts.get(status, 0) for status in RunJobs.model_fields}),
             use_cache=run.use_cache,
+            pivot=run.pivot,
+            max_depth=run.max_depth,
+            max_jobs=run.max_jobs,
+            max_entities=run.max_entities,
+            discovered=run.discovered,
+            depth=max((int(item.get("depth", 0)) for item in run.plan[: run.released]), default=0),
+            capped=run.capped,
             created_at=run.created_at,
             finished_at=run.finished_at,
         )
