@@ -58,7 +58,7 @@ A new look for the web UI, in steps that each keep every screen working. All six
 - [x] Auto-pivot (*Pivot from here*, where the case owner allows it: the same profile on the infrastructure it finds, up to 2 hops, 200 jobs and 500 new entities; passive only, never through people or organizations)
 - [x] Scan profiles (four built in, admin-defined ones; runs on up to 25 entities, released within the per-user job limit, grouped in the Jobs panel, cancellable)
 - [x] Result cache (per-Shuttle lifetimes, per case by default, replay through the case's checks, *Run fresh*, admin and owner clearing)
-- [ ] Ownership verification before active Shuttles may run against a target
+- [x] Ownership verification before active Shuttles may run against a target (per case, owners; DNS TXT record or a file on the website; covers subdomains and the domain's addresses; re-checked daily, revoked when the proof disappears, 30 days unless renewed)
 
 ## M3 — Web recon and monitoring
 
