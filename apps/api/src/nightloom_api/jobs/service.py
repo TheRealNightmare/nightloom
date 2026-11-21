@@ -11,6 +11,7 @@ Errors are :class:`JobError` subclasses whose message is safe to return.
 import uuid
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from functools import lru_cache
 from typing import Any
 
@@ -222,8 +223,12 @@ async def create_job(
     user: User,
     actor: Actor,
     limit: int,
+    use_cache: bool = True,
 ) -> Job:
     """Insert a queued job and its ``job.create`` event, and commit.
+
+    ``use_cache=False`` (a fresh run) makes the worker run the Shuttle even
+    when recent results are cached; the run still refreshes the cache.
 
     Holds a per-user lock while counting, so concurrent requests cannot get
     past the limit of ``limit`` queued or running jobs together.
@@ -239,6 +244,7 @@ async def create_job(
         requested_by=user.id,
         status=JobStatus.QUEUED,
         stats=empty_stats(),
+        use_cache=use_cache,
     )
     db.add(job)
     await db.flush()
@@ -250,7 +256,12 @@ async def create_job(
         target_type=TargetType.JOB,
         target_id=job.id,
         case_id=case.id,
-        details=job_details(job, mode=meta.mode.value, sensitivity=meta.sensitivity.value),
+        details=job_details(
+            job,
+            mode=meta.mode.value,
+            sensitivity=meta.sensitivity.value,
+            **({} if use_cache else {"fresh": True}),
+        ),
     )
     await db.commit()
     return job
@@ -453,6 +464,15 @@ async def mark_running(db: AsyncSession, job_id: uuid.UUID) -> bool:
     started = result.first() is not None
     await db.commit()
     return started
+
+
+async def mark_from_cache(db: AsyncSession, job_id: uuid.UUID, fetched_at: datetime) -> None:
+    """Record that a running job is answered from the result cache. The caller commits."""
+    await db.execute(
+        update(Job)
+        .where(Job.id == job_id, Job.status == JobStatus.RUNNING)
+        .values(from_cache=True, cached_fetched_at=fetched_at)
+    )
 
 
 async def cancel_requested(db: AsyncSession, job_id: uuid.UUID) -> bool:

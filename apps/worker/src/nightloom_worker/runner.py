@@ -23,6 +23,17 @@
    by reason and logged without its value; it is never stored. More than
    :data:`MAX_FINDINGS_PER_JOB` findings stop the job. Cancellation is
    noticed between findings (polled every :data:`CANCEL_POLL_SECONDS`).
+   **Result cache.** For a passive Shuttle with a ``cache_ttl_seconds``
+   (and the cache not ``off``), a job that may reuse results first looks
+   for a valid entry for this Shuttle version and entity (see
+   :mod:`nightloom_api.jobs.result_cache`). On a hit, the stored raw
+   findings are **replayed** through exactly the same checks and writes, so
+   case-specific guardrails such as the person gate apply again, and
+   provenance keeps the time the source was asked; the job is marked
+   ``from_cache``. Otherwise the Shuttle runs, and a run that succeeds
+   stores what it yielded (before any check) for the next job. A cache
+   that cannot be read or written never fails a job: it runs, or succeeds,
+   without it.
 4. **Finish** with the status, the stats and a ``job.finish`` event, in one
    transaction. Any error ends as ``failed`` with one of a few fixed,
    user-safe messages: never an exception's text or a stack trace.
@@ -47,7 +58,7 @@ import uuid
 from collections import Counter
 from collections.abc import AsyncIterator, Awaitable, Collection
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from neo4j.exceptions import DriverError, Neo4jError
@@ -66,7 +77,7 @@ from nightloom_api.graph.repository import (
     PersonEntitiesDisabledError,
     RelationshipNotAllowedError,
 )
-from nightloom_api.jobs import deadlines, service
+from nightloom_api.jobs import deadlines, result_cache, service
 from nightloom_api.jobs.models import ACTIVE_STATUSES, Job, JobStatus, empty_stats
 from nightloom_core.entities import Sensitivity, build_entity, sensitivity_of
 from nightloom_core.normalize import NormalizationError, normalize, parse_key
@@ -74,7 +85,7 @@ from nightloom_core.provenance import Observation, Reliability
 from nightloom_core.relationships import RelationshipError, validate_relationship
 from nightloom_sdk.context import JobCancelledError, ShuttleContext
 from nightloom_sdk.findings import EntityFinding, RelationshipFinding
-from nightloom_sdk.meta import ShuttleMeta
+from nightloom_sdk.meta import Mode, ShuttleMeta
 from nightloom_sdk.registry import ShuttleRegistry
 from nightloom_sdk.shuttle import EntityInput, InputRefusedError, Shuttle, ShuttleFailedError
 
@@ -92,6 +103,9 @@ FINISH_GRACE_SECONDS = float(deadlines.FINISH_GRACE_SECONDS)
 CLEANUP_SECONDS = 5.0
 # A job still queued this long was lost by the broker.
 STALE_QUEUED = timedelta(hours=6)
+
+# The largest result-cache entry stored (bytes of JSON); larger runs are not cached.
+DEFAULT_CACHE_MAX_ENTRY_BYTES = 5 * 1024 * 1024
 
 # Who finishes jobs in the audit log; the requester is in the job itself.
 WORKER_ACTOR = Actor.system("worker")
@@ -121,6 +135,9 @@ class RunnerConfig:
     # Read when the config is built, so tests can shorten them.
     finish_grace_seconds: float = field(default_factory=lambda: FINISH_GRACE_SECONDS)
     cleanup_seconds: float = field(default_factory=lambda: CLEANUP_SECONDS)
+    # The result cache: off unless the worker passes the configured scope.
+    cache_scope: result_cache.CacheScope = result_cache.CacheScope.OFF
+    cache_max_entry_bytes: int = DEFAULT_CACHE_MAX_ENTRY_BYTES
 
 
 @dataclass
@@ -338,6 +355,7 @@ class JobRun:
         self.case_id = job.case_id
         self.requested_by = job.requested_by
         self.input_key = job.input_key
+        self.use_cache = job.use_cache
         self.shuttle = shuttle
         self.meta: ShuttleMeta = shuttle.meta
         self.stats = Stats()
@@ -345,6 +363,14 @@ class JobRun:
         self.cancel_event = asyncio.Event()
         # What the run is doing, for the log line when the deadline cuts it.
         self.phase = "starting"
+        # The result cache: when a live run started (the entry's fetched_at),
+        # the time to record for replayed findings (the entry's), the replayed
+        # entry, and what a live run yielded so far (None once too large).
+        self.fetched_at: datetime | None = None
+        self.observed_at: datetime | None = None
+        self.cached: result_cache.CachedResult | None = None
+        self.recorded: list[dict[str, Any]] | None = None
+        self.recorded_bytes = 0
 
     # --- guardrails ---
 
@@ -391,7 +417,7 @@ class JobRun:
         reliability: Reliability = rating[0]  # type: ignore[assignment]
         return Observation(
             source=self.meta.source,
-            observed_at=clock.utcnow(),
+            observed_at=self.observed_at or clock.utcnow(),
             confidence=self.meta.default_confidence if confidence is None else confidence,
             admiralty_reliability=reliability,
             admiralty_credibility=int(rating[1]),
@@ -485,6 +511,112 @@ class JobRun:
             except (SQLAlchemyError, OSError) as error:
                 logger.warning("Job %s: cancel check failed: %s", self.job_id, type(error).__name__)
 
+    # --- the result cache ---
+
+    @property
+    def cacheable(self) -> bool:
+        """Whether this Shuttle's results may be cached at all."""
+        return (
+            self.config.cache_scope != result_cache.CacheScope.OFF
+            and self.meta.mode == Mode.PASSIVE
+            and self.meta.cache_ttl_seconds > 0
+        )
+
+    @property
+    def cache_key(self) -> str:
+        return result_cache.cache_key(
+            scope=self.config.cache_scope,
+            case_id=self.case_id,
+            shuttle_name=self.meta.name,
+            shuttle_version=self.meta.version,
+            entity_key=self.input_key,
+        )
+
+    def record(self, finding: object) -> None:
+        """Keep a live run's finding for the cache, as JSON (before any check)."""
+        if self.recorded is None:
+            return
+        match finding:
+            case EntityFinding():
+                kind = "entity"
+            case RelationshipFinding():
+                kind = "relationship"
+            case _:
+                return  # rejected anyway, now and on every replay
+        item = {"kind": kind, **finding.model_dump(mode="json", exclude_none=True)}
+        self.recorded_bytes += result_cache.encoded_size([item], [])
+        if self.recorded_bytes > self.config.cache_max_entry_bytes:
+            self.recorded = None  # too large to store: stop keeping it
+            return
+        self.recorded.append(item)
+
+    async def load_cached(self) -> result_cache.CachedResult | None:
+        """A valid entry for this run, or None (also when the cache cannot be read)."""
+        try:
+            async with self.config.sessionmaker() as db, db.begin():
+                cached = await result_cache.lookup(
+                    db, key=self.cache_key, scope=self.config.cache_scope, now=clock.utcnow()
+                )
+                if cached is not None:
+                    await service.mark_from_cache(db, self.job_id, cached.fetched_at)
+                return cached
+        except (SQLAlchemyError, OSError) as error:
+            logger.warning(
+                "Job %s: reading the result cache failed (%s); running the Shuttle.",
+                self.job_id,
+                type(error).__name__,
+            )
+            return None
+
+    async def save_to_cache(self, notes: list[str]) -> None:
+        """Store a successful live run's findings for later jobs."""
+        if self.recorded is None or self.fetched_at is None:
+            return
+        async with self.config.sessionmaker() as db, db.begin():
+            stored = await result_cache.store(
+                db,
+                key=self.cache_key,
+                scope=self.config.cache_scope,
+                case_id=self.case_id,
+                shuttle_name=self.meta.name,
+                shuttle_version=self.meta.version,
+                entity_key=self.input_key,
+                findings=self.recorded,
+                notes=notes,
+                fetched_at=self.fetched_at,
+                ttl_seconds=self.meta.cache_ttl_seconds,
+                max_entry_bytes=self.config.cache_max_entry_bytes,
+            )
+        if not stored:
+            logger.info("Job %s: the results are too large to cache.", self.job_id)
+
+    async def replay(self, cached: result_cache.CachedResult) -> Outcome:
+        """Write a cache entry's findings with the same checks as a live run's."""
+        for item in cached.findings:
+            if self.cancel_event.is_set():
+                return Outcome(JobStatus.CANCELLED, reason="cancelled")
+            self.received += 1
+            if self.received > self.config.max_findings:
+                return Outcome(
+                    JobStatus.FAILED,
+                    error=ERROR_TOO_MANY.format(limit=f"{self.config.max_findings:,}"),
+                    reason="too_many_findings",
+                )
+            fields = {name: value for name, value in item.items() if name != "kind"}
+            try:
+                finding: EntityFinding | RelationshipFinding = (
+                    RelationshipFinding.model_validate(fields)
+                    if item.get("kind") == "relationship"
+                    else EntityFinding.model_validate(fields)
+                )
+                await self.store(finding)
+            except ValidationError:
+                self.stats.rejected["invalid_cached_finding"] += 1
+            except _RejectedError as rejected:
+                self.stats.rejected[rejected.reason] += 1
+                logger.info("Job %s: rejected a finding (%s).", self.job_id, rejected.reason)
+        return Outcome(JobStatus.SUCCEEDED)
+
     # --- running ---
 
     async def consume(self, ctx: ShuttleContext, entity: EntityInput) -> Outcome:
@@ -530,6 +662,7 @@ class JobRun:
                     )
                     return Outcome(JobStatus.FAILED, error=ERROR_SHUTTLE, reason="shuttle_error")
                 self.received += 1
+                self.record(finding)
                 if self.received > self.config.max_findings:
                     return Outcome(
                         JobStatus.FAILED,
@@ -573,8 +706,34 @@ class JobRun:
             async with asyncio.timeout_at(deadline):
                 self.phase = "checking guardrails"
                 entity = await self.check_start()
+                if self.cacheable and self.use_cache:
+                    self.phase = "reading the result cache"
+                    self.cached = await self.load_cached()
+                if self.cached is not None:
+                    self.phase = "writing cached findings"
+                    self.observed_at = self.cached.fetched_at
+                    logger.info(
+                        "Job %s: answered from the result cache (fetched %s).",
+                        self.job_id,
+                        self.cached.fetched_at.isoformat(),
+                    )
+                    return await self.replay(self.cached)
                 self.phase = "running the Shuttle"
-                return await self.consume(ctx, entity)
+                self.fetched_at = clock.utcnow()
+                if self.cacheable:
+                    self.recorded = []
+                outcome = await self.consume(ctx, entity)
+            if outcome.status == JobStatus.SUCCEEDED and not self.cancel_event.is_set():
+                # Never at the cost of the job: within what is left before the
+                # deadline (at most a clean-up step), and errors only logged.
+                seconds = min(deadline - loop.time(), self.config.cleanup_seconds)
+                if self.recorded is not None and seconds > 0:
+                    await bounded(
+                        self.save_to_cache(list(ctx.notes)),
+                        seconds,
+                        f"Job {self.job_id}: storing the results in the cache",
+                    )
+            return outcome
         except TimeoutError:
             logger.warning(
                 "Job %s: the deadline cut the run short after %.1f s, while %s.",
@@ -590,7 +749,7 @@ class JobRun:
         except _StopRunError as stop:
             return stop.outcome
         finally:
-            self.stats.notes = list(ctx.notes)
+            self.stats.notes = list(self.cached.notes if self.cached else ctx.notes)
             seconds = self.config.cleanup_seconds
             watcher.cancel()
             await bounded(watcher, seconds, f"Job {self.job_id}: stopping the cancel watcher")

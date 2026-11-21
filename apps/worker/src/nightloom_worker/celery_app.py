@@ -26,11 +26,16 @@ Every job reaches a final status (see :mod:`nightloom_api.jobs.deadlines`):
   (:data:`RUNNING_KEY`); a worker that starts again under the same name
   (``docker compose kill`` / ``start``) fails the jobs its previous run left,
   at once, before taking new ones.
+
+The reaper's thread also purges the **result cache** every
+:data:`PURGE_INTERVAL_SECONDS` (expired entries, then least recently used
+ones beyond ``NIGHTLOOM_RESULT_CACHE_MAX_BYTES``), under its own lock.
 """
 
 import asyncio
 import logging
 import threading
+import time
 import uuid
 from collections.abc import Callable, Coroutine
 from typing import Any
@@ -42,11 +47,12 @@ from redis import Redis as SyncRedis
 from redis.asyncio import Redis
 from redis.exceptions import LockError, RedisError
 
+from nightloom_api.auth import clock
 from nightloom_api.config import Settings, get_settings
 from nightloom_api.graph.repository import GraphRepository
 from nightloom_api.infra import db as db_infra
 from nightloom_api.infra import graph as graph_infra
-from nightloom_api.jobs import deadlines
+from nightloom_api.jobs import deadlines, result_cache
 from nightloom_api.jobs.models import JobStatus
 from nightloom_api.jobs.queue import TASK_NAME, create_celery
 from nightloom_api.logging import configure_logging
@@ -76,6 +82,11 @@ RECORD_SECONDS = 20.0
 REAP_INTERVAL_SECONDS = 60.0
 REAPER_LOCK = "nightloom:worker:reaper"
 REAPER_LOCK_SECONDS = 50
+# Purging the result cache (expired entries, then the size cap): how often,
+# from the reaper's thread, and the lock that lets one worker purge at a time.
+PURGE_INTERVAL_SECONDS = 600.0
+PURGE_LOCK = "nightloom:worker:result-cache-purge"
+PURGE_LOCK_SECONDS = 50
 # Which worker runs a job: the node name, until the job ends or the longest
 # possible run is over.
 RUNNING_KEY = "nightloom:worker:running:{job_id}"
@@ -132,6 +143,8 @@ async def _with_config(settings: Settings, job_id: uuid.UUID, *, abandoned: bool
             sessionmaker=db_infra.create_sessionmaker(engine),
             graph=GraphRepository(driver),
             registry=default_registry(),
+            cache_scope=result_cache.CacheScope(settings.result_cache_scope),
+            cache_max_entry_bytes=settings.result_cache_max_entry_bytes,
         )
         status = await run_job(job_id, config)
         return status.value if status is not None else None
@@ -288,6 +301,33 @@ async def reap_once(settings: Settings) -> int | None:
         await bounded(client.aclose(), CLOSE_SECONDS, "Closing the Valkey client")
 
 
+async def purge_cache_once(settings: Settings) -> result_cache.PurgeResult | None:
+    """Purge the result cache unless another worker holds the purge lock. None if it did."""
+    client = Redis.from_url(
+        settings.valkey_url.get_secret_value(),
+        socket_connect_timeout=RECORD_STATEMENT_SECONDS,
+        socket_timeout=RECORD_STATEMENT_SECONDS,
+    )
+    engine = db_infra.create_engine(settings, statement_timeout_seconds=PURGE_LOCK_SECONDS / 2)
+    try:
+        lock = client.lock(PURGE_LOCK, timeout=PURGE_LOCK_SECONDS, blocking=False)
+        if not await lock.acquire():
+            return None
+        try:
+            async with db_infra.create_sessionmaker(engine)() as db, db.begin():
+                return await result_cache.purge(
+                    db, now=clock.utcnow(), max_total_bytes=settings.result_cache_max_bytes
+                )
+        finally:
+            try:
+                await lock.release()
+            except LockError:  # expired meanwhile: another worker may hold it now
+                logger.warning("The result cache purge lock expired before the purge finished.")
+    finally:
+        await bounded(engine.dispose(), CLOSE_SECONDS, "Closing the database engine")
+        await bounded(client.aclose(), CLOSE_SECONDS, "Closing the Valkey client")
+
+
 async def reap_own(settings: Settings, hostname: str) -> int:
     """Fail the jobs this worker's previous run (same node name) left running. Returns how many.
 
@@ -329,7 +369,8 @@ class Reaper(threading.Thread):
     """Calls :func:`reap_once` now and every ``interval`` seconds until stopped.
 
     With a ``hostname``, it first fails what this worker's previous run left
-    (:func:`reap_own`).
+    (:func:`reap_own`). Every ``purge_interval`` seconds (and once at start)
+    it also purges the result cache (:func:`purge_cache_once`).
     """
 
     def __init__(
@@ -340,6 +381,11 @@ class Reaper(threading.Thread):
         interval: float = REAP_INTERVAL_SECONDS,
         reap: Callable[[Settings], Coroutine[Any, Any, int | None]] = reap_once,
         reap_own: Callable[[Settings, str], Coroutine[Any, Any, int]] = reap_own,
+        purge_interval: float = PURGE_INTERVAL_SECONDS,
+        purge: Callable[
+            [Settings], Coroutine[Any, Any, result_cache.PurgeResult | None]
+        ] = purge_cache_once,
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         super().__init__(name="nightloom-reaper", daemon=True)
         self.settings = settings
@@ -347,6 +393,10 @@ class Reaper(threading.Thread):
         self.interval = interval
         self._reap = reap
         self._reap_own = reap_own
+        self.purge_interval = purge_interval
+        self._purge = purge
+        self._monotonic = monotonic
+        self._last_purge: float | None = None
         self.stopped = threading.Event()
 
     def reap_previous_run(self) -> int | None:
@@ -370,10 +420,30 @@ class Reaper(threading.Thread):
             logger.warning("Failed %d abandoned job(s).", reaped)
         return reaped
 
+    def purge(self) -> result_cache.PurgeResult | None:
+        """Purge the result cache if ``purge_interval`` has passed since the last time."""
+        now = self._monotonic()
+        if self._last_purge is not None and now - self._last_purge < self.purge_interval:
+            return None
+        self._last_purge = now
+        try:
+            purged = run_bounded(asyncio.wait_for(self._purge(self.settings), PURGE_LOCK_SECONDS))
+        except Exception as error:  # the reaper keeps going
+            logger.warning("Purging the result cache failed: %s.", type(error).__name__)
+            return None
+        if purged is not None and (purged.expired or purged.evicted):
+            logger.info(
+                "Result cache: removed %d expired and %d least recently used entries.",
+                purged.expired,
+                purged.evicted,
+            )
+        return purged
+
     def run(self) -> None:
         self.reap_previous_run()
         while not self.stopped.is_set():
             self.reap()
+            self.purge()
             self.stopped.wait(self.interval)
 
     def stop(self) -> None:

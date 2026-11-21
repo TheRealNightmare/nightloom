@@ -40,7 +40,7 @@ from nightloom_api.config import Settings, get_settings
 from nightloom_api.graph.repository import GraphRepository
 from nightloom_api.infra import Infra
 from nightloom_api.infra import graph as graph_infra
-from nightloom_api.jobs import service
+from nightloom_api.jobs import result_cache, service
 from nightloom_api.jobs.models import Job, JobStatus, empty_stats
 from nightloom_core.entities import EntityType, Sensitivity
 from nightloom_core.relationships import RelationType
@@ -1318,3 +1318,242 @@ async def test_a_job_started_long_ago_gets_no_time_at_all(world: World) -> None:
         assert await run_job(job_id, world.config(shuttle)) == JobStatus.FAILED
     assert time.monotonic() - began < 2
     assert (await world.finish_event(job_id)).details["reason"] == "timeout"
+
+
+# --- the result cache ----------------------------------------------------------------------
+
+
+def cached_shuttle(steps: Sequence[object], **overrides: Any) -> tuple[type[Shuttle], list[int]]:
+    """A scripted Shuttle with a cache lifetime, and a list counting its runs."""
+    runs: list[int] = []
+
+    async def counted() -> None:
+        runs.append(1)
+
+    values: dict[str, Any] = {"name": "cached", "cache_ttl_seconds": 3600, **overrides}
+    return scripted([counted, *steps], **values), runs
+
+
+def cache_config(world: World, *shuttles: type[Shuttle], **overrides: Any) -> RunnerConfig:
+    return world.config(*shuttles, cache_scope=result_cache.CacheScope.CASE, **overrides)
+
+
+async def cache_entries(world: World) -> list[result_cache.ResultCacheEntry]:
+    async with world.infra.sessionmaker() as db:
+        return list((await db.execute(select(result_cache.ResultCacheEntry))).scalars())
+
+
+async def queue_fresh(world: World, shuttle: type[Shuttle], **kwargs: Any) -> uuid.UUID:
+    job_id = await world.queue(shuttle, **kwargs)
+    async with world.infra.sessionmaker() as db:
+        await db.execute(update(Job).where(Job.id == job_id).values(use_cache=False))
+        await db.commit()
+    return job_id
+
+
+async def test_a_second_job_replays_the_cached_findings(
+    world: World, caplog: pytest.LogCaptureFixture
+) -> None:
+    shuttle, runs = cached_shuttle(
+        [domain("example.co.uk"), sub("example.co.uk", "www.shop.example.co.uk")]
+    )
+    config = cache_config(world, shuttle)
+    repo = GraphRepository(world.infra.graph)
+    first = await world.queue(shuttle)
+    assert await run_job(first, config) == JobStatus.SUCCEEDED
+    before = await repo.get_entity(world.case_id, "domain:example.co.uk")
+    assert before is not None
+    live = await world.job(first)
+    assert (live.from_cache, live.cached_fetched_at) == (False, None)
+    [entry] = await cache_entries(world)
+    assert (entry.scope, entry.case_id, entry.finding_count) == ("case", world.case_id, 2)
+    assert entry.findings[0] == {"kind": "entity", "type": "domain", "value": "example.co.uk"}
+    assert entry.expires_at - entry.fetched_at == timedelta(hours=1)
+
+    second = await world.queue(shuttle)
+    with caplog.at_level(logging.INFO):
+        assert await run_job(second, config) == JobStatus.SUCCEEDED
+    assert runs == [1]  # the Shuttle ran once
+    replayed = await world.job(second)
+    assert replayed.from_cache is True
+    assert replayed.cached_fetched_at == entry.fetched_at
+    assert replayed.stats["entities_updated"] == 1
+    assert replayed.stats["relationships_updated"] == 1
+    assert "answered from the result cache" in caplog.text
+    [entry] = await cache_entries(world)
+    assert entry.hits == 1
+    # Provenance keeps the time the source was asked: the replay does not
+    # make the entity look more recently seen than the live run did.
+    after = await repo.get_entity(world.case_id, "domain:example.co.uk")
+    assert after is not None
+    assert after.entity.provenance.last_seen == before.entity.provenance.last_seen
+    assert entry.fetched_at <= before.entity.provenance.first_seen
+
+
+async def test_fresh_runs_and_new_versions_run_the_shuttle(world: World) -> None:
+    shuttle, runs = cached_shuttle([domain("example.co.uk")])
+    config = cache_config(world, shuttle)
+    assert await run_job(await world.queue(shuttle), config) == JobStatus.SUCCEEDED
+    [before] = await cache_entries(world)
+    fresh = await queue_fresh(world, shuttle)
+    assert await run_job(fresh, config) == JobStatus.SUCCEEDED
+    assert runs == [1, 1]
+    assert (await world.job(fresh)).from_cache is False
+    [after] = await cache_entries(world)
+    assert after.fetched_at > before.fetched_at  # a fresh run refreshes the entry
+
+    upgraded, upgraded_runs = cached_shuttle([domain("example.co.uk")], version="1.1.0")
+    job_id = await world.queue(upgraded)
+    assert await run_job(job_id, cache_config(world, upgraded)) == JobStatus.SUCCEEDED
+    assert upgraded_runs == [1]
+    assert (await world.job(job_id)).from_cache is False
+    assert len(await cache_entries(world)) == 2
+
+
+async def test_expired_entries_and_other_cases_are_not_reused(world: World) -> None:
+    shuttle, runs = cached_shuttle([domain("example.co.uk")])
+    config = cache_config(world, shuttle)
+    assert await run_job(await world.queue(shuttle), config) == JobStatus.SUCCEEDED
+    async with world.infra.sessionmaker() as db:
+        await db.execute(update(result_cache.ResultCacheEntry).values(expires_at=clock.utcnow()))
+        await db.commit()
+    assert await run_job(await world.queue(shuttle), config) == JobStatus.SUCCEEDED
+    assert runs == [1, 1]
+    # Per case by default: another case asks the source itself.
+    other = await world.person_case()
+    job_id = await world.queue(shuttle, case_id=other)
+    assert await run_job(job_id, config) == JobStatus.SUCCEEDED
+    assert runs == [1, 1, 1]
+    assert (await world.job(job_id)).from_cache is False
+
+
+async def test_only_complete_successful_runs_are_cached(world: World) -> None:
+    async def boom() -> None:
+        raise ShuttleFailedError(FailureReason.SOURCE_UNAVAILABLE)
+
+    failing, _ = cached_shuttle([domain("example.co.uk"), boom])
+    assert await run_job(await world.queue(failing), cache_config(world, failing)) == (
+        JobStatus.FAILED
+    )
+    too_many, _ = cached_shuttle([domain(f"h{i}.example.co.uk") for i in range(5)])
+    status = await run_job(
+        await world.queue(too_many), cache_config(world, too_many, max_findings=3)
+    )
+    assert status == JobStatus.FAILED
+    assert await cache_entries(world) == []
+
+
+async def test_the_cache_is_off_unless_configured_and_never_for_uncached_shuttles(
+    world: World,
+) -> None:
+    shuttle, runs = cached_shuttle([domain("example.co.uk")])
+    for _ in range(2):
+        assert await run_job(await world.queue(shuttle), world.config(shuttle)) == (
+            JobStatus.SUCCEEDED
+        )
+    uncached, uncached_runs = cached_shuttle([domain("example.co.uk")], cache_ttl_seconds=0)
+    for _ in range(2):
+        job_id = await world.queue(uncached)
+        assert await run_job(job_id, cache_config(world, uncached)) == JobStatus.SUCCEEDED
+    assert (runs, uncached_runs) == ([1, 1], [1, 1])
+    assert await cache_entries(world) == []
+
+
+async def test_too_large_results_are_not_cached(world: World) -> None:
+    shuttle, _ = cached_shuttle([domain(f"h{i}.example.co.uk") for i in range(20)])
+    config = cache_config(world, shuttle, cache_max_entry_bytes=200)
+    assert await run_job(await world.queue(shuttle), config) == JobStatus.SUCCEEDED
+    assert await cache_entries(world) == []
+
+
+async def test_replay_applies_the_case_guardrails_again(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The raw findings are cached; each replay checks them against its own case."""
+    shuttle, runs = cached_shuttle(
+        [
+            domain("example.co.uk"),
+            EntityFinding(type=EntityType.EMAIL, value="alex@example.co.uk"),
+            RelationshipFinding(
+                type=RelationType.HAS_EMAIL,
+                source=EntityRef(type=EntityType.DOMAIN, value="example.co.uk"),
+                target=EntityRef(type=EntityType.EMAIL, value="alex@example.co.uk"),
+            ),
+        ],
+        output_entity_types={EntityType.DOMAIN, EntityType.EMAIL},
+        output_relationship_types={RelationType.HAS_EMAIL},
+        sensitivity=Sensitivity.PERSON,
+    )
+    config = world.config(shuttle, cache_scope=result_cache.CacheScope.INSTANCE)
+    person_case = await world.person_case()
+    first = await world.queue(shuttle, case_id=person_case)
+    assert await run_job(first, config) == JobStatus.SUCCEEDED
+    [entry] = await cache_entries(world)
+    assert (entry.scope, entry.case_id, entry.finding_count) == ("instance", None, 3)
+    nodes, _ = await world.graph(person_case)
+    assert "email:alex@example.co.uk" in nodes
+
+    # Another case, whose person gate is turned off after the job started:
+    # the replay rejects the person findings, as a live run would.
+    second_case = await world.person_case()
+    replay = runner.JobRun.replay
+
+    async def gate_off_then_replay(
+        self: runner.JobRun, cached: result_cache.CachedResult
+    ) -> runner.Outcome:
+        await world.set_case(second_case, allow_person_entities=False)
+        return await replay(self, cached)
+
+    monkeypatch.setattr(runner.JobRun, "replay", gate_off_then_replay)
+    job_id = await world.queue(shuttle, case_id=second_case)
+    assert await run_job(job_id, config) == JobStatus.SUCCEEDED
+    assert runs == [1]
+    job = await world.job(job_id)
+    assert job.from_cache is True
+    assert job.stats["rejected_reasons"] == {"person_entities_disabled": 2}
+    nodes, edges = await world.graph(second_case)
+    assert "domain:example.co.uk" in nodes
+    assert not any(key.startswith("email:") for key in nodes)
+    assert edges == set()
+
+
+def noting_shuttle(runs: list[int]) -> type[Shuttle]:
+    """A cached Shuttle that adds a note to its job."""
+
+    class Noting(Shuttle):
+        meta = globals()["meta"](name="noting", cache_ttl_seconds=3600)
+
+        async def run(self, ctx: ShuttleContext, entity: EntityInput) -> AsyncIterator[Any]:
+            runs.append(1)
+            ctx.note("Results were capped.")
+            yield domain("example.co.uk")
+
+    return Noting
+
+
+async def test_notes_are_cached_and_a_broken_cache_never_fails_a_job(
+    world: World, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    runs: list[int] = []
+    shuttle = noting_shuttle(runs)
+    config = cache_config(world, shuttle)
+    assert await run_job(await world.queue(shuttle), config) == JobStatus.SUCCEEDED
+    [entry] = await cache_entries(world)
+    assert entry.notes == ["Results were capped."]
+    replayed = await world.queue(shuttle)
+    assert await run_job(replayed, config) == JobStatus.SUCCEEDED
+    assert (await world.job(replayed)).stats["notes"] == ["Results were capped."]
+    assert runs == [1]
+
+    async def broken(*args: Any, **kwargs: Any) -> Any:
+        raise OSError("down")
+
+    monkeypatch.setattr(result_cache, "lookup", broken)
+    monkeypatch.setattr(result_cache, "store", broken)
+    job_id = await world.queue(shuttle)
+    with caplog.at_level(logging.INFO):
+        assert await run_job(job_id, config) == JobStatus.SUCCEEDED
+    assert runs == [1, 1]  # ran live instead
+    assert (await world.job(job_id)).from_cache is False
+    assert "reading the result cache failed (OSError)" in caplog.text
+    assert "storing the results in the cache failed: OSError" in caplog.text

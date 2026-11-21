@@ -14,6 +14,7 @@ import nightloom_api.audit.models
 import nightloom_api.auth.models
 import nightloom_api.cases.models
 import nightloom_api.jobs.models
+import nightloom_api.jobs.result_cache
 import nightloom_api.layouts.models
 import nightloom_api.views.models  # noqa: F401
 from nightloom_api.config import get_settings
