@@ -4,7 +4,7 @@ The metadata is checked when the Shuttle class is defined and again when the
 registry loads it. The runner (and the API, before it queues a job) relies on
 it: a Shuttle may only emit the entity and relationship types it declares,
 ``person`` Shuttles only run in cases that allow person entities, and
-``active`` Shuttles are refused until ownership verification exists.
+``active`` Shuttles only run on targets whose ownership a case verified.
 """
 
 import re

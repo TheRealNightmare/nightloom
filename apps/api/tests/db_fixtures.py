@@ -52,12 +52,18 @@ class RecordingJobQueue:
 
     def __init__(self) -> None:
         self.sent: list[tuple[uuid.UUID, int]] = []
+        self.checks: list[uuid.UUID] = []
         self.fail = False
 
     async def enqueue(self, job_id: uuid.UUID, *, timeout_seconds: int) -> None:
         if self.fail:
             raise ConnectionError("broker unavailable")
         self.sent.append((job_id, timeout_seconds))
+
+    async def enqueue_check(self, verification_id: uuid.UUID) -> None:
+        if self.fail:
+            raise ConnectionError("broker unavailable")
+        self.checks.append(verification_id)
 
     def close(self) -> None:
         pass
@@ -182,8 +188,8 @@ async def _reset_state(infra: Infra) -> None:
         await conn.execute(text(f"ALTER TABLE audit_events DISABLE TRIGGER {APPEND_ONLY_TRIGGER}"))
         await conn.execute(
             text(
-                "TRUNCATE audit_events, jobs, result_cache, scan_runs, scan_profiles, "
-                "case_members, cases, users, sessions RESTART IDENTITY CASCADE"
+                "TRUNCATE audit_events, jobs, result_cache, ownership_verifications, scan_runs, "
+                "scan_profiles, case_members, cases, users, sessions RESTART IDENTITY CASCADE"
             )
         )
         await conn.execute(text(f"ALTER TABLE audit_events ENABLE TRIGGER {APPEND_ONLY_TRIGGER}"))

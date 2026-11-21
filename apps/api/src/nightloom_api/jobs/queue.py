@@ -26,6 +26,11 @@ from nightloom_api.jobs.deadlines import (
 from nightloom_sdk.meta import MAX_TIMEOUT_SECONDS
 
 TASK_NAME = "nightloom.run_job"
+# Looks for an ownership verification's proof (see nightloom_api.ownership).
+CHECK_TASK_NAME = "nightloom.check_ownership"
+# Seconds a check may take, at most (DNS and one HTTPS request, with retries).
+CHECK_SOFT_LIMIT_SECONDS = 60
+CHECK_HARD_LIMIT_SECONDS = 90
 QUEUE_NAME = "shuttles"
 # The broker re-delivers a task not acknowledged within this time. It must be
 # longer than any task can run, or a long job would run twice.
@@ -69,6 +74,9 @@ class JobQueue(Protocol):
     async def enqueue(self, job_id: uuid.UUID, *, timeout_seconds: int) -> None:
         """Hand the (committed) job to the worker."""
 
+    async def enqueue_check(self, verification_id: uuid.UUID) -> None:
+        """Ask the worker to look for an ownership verification's proof."""
+
     def close(self) -> None:
         """Release connections."""
 
@@ -94,6 +102,19 @@ class CeleryJobQueue:
         )
         await anyio.to_thread.run_sync(send)
 
+    async def enqueue_check(self, verification_id: uuid.UUID) -> None:
+        send = partial(
+            self._app.send_task,
+            CHECK_TASK_NAME,
+            args=[str(verification_id)],
+            queue=QUEUE_NAME,
+            soft_time_limit=CHECK_SOFT_LIMIT_SECONDS,
+            time_limit=CHECK_HARD_LIMIT_SECONDS,
+            retry=True,
+            retry_policy={"max_retries": 2, "interval_start": 0.2, "interval_step": 0.5},
+        )
+        await anyio.to_thread.run_sync(send)
+
     def close(self) -> None:
         self._app.close()
 
@@ -105,6 +126,9 @@ def get_job_queue(request: Request) -> JobQueue:
 
 
 __all__ = [
+    "CHECK_HARD_LIMIT_SECONDS",
+    "CHECK_SOFT_LIMIT_SECONDS",
+    "CHECK_TASK_NAME",
     "HARD_LIMIT_MARGIN_SECONDS",
     "QUEUE_NAME",
     "SOFT_LIMIT_MARGIN_SECONDS",

@@ -42,6 +42,7 @@ from nightloom_api.infra import Infra
 from nightloom_api.infra import graph as graph_infra
 from nightloom_api.jobs import result_cache, service
 from nightloom_api.jobs.models import Job, JobStatus, empty_stats
+from nightloom_api.ownership.models import OwnershipVerification
 from nightloom_core.entities import EntityType, Sensitivity
 from nightloom_core.relationships import RelationType
 from nightloom_sdk import (
@@ -838,7 +839,59 @@ async def test_shuttle_became_active(world: World) -> None:
     active = scripted([domain("example.co.uk")], mode=Mode.ACTIVE)
     job_id = await world.queue(passive)
     assert await run_job(job_id, world.config(active)) == JobStatus.FAILED
-    await expect_denied(world, job_id, "active_shuttle", service.ERROR_ACTIVE)
+    await expect_denied(world, job_id, "target_not_verified", service.ERROR_ACTIVE)
+
+
+async def _verify(world: World, domain: str, addresses: list[str]) -> None:
+    now = clock.utcnow()
+    async with world.infra.sessionmaker() as db:
+        db.add(
+            OwnershipVerification(
+                case_id=world.case_id,
+                domain=domain,
+                method="dns_txt",
+                token="t",
+                status="verified",
+                checked_at=now,
+                verified_at=now,
+                expires_at=now + timedelta(days=30),
+                addresses=addresses,
+            )
+        )
+        await db.commit()
+
+
+class _Addresses:
+    """Stands in for the ownership prover: a domain's addresses now (None: no answer)."""
+
+    def __init__(self, found: tuple[str, ...] | None) -> None:
+        self.found = found
+        self.asked: list[str] = []
+
+    async def addresses(self, domain: str) -> tuple[str, ...] | None:
+        self.asked.append(domain)
+        return self.found
+
+
+async def test_active_shuttles_run_on_verified_domains(world: World) -> None:
+    active = scripted([domain("example.co.uk")], mode=Mode.ACTIVE)
+    await _verify(world, "shop.example.co.uk", [])
+    job_id = await world.queue(active)
+    assert await run_job(job_id, world.config(active)) == JobStatus.SUCCEEDED
+
+
+async def test_an_address_is_confirmed_by_resolving_its_domain_again(world: World) -> None:
+    active = scripted([], input_types={EntityType.IP_ADDRESS}, output_relationship_types=set())
+    await _verify(world, "shop.example.co.uk", ["192.0.2.80"])
+    await world.add_entity(world.case_id, "ip_address", "192.0.2.80")
+    still = _Addresses(("192.0.2.80",))
+    job_id = await world.queue(active, "ip_address:192.0.2.80")
+    assert await run_job(job_id, world.config(active, prover=still)) == JobStatus.SUCCEEDED
+    assert still.asked == ["shop.example.co.uk"]
+    for prover in (_Addresses(("192.0.2.81",)), _Addresses(None), None):
+        job_id = await world.queue(active, "ip_address:192.0.2.80")
+        assert await run_job(job_id, world.config(active, prover=prover)) == JobStatus.FAILED
+        await expect_denied(world, job_id, "target_not_verified", service.ERROR_ACTIVE)
 
 
 async def test_input_type_no_longer_accepted(world: World) -> None:

@@ -79,6 +79,8 @@ from nightloom_api.graph.repository import (
 )
 from nightloom_api.jobs import deadlines, result_cache, service
 from nightloom_api.jobs.models import ACTIVE_STATUSES, Job, JobStatus, empty_stats
+from nightloom_api.ownership import service as ownership
+from nightloom_api.ownership.models import OwnershipVerification
 from nightloom_core.entities import Sensitivity, build_entity, sensitivity_of
 from nightloom_core.normalize import NormalizationError, normalize, parse_key
 from nightloom_core.provenance import Observation, Reliability
@@ -88,6 +90,7 @@ from nightloom_sdk.findings import EntityFinding, RelationshipFinding
 from nightloom_sdk.meta import Mode, ShuttleMeta
 from nightloom_sdk.registry import ShuttleRegistry
 from nightloom_sdk.shuttle import EntityInput, InputRefusedError, Shuttle, ShuttleFailedError
+from nightloom_worker.ownership import AddressResolver
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +141,9 @@ class RunnerConfig:
     # The result cache: off unless the worker passes the configured scope.
     cache_scope: result_cache.CacheScope = result_cache.CacheScope.OFF
     cache_max_entry_bytes: int = DEFAULT_CACHE_MAX_ENTRY_BYTES
+    # Resolves a verified domain again before an active Shuttle runs on one of
+    # its addresses; without one, such runs are refused.
+    prover: AddressResolver | None = None
 
 
 @dataclass
@@ -375,7 +381,7 @@ class JobRun:
     # --- guardrails ---
 
     @contextlib.asynccontextmanager
-    async def locked_case(self) -> AsyncIterator[Case]:
+    async def locked(self) -> AsyncIterator[tuple[AsyncSession, Case]]:
         """The open case, share-locked, with the requester still allowed; else stop the run."""
         async with self.config.sessionmaker() as db, db.begin():
             case = await service.lock_case_for_job(db, self.case_id)
@@ -384,29 +390,58 @@ class JobRun:
             assert case is not None  # noqa: S101 - case_is_open checked it
             if not await service.requester_may_run(db, self.case_id, self.requested_by):
                 raise _StopRunError(_denied(service.ERROR_NOT_ALLOWED, "requester_not_allowed"))
+            yield db, case
+
+    @contextlib.asynccontextmanager
+    async def locked_case(self) -> AsyncIterator[Case]:
+        async with self.locked() as (_db, case):
             yield case
 
     async def check_start(self) -> EntityInput:
-        """Every guardrail, again, at execution time. Returns the input entity."""
+        """Every guardrail, again, at execution time. Returns the input entity.
+
+        An active Shuttle needs a verification of the case that covers its
+        target; one covering an IP address through its domain's addresses is
+        confirmed by resolving the domain again, now.
+        """
         input_type = parse_key(self.input_key)[0]
-        async with self.locked_case() as case:
+        covering: OwnershipVerification | None = None
+        async with self.locked() as (db, case):
+            if self.meta.mode == Mode.ACTIVE:
+                covering = await ownership.covers(db, self.case_id, self.input_key, clock.utcnow())
             try:
                 service.check_shuttle(
                     self.meta,
                     input_type=input_type,
                     allow_person_entities=case.allow_person_entities,
+                    target_verified=covering is not None,
                 )
             except service.GuardrailError as error:
                 raise _StopRunError(_denied(str(error), error.reason)) from error
+            domain = covering.domain if covering is not None else None
             detail = await self.config.graph.get_entity(self.case_id, self.input_key)
             if detail is None:
                 raise _StopRunError(
                     Outcome(JobStatus.FAILED, error=service.ERROR_ENTITY_GONE, reason="entity_gone")
                 )
+        if domain is not None:
+            await self.confirm_address(domain)
         entity = detail.entity
         return EntityInput(
             type=entity.type, value=entity.value, key=entity.key, properties=entity.properties
         )
+
+    async def confirm_address(self, domain: str) -> None:
+        """An address target must still be one of the verified domain's addresses."""
+        target = ownership.target_of(self.input_key)
+        if target is None or target.address is None:
+            return
+        if target.host is not None and ownership.under(target.host, domain):
+            return
+        prover = self.config.prover
+        found = await prover.addresses(domain) if prover is not None else None
+        if found is None or target.address not in found:
+            raise _StopRunError(_denied(service.ERROR_ACTIVE, "target_not_verified"))
 
     # --- findings ---
 

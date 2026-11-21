@@ -121,7 +121,7 @@ def check_shuttles(names: Sequence[str], registry: ShuttleRegistry) -> tuple[str
         if shuttle.meta.mode != Mode.PASSIVE:
             raise ProfileError(
                 f"{name} is an active Shuttle; profiles may only hold passive Shuttles "
-                "until ownership verification is available."
+                "(active ones run one at a time, on verified targets)."
             )
     return unique
 

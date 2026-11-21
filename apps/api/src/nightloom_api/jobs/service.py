@@ -51,7 +51,10 @@ _USER_JOBS_LOCK_CLASS = 0x6E6A  # "nj"
 _UNAUDITED_STATS = frozenset({"entities_touched", "notes"})
 
 # Fixed, user-safe messages: the only text ever stored in jobs.error.
-ERROR_ACTIVE = "Active Shuttles cannot run until ownership verification is available."
+ERROR_ACTIVE = (
+    "Active Shuttles run only on targets whose ownership is verified in this case. "
+    "A case owner can verify the domain in the case's settings."
+)
 ERROR_PERSON = "This case does not allow person-related entities."
 ERROR_CASE_NOT_OPEN = "This case is not open. Reopen it to run Shuttles."
 ERROR_NOT_ALLOWED = "The requester may no longer run Shuttles in this case."
@@ -131,13 +134,18 @@ def get_shuttle_registry() -> ShuttleRegistry:
 
 
 def check_shuttle(
-    meta: ShuttleMeta, *, input_type: EntityType, allow_person_entities: bool
+    meta: ShuttleMeta,
+    *,
+    input_type: EntityType,
+    allow_person_entities: bool,
+    target_verified: bool = False,
 ) -> None:
     """Raise :class:`GuardrailError` unless ``meta`` may run on ``input_type`` in such a case.
 
     - the Shuttle accepts the input's type (422);
-    - it is passive: active Shuttles are refused until ownership verification
-      exists (403, ``active_shuttle``);
+    - it is passive, or ``target_verified``: an active Shuttle runs only on a
+      target a verification of the case covers (403, ``target_not_verified``;
+      see :mod:`nightloom_api.ownership`);
     - a person-sensitive Shuttle, or a person-related input, needs a case
       that allows person entities (403, ``person_entities_disabled``).
     """
@@ -146,8 +154,8 @@ def check_shuttle(
             f"This Shuttle does not accept {EntityType(input_type).value} entities.",
             reason="input_type_not_accepted",
         )
-    if meta.mode != Mode.PASSIVE:
-        raise GuardrailError(ERROR_ACTIVE, reason="active_shuttle", status_code=403)
+    if meta.mode != Mode.PASSIVE and not target_verified:
+        raise GuardrailError(ERROR_ACTIVE, reason="target_not_verified", status_code=403)
     personal = Sensitivity.PERSON in (meta.sensitivity, sensitivity_of(input_type))
     if personal and not allow_person_entities:
         raise GuardrailError(ERROR_PERSON, reason="person_entities_disabled", status_code=403)

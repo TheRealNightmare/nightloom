@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from nightloom_api.audit import service as audit
 from nightloom_api.audit.actions import AuditAction, AuditOutcome, TargetType
 from nightloom_api.audit.listing import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
+from nightloom_api.auth import clock
 from nightloom_api.cases.access import Capability, CaseAccess, case_access, record_denial
 from nightloom_api.cases.service import InvalidCursorError
 from nightloom_api.config import Settings, get_settings
@@ -31,7 +32,9 @@ from nightloom_api.jobs import service
 from nightloom_api.jobs.models import JobStatus
 from nightloom_api.jobs.queue import JobQueue, get_job_queue
 from nightloom_api.jobs.schemas import JobCreate, JobOut, JobPage
+from nightloom_api.ownership import service as ownership
 from nightloom_api.routers.graph import GRAPH_UNAVAILABLE, canonical_key, ensure_open
+from nightloom_sdk.meta import Mode
 from nightloom_sdk.registry import ShuttleRegistry
 
 logger = logging.getLogger(__name__)
@@ -115,8 +118,8 @@ async def create_job(
 ) -> JobOut:
     """Run a Shuttle on an entity of this case (editors and owners; the case must be open).
 
-    The Shuttle must accept the entity's type and be passive (active Shuttles
-    are refused with 403 until ownership verification exists); a
+    The Shuttle must accept the entity's type; an active one runs only on a
+    target covered by a verified domain of the case (else 403); a
     person-related Shuttle needs a case that allows person entities (403).
     Each user may have at most five queued or running jobs (429).
 
@@ -131,9 +134,16 @@ async def create_job(
         await db.rollback()
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unknown Shuttle.")
     meta = shuttle.meta
+    verified = (
+        meta.mode == Mode.ACTIVE
+        and await ownership.covers(db, access.case.id, body.entity_key, clock.utcnow()) is not None
+    )
     try:
         service.check_shuttle(
-            meta, input_type=entity_type, allow_person_entities=access.case.allow_person_entities
+            meta,
+            input_type=entity_type,
+            allow_person_entities=access.case.allow_person_entities,
+            target_verified=verified,
         )
     except service.GuardrailError as error:
         await _refuse(db, make_session, request, access, error, shuttle=meta.name)
