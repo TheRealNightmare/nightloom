@@ -215,6 +215,8 @@ async def delete_profile(
 
 
 async def _run_out(db: AsyncSession, run_id: uuid.UUID, case_id: uuid.UUID) -> RunOut:
+    # Releasing (another session) may have changed the run since this one loaded it.
+    db.expire_all()
     run = await service.get_run(db, case_id, run_id)
     counts = await service.job_counts(db, [run.id])
     return RunOut.build(run, counts[run.id])
