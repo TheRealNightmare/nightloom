@@ -1,7 +1,7 @@
 {
-  "$comment": "Gzip bytes (scripts/check-bundle-size.mjs). signin: the sign-in page's initial JavaScript and CSS, 160,344 B in U6 plus 2 KB; it must never contain three.js (checked separately). loom: the sign-in loom fetched when the browser is idle (its own 2.5 KB chunk and the shared three-vendor chunk), 187,897 B plus 4 KB. graph2d: what the 2D graph loads, 288,407 B before the 3D view (U5), 292,466 B with the sign-in loom's geometry and still drawing in the entry (U6), plus 2 KB. graph3d: the lazily loaded 3D view on top of it, 250 KB.",
+  "$comment": "Gzip bytes (scripts/check-bundle-size.mjs). signin: the sign-in page's initial JavaScript and CSS, 160,344 B in U6 plus 2 KB; it must never contain three.js (checked separately). loom: the sign-in loom fetched when the browser is idle (its own 2.5 KB chunk and the shared three-vendor chunk), 187,897 B plus 4 KB. graph2d: what the 2D graph loads, 288,407 B before the 3D view (U5), 292,466 B with the sign-in loom's geometry and still drawing in the entry (U6), 296,795 B with label collision avoidance and the framing module (U6 follow-up; vendor chunks unchanged), plus 3 KB. graph3d: the lazily loaded 3D view on top of it, 250 KB.",
   "signin": 162392,
   "loom": 192000,
-  "graph2d": 294514,
+  "graph2d": 299867,
   "graph3d": 256000
 }

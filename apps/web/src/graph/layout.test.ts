@@ -8,6 +8,7 @@ import {
   fullLayoutIterations,
   LARGE_GRAPH,
   layoutSettings,
+  layoutSync,
   MAX_LAYOUT_ITERATIONS,
   startLayout,
 } from "./layout";
@@ -108,6 +109,19 @@ describe("startLayout", () => {
     startLayout(graph, { iterations: 30, now: stoppedClock });
     expect(positions(graph)[pinned]).toEqual(before);
     expect(graph.getNodeAttribute(pinned, "fixed")).toBe(true);
+  });
+
+  it("keeps a pinned node's exact position, beyond 32-bit precision", () => {
+    const graph = buildGraph(sampleGraph, { layoutIterations: 0 });
+    const pinned = "asn:64496";
+    // Not representable as a 32-bit float: ForceAtlas2's Float32Array would round it.
+    const exact = { x: 72.90586853027344 + 1e-9, y: -34.05120849609375 + 1e-9 };
+    expect(Math.fround(exact.x)).not.toBe(exact.x);
+    graph.mergeNodeAttributes(pinned, { ...exact, pinned: true, fixed: true });
+    startLayout(graph, { iterations: 30, now: stoppedClock });
+    layoutSync(graph, 30);
+    expect(graph.getNodeAttribute(pinned, "x")).toBe(exact.x);
+    expect(graph.getNodeAttribute(pinned, "y")).toBe(exact.y);
   });
 
   it("caps the iterations per slice, so nodes glide instead of jumping", async () => {
