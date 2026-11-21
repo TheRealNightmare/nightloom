@@ -793,16 +793,21 @@ async def test_starting_a_pivot(world: World) -> None:
     assert turned.status_code == 200, turned.text
     editor = world.clients["editor"]
     domain = await _add_entity(editor, world.case_id, "domain", "example.org")
-    email = await _add_entity(editor, world.case_id, "email", "alex@example.org")
+    organization = await _add_entity(editor, world.case_id, "organization", "Example Inc")
     url = f"{PREFIX}/cases/{world.case_id}/scan-runs"
 
-    person = await editor.post(
+    # Not from an organization (or anything else that is not infrastructure).
+    mixed = await editor.post(
         url,
-        json={"profile_id": "quick-domain-recon", "entity_keys": [domain, email], "pivot": True},
+        json={
+            "profile_id": "quick-domain-recon",
+            "entity_keys": [domain, organization],
+            "pivot": True,
+        },
         headers=csrf(editor),
     )
-    assert person.status_code == 422
-    assert "infrastructure" in person.text
+    assert mixed.status_code == 422
+    assert "infrastructure" in mixed.text
 
     started = await editor.post(
         url,
