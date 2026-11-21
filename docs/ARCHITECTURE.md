@@ -777,6 +777,25 @@ crt.sh (run by Sectigo) publishes no terms of use; see the Shuttle's [README](..
 
 **Admiralty.** **B2** (confidence 0.8): the archive faithfully records what it captured and is a usually reliable source, but a page may differ today or be gone, so it is probably true rather than confirmed. The Shuttle's `usage_note` asks for modest use of the Internet Archive, a non-profit service; its [terms of use](https://archive.org/about/terms) apply. The tests use a fake CDX server with fictional captures of `example.org`; one opt-in `network` test asks the real archive about `example.org`.
 
+### The active Shuttles
+
+[`shuttles/active`](../shuttles/active/) holds the first **active** Shuttles (`mode=active`, infrastructure, `network=True`, never cached): they connect to the target itself, so the API and the worker only run them on targets a case has [verified](#ownership-verification), and they cannot be part of a [scan profile](#scan-profiles-and-runs) or an [auto-pivot](#auto-pivot). Both run one at a time from *Run Shuttle*. Provenance **A2** (confidence 0.9): observed directly, now, from Nightloom's own vantage point.
+
+**`http-headers`** (*Web server headers and TLS*, input Domain). Two ordinary `GET` requests through `ctx.http` (the guarded client: public addresses only, rate limit one request per second), reading headers only, never the body: `https://<domain>/`, following at most 3 redirects **on the same host** (a redirect to another host is noted and never followed: that host is not verified), then `http://<domain>/` without following anything.
+
+| Found | Becomes |
+| --- | --- |
+| the HTTPS answer | on the input: `http_checked_at`, `https_status`, `https_valid`, `tls_version`, `server`, `powered_by`, `hsts`, `security_headers` and `missing_security_headers` (by lower-case name, from `strict-transport-security`, `content-security-policy`, `x-content-type-options`, `x-frame-options`, `referrer-policy`, `permissions-policy`, `cross-origin-opener-policy`) |
+| the plain-HTTP answer | `http_redirects_to_https` on the input |
+| the address that answered | an IPAddress with `RESOLVES_TO` from the input |
+| the service that answered | a Service `<ip>:<port>/tcp` with `RUNS_ON` to the address; `product` and `version` from `Server` |
+| the certificate presented | a Certificate (SHA-256 fingerprint; `subject_cn`, `issuer` without email addresses, `serial_number`, validity, `self_signed`, `san_count`) with `PRESENTS` from the service and `COVERS` to the input |
+| the software `Server` and `X-Powered-By` name | a Technology (`nginx`, `php`, ...; lower case, no version) with `USES` from the input and the service |
+
+A certificate that does not verify ends the HTTPS request before anything is sent: `https_valid` is false, a note says so, and no certificate is recorded. A domain that resolves to a non-public address gets a note and no request. If neither HTTPS nor HTTP answers, the job fails as *source unavailable*.
+
+**`port-check`** (*Common open ports (TCP connect)*, input IPAddress). A plain TCP connect to 20 common ports (21, 22, 25, 53, 80, 110, 143, 443, 465, 587, 993, 995, 3306, 3389, 5432, 6379, 8080, 8443, 9200, 27017), at most 4 at a time, each with a 3-second timeout, closed at once without sending anything (no banners, no probes). Only public addresses are contacted (an address literal: no DNS). A refused connection is *closed*; a timeout or an unreachable network is *no answer* (often a firewall). The input gets `tcp_checked_ports`, `tcp_open_ports` and `tcp_checked_at`, each open port becomes a Service `<ip>:<port>/tcp` with `RUNS_ON`, and a note counts open, closed and silent ports. The address must be covered by a verified domain's addresses; the worker resolves that domain again just before the run.
+
 ### Jobs and the worker
 
 A **job** is one Shuttle run on one entity of a case (PostgreSQL table `jobs`, deleted with its case): `shuttle_name`, `shuttle_version`, `input_key`, `requested_by`, `status`, `created_at`/`started_at`/`finished_at`, `error` (one of a few fixed, user-safe messages, never an exception's text), `stats` (`entities_created`, `entities_updated`, `relationships_created`, `relationships_updated`, `findings_rejected`, `rejected_reasons` by reason, `entities_touched`: the keys of up to 200 entities the job created or updated, in order, so the UI can highlight them; and `notes`: the Shuttle's [notes](#context), kept also when the job fails; the audit log gets the counts but never the keys or the notes) and `cancel_requested`.
