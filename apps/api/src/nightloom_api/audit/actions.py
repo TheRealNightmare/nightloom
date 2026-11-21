@@ -42,6 +42,9 @@ class AuditAction(StrEnum):
     JOB_CREATE = "job.create"
     JOB_CANCEL = "job.cancel"
     JOB_FINISH = "job.finish"
+    # Clearing cached Shuttle results: an admin (all, or one Shuttle's) or a
+    # case owner (that case's). Only counts and the Shuttle name are recorded.
+    RESULT_CACHE_CLEAR = "result_cache.clear"
 
 
 class AuditOutcome(StrEnum):

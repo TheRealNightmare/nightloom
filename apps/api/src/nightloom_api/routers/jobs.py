@@ -119,6 +119,10 @@ async def create_job(
     are refused with 403 until ownership verification exists); a
     person-related Shuttle needs a case that allows person entities (403).
     Each user may have at most five queued or running jobs (429).
+
+    With ``fresh: true`` the Shuttle runs even if its recent results are
+    cached for this entity (see :mod:`nightloom_api.jobs.result_cache`); the
+    run refreshes the cache.
     """
     await ensure_open(db, access)
     entity_type = canonical_key(body.entity_key, "entity_key")
@@ -155,6 +159,7 @@ async def create_job(
             user=access.user,
             actor=access.actor,
             limit=settings.max_active_jobs_per_user,
+            use_cache=not body.fresh,
         )
     except service.TooManyJobsError as error:
         await _refuse(db, make_session, request, access, error, shuttle=meta.name)

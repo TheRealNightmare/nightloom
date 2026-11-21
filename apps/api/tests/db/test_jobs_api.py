@@ -211,6 +211,7 @@ async def test_shuttles_list_metadata(world: World) -> None:
         "required_keys": [],
         "rate_limit": None,
         "timeout_seconds": 30,
+        "cache_ttl_seconds": 0,
         "terms_url": None,
         "homepage": "https://publicsuffix.org/",
         "usage_note": None,
@@ -246,6 +247,12 @@ async def test_owner_and_editor_queue_jobs_after_commit(
         assert body["finished_at"] is None
         # Not started yet: the timeout is known, the deadline is not.
         assert (body["timeout_seconds"], body["deadline"], body["overdue_at"]) == (30, None, None)
+        # Recent results may be reused unless a fresh run is asked for.
+        assert (body["use_cache"], body["from_cache"], body["cached_fetched_at"]) == (
+            True,
+            False,
+            None,
+        )
         # Queued with the job's ID and the Shuttle's timeout, and the row exists.
         job_id = uuid.UUID(body["id"])
         assert job_queue.sent[-1] == (job_id, 30)
@@ -262,6 +269,26 @@ async def test_owner_and_editor_queue_jobs_after_commit(
     assert event.details["entity_type"] == "domain"
     assert event.details["input_key"] == "domain:www.shop.example.co.uk"
     assert event.details["mode"] == "passive"
+
+
+async def test_fresh_runs_skip_the_result_cache(world: World, infra: Infra) -> None:
+    mark = await last_event_id(infra)
+    response = await world.clients["editor"].post(
+        case_url(world.case_id, "/jobs"),
+        json={
+            "shuttle": "registrable-domain",
+            "entity_key": "domain:www.shop.example.co.uk",
+            "fresh": True,
+        },
+        headers=csrf(world.clients["editor"]),
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["use_cache"] is False
+    async with infra.sessionmaker() as db:
+        job = await db.get(Job, uuid.UUID(response.json()["id"]))
+        assert job is not None and job.use_cache is False
+    [event] = await events_since(infra, mark)
+    assert event.details["fresh"] is True
 
 
 async def test_viewers_and_outsiders_cannot_start_jobs(world: World, infra: Infra) -> None:
