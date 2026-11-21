@@ -157,6 +157,7 @@ def test_built_in_shuttles_cache_lifetimes() -> None:
         "port-check": 0,
         "site-files": day,
         "web-tech": day,
+        "favicon": day,
     }
     registry = ShuttleRegistry.discover()
     for name, seconds in expected.items():
