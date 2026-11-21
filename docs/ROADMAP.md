@@ -64,7 +64,7 @@ Complete (0.2.0).
 
 ## Next: M3 — Web recon and monitoring
 
-- [ ] Web recon Shuttles
+- [x] Web recon Shuttles: site files (robots.txt, security.txt, sitemap) and web technologies, behind a per-case *Allow website visits* switch
 - [ ] Favicon-hash and screenshot pivots
 - [ ] Typosquat detection
 - [ ] Certificate Transparency monitoring
