@@ -145,13 +145,13 @@ const JOBS = [
 
 const VIEWS = ["Mail and DNS", "Hosting at AS64496", "Shop (example.com)"];
 
-/** An admin's scan profile of offline Shuttles, run on two domains of the demo case. */
+/** An admin's scan profile of an offline Shuttle, run on three subdomains of the demo case. */
 const PROFILE = {
-  name: "Name basics",
-  description: "DNS records and the registrable domain: quick, and never asks a third party.",
-  shuttles: ["dns", "registrable-domain"],
+  name: "Parent domains",
+  description: "Links each subdomain to the domain it belongs to. No network: quick and quiet.",
+  shuttles: ["registrable-domain"],
 };
-const RUN_ON = ["example.com", "example.net"];
+const RUN_ON = ["mail.example.org", "shop.example.com", "cdn.example.net"];
 const RUN_DATES = ["2026-11-17T16:39:00Z", "2026-11-17T16:39:40Z"];
 
 /** Verified domains of the demo case: [domain, method, status, error]. */
@@ -437,7 +437,7 @@ try {
   await graphReady(jobs);
   await jobs.getByRole("button", { name: "Jobs" }).click();
   await jobs.getByRole("list", { name: "Job history" }).waitFor();
-  await jobs.getByRole("listitem", { name: `${PROFILE.name} on 2 entities` }).waitFor();
+  await jobs.getByRole("listitem", { name: `${PROFILE.name} on 3 entities` }).waitFor();
   await shot(jobs, "jobs-dark.png");
   await jobs.context().close();
 
