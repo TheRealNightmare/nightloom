@@ -26,7 +26,7 @@ flowchart LR
 | --- | --- |
 | `apps/web` | React UI: graph view, case management, provenance panel |
 | `apps/api` | FastAPI: auth, cases, graph queries, job submission, AI endpoints |
-| `apps/worker` | Celery worker that runs Shuttle jobs (see [Jobs](#jobs-and-the-worker)); auto-pivot scans later |
+| `apps/worker` | Celery worker that runs Shuttle jobs (see [Jobs](#jobs-and-the-worker)) and releases (and expands) profile runs |
 | `packages/core` | Shared entity model (`nightloom-core`): entity types, canonical keys, relationship allow-list, provenance |
 | `packages/sdk` | Shuttle SDK (`nightloom-sdk`): the [Shuttle contract](#shuttle-contract), the guarded HTTP client, the registry, test helpers |
 | `shuttles/` | Built-in Shuttles, one package each: `registrable-domain` (no network), [`dns`](#the-dns-shuttle) and [`reverse-dns`](#the-reverse-dns-shuttle) (one package), [`crtsh`](#the-crtsh-shuttle), [`rdap`](#the-rdap-shuttle), [`ripestat`](#the-ripestat-shuttle), [`internetdb`](#the-internetdb-shuttle) and [`wayback`](#the-wayback-shuttle) |
@@ -868,15 +868,14 @@ The Compose stack runs the worker as the `worker` service (same image as the API
 
 ## Auto-pivot
 
-Auto-pivot expands a seed entity breadth-first:
+A **pivot** is a [profile run](#scan-profiles-and-runs) that continues from what it finds. It is started with `pivot: true` on `POST /cases/{id}/scan-runs` (*Pivot from here* in the web UI), and only in a case whose owner turned on **Allow auto-pivot** (`cases.allow_auto_pivot`, off by default, owners only, no reason asked; audited through `case.update`). Elsewhere the request is refused (`403`, audited as a denied `scan_run.create` with reason `auto_pivot_disabled`).
 
-- **Max depth** — number of hops from the seed
-- **Budget** — maximum requests and/or nodes per scan
-- **Entity-type allowlist** — only pivot through selected types
-- **Passive-only mode** — skip all active Shuttles
-- Person-related Shuttles are always excluded
+- **Seeds** must be infrastructure entities (domains, IP addresses, netblocks, ASNs and the like; `422` otherwise). Their jobs are planned as for any run, at depth 0, except that person-related Shuttles are never planned in a pivot, whatever the case allows.
+- **Expanding**: whenever the run's jobs are released (see above: after each job, and every minute), its newly finished jobs are expanded first, under the same locks. The entities a succeeded or failed job created or updated (`stats.entities_touched`) that the run has not seen yet, and whose type is infrastructure (never person-related types or organizations), are planned with the **same profile's Shuttles** (as they were when the run started, `scan_runs.profile_shuttles`), one hop further. Jobs at depth 2 are not expanded, so a pivot reaches **at most 2 hops** from its seeds. A cancelled job adds nothing. Each job records its hop (`jobs.pivot_depth`) and whether it was expanded (`jobs.pivot_expanded`).
+- **Limits**: at most **200 planned jobs** and **500 new entities** per pivot (`max_jobs`, `max_entities`). Reaching either sets `capped` (`jobs` or `entities`) and stops the expansion; what was already planned still runs. The per-user job limit, the two-runs rule and every check of a single job (the case is open, the requester may run Shuttles, the Shuttle is passive and installed) apply as for any run. The result cache is used unless the pivot was started with `fresh`.
+- **Ends** like any run: `finished` once nothing is left to release, nothing is running and every finished job has been expanded; `cancel` stops the expansion too.
 
-The scan stops when the queue is empty or any limit is reached; partial results are kept.
+`RunOut` reports `pivot`, `max_depth`, `max_jobs`, `max_entities`, `discovered` (new entities planned), `depth` (the furthest hop queued) and `capped`; `scan_run.create` carries `pivot: true`. The *Jobs* panel shows a pivot's row as *Pivot · 12 new entities · hop 1 of 2*, and says which limit stopped it (migration `0011_auto_pivot`).
 
 ## AI layer
 
