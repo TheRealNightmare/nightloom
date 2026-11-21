@@ -446,6 +446,7 @@ describe("adding relationships", () => {
       "has mx",
       "has ns",
       "alias of",
+      "lookalike of",
       "related to (needs a note)",
     ]);
 

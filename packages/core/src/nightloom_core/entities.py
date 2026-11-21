@@ -187,6 +187,12 @@ class DomainProperties(Properties):
     it last looked for the site's icon. The icon itself is a Favicon entity
     the domain ``HAS_FAVICON``.
 
+    From the typosquat Shuttle (it asks public resolvers only):
+    ``typosquats_checked_at``, how many lookalike names it tried
+    (``typosquat_candidates``) and how many of them are registered
+    (``typosquats_registered``). Each registered one is a Domain that is
+    ``LOOKALIKE_OF`` this one.
+
     From the Wayback Machine (Internet Archive): ``wayback_first_capture`` and
     ``wayback_last_capture`` (the earliest and the latest capture of the name
     or a page under it that the archive reported) and ``wayback_url_count``
@@ -245,6 +251,9 @@ class DomainProperties(Properties):
     web_generator: ShortText | None = None
     analytics_ids: Annotated[list[ShortText], Field(max_length=ANALYTICS_IDS_MAX)] | None = None
     favicon_checked_at: AwareDatetime | None = None
+    typosquats_checked_at: AwareDatetime | None = None
+    typosquat_candidates: int | None = Field(default=None, ge=0, le=10_000)
+    typosquats_registered: int | None = Field(default=None, ge=0, le=10_000)
 
 
 # Exposure data on an IP address (Shodan InternetDB): at most this many of each.

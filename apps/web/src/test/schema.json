@@ -244,6 +244,11 @@
       "pairs": [["domain", "url"]]
     },
     {
+      "type": "LOOKALIKE_OF",
+      "note_required": false,
+      "pairs": [["domain", "domain"]]
+    },
+    {
       "type": "HAS_FAVICON",
       "note_required": false,
       "pairs": [

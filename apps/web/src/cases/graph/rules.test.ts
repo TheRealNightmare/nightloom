@@ -18,6 +18,7 @@ describe("schema-driven relationship filtering", () => {
       "HAS_MX",
       "HAS_NS",
       "ALIAS_OF",
+      "LOOKALIKE_OF",
       "RELATED_TO",
     ]);
     expect(names(relationsFor(SCHEMA, "domain", "ip_address"))).toEqual([
