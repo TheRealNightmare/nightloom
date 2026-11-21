@@ -252,6 +252,8 @@ async def create_run(
     in progress per user). ``fresh: true`` skips the result cache.
     """
     await ensure_open(db, access)
+    # A rollback expires the loaded case and user: keep what is needed after one.
+    case_id, user_id, actor = access.case.id, access.user.id, access.actor
     profile = await profiles.get_profile(db, body.profile_id)
     if profile is None:
         await db.rollback()
@@ -297,20 +299,20 @@ async def create_run(
                 make_session,
                 action=AuditAction.SCAN_RUN_CREATE,
                 outcome=AuditOutcome.FAILURE,
-                actor=access.actor,
+                actor=actor,
                 target_type=TargetType.SCAN_RUN,
-                case_id=access.case.id,
+                case_id=case_id,
                 details={"profile": profile.id, "reason": error.reason},
             )
         raise HTTPException(error.status_code, str(error)) from error
     await service.release_and_enqueue(
         make_session,
         queue,
-        user_id=access.user.id,
+        user_id=user_id,
         limit=settings.max_active_jobs_per_user,
         registry=registry,
     )
-    return await _run_out(db, run.id, access.case.id)
+    return await _run_out(db, run.id, case_id)
 
 
 @runs_router.get("", response_model=RunPage)
