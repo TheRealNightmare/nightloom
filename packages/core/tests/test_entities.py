@@ -11,6 +11,7 @@ from nightloom_core.entities import (
     Breach,
     Domain,
     EntityType,
+    Favicon,
     Phone,
     Sensitivity,
     build_entity,
@@ -162,6 +163,25 @@ def test_invalid_properties(entity_type: EntityType, properties: dict[str, Any])
     }.get(entity_type, "Something")
     with pytest.raises(ValidationError):
         build_entity(entity_type, value, properties)
+
+
+def test_a_favicon_is_named_by_its_hash() -> None:
+    favicon = build_entity(
+        EntityType.FAVICON,
+        "3284398546",
+        {"sha256": "A" * 64, "md5": "B" * 32, "mime_type": "image/x-icon", "size_bytes": 1150},
+    )
+    assert isinstance(favicon, Favicon)
+    assert favicon.key == "favicon:-1010568750"
+    assert favicon.stored_properties() == {
+        "sha256": "a" * 64,
+        "md5": "b" * 32,
+        "mime_type": "image/x-icon",
+        "size_bytes": 1150,
+    }
+    assert favicon.sensitivity == Sensitivity.INFRASTRUCTURE
+    with pytest.raises(ValidationError):
+        build_entity(EntityType.FAVICON, "1", {"md5": "z" * 32})
 
 
 def test_properties_are_typed_and_serialized_for_storage() -> None:

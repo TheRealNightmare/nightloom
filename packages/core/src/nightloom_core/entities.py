@@ -49,6 +49,7 @@ class EntityType(StrEnum):
     DOCUMENT = "document"
     IMAGE = "image"
     BREACH = "breach"
+    FAVICON = "favicon"
 
 
 class Sensitivity(StrEnum):
@@ -85,6 +86,7 @@ def _matching(pattern: str, *, upper: bool = False) -> AfterValidator:
 
 CountryCode = Annotated[str, Field(max_length=10), _matching(r"[A-Z]{2}", upper=True)]
 Sha256Hex = Annotated[str, Field(max_length=100), _matching(r"[0-9a-f]{64}")]
+Md5Hex = Annotated[str, Field(max_length=100), _matching(r"[0-9a-f]{32}")]
 MimeType = Annotated[
     str,
     Field(max_length=127),
@@ -181,6 +183,10 @@ class DomainProperties(Properties):
     ``G-``, Tag Manager ``GTM-``, Ads ``AW-``, AdSense ``ca-pub-``), which
     often link sites run by the same owner.
 
+    From the favicon Shuttle (it visits the site): ``favicon_checked_at``, when
+    it last looked for the site's icon. The icon itself is a Favicon entity
+    the domain ``HAS_FAVICON``.
+
     From the Wayback Machine (Internet Archive): ``wayback_first_capture`` and
     ``wayback_last_capture`` (the earliest and the latest capture of the name
     or a page under it that the archive reported) and ``wayback_url_count``
@@ -238,6 +244,7 @@ class DomainProperties(Properties):
     web_title: LongText | None = None
     web_generator: ShortText | None = None
     analytics_ids: Annotated[list[ShortText], Field(max_length=ANALYTICS_IDS_MAX)] | None = None
+    favicon_checked_at: AwareDatetime | None = None
 
 
 # Exposure data on an IP address (Shodan InternetDB): at most this many of each.
@@ -455,6 +462,15 @@ class ImageProperties(Properties):
     sha256: Sha256Hex | None = None
     width: int | None = Field(default=None, ge=1, le=100_000)
     height: int | None = Field(default=None, ge=1, le=100_000)
+
+
+class FaviconProperties(Properties):
+    """The icon file a site serves. Its MurmurHash3 is the entity's value."""
+
+    sha256: Sha256Hex | None = None
+    md5: Md5Hex | None = None
+    mime_type: MimeType | None = None
+    size_bytes: int | None = Field(default=None, ge=1, le=10 * 1024 * 1024)
 
 
 class BreachProperties(Properties):
@@ -740,6 +756,24 @@ class Breach(EntityBase):
     properties_model = BreachProperties
 
 
+class Favicon(EntityBase):
+    """A site's icon, named by its MurmurHash3 the way Shodan and FOFA search for it.
+
+    The value is the signed 32-bit MurmurHash3 of the icon file's base64
+    encoding (with a line break every 76 characters, Shodan's
+    ``http.favicon.hash``). Sites that serve the same icon share one node.
+    """
+
+    type: Literal[EntityType.FAVICON] = EntityType.FAVICON
+    entity_type = EntityType.FAVICON
+    label = "Favicon"
+    sensitivity = Sensitivity.INFRASTRUCTURE
+    display_name = "Favicon"
+    hint = "A favicon's MurmurHash3 (Shodan's http.favicon.hash), a signed 32-bit number."
+    example = "-1010568750"
+    properties_model = FaviconProperties
+
+
 ENTITY_MODELS: dict[EntityType, type[EntityBase]] = {
     model.entity_type: model
     for model in (
@@ -762,6 +796,7 @@ ENTITY_MODELS: dict[EntityType, type[EntityBase]] = {
         Document,
         Image,
         Breach,
+        Favicon,
     )
 }
 
@@ -784,7 +819,8 @@ AnyEntity = Annotated[
     | CryptoWallet
     | Document
     | Image
-    | Breach,
+    | Breach
+    | Favicon,
     Field(discriminator="type"),
 ]
 
@@ -837,6 +873,7 @@ __all__ = [
     "Email",
     "EntityBase",
     "EntityType",
+    "Favicon",
     "IPAddress",
     "Image",
     "Location",

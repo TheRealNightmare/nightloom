@@ -151,6 +151,14 @@
       "sensitivity": "organization",
       "hint": "The name of a published data breach.",
       "example": "Example Breach 2024"
+    },
+    {
+      "type": "favicon",
+      "label": "Favicon",
+      "display_name": "Favicon",
+      "sensitivity": "infrastructure",
+      "hint": "A favicon's MurmurHash3 (Shodan's http.favicon.hash), a signed 32-bit number.",
+      "example": "-1010568750"
     }
   ],
   "relationship_types": [
@@ -236,6 +244,14 @@
       "pairs": [["domain", "url"]]
     },
     {
+      "type": "HAS_FAVICON",
+      "note_required": false,
+      "pairs": [
+        ["domain", "favicon"],
+        ["url", "favicon"]
+      ]
+    },
+    {
       "type": "REGISTERED_BY",
       "note_required": false,
       "pairs": [["domain", "organization"]]
@@ -276,7 +292,8 @@
         ["document", "crypto_wallet"],
         ["document", "document"],
         ["document", "image"],
-        ["document", "breach"]
+        ["document", "breach"],
+        ["document", "favicon"]
       ]
     },
     {
@@ -302,6 +319,7 @@
         ["domain", "document"],
         ["domain", "image"],
         ["domain", "breach"],
+        ["domain", "favicon"],
         ["ip_address", "domain"],
         ["ip_address", "ip_address"],
         ["ip_address", "netblock"],
@@ -321,6 +339,7 @@
         ["ip_address", "document"],
         ["ip_address", "image"],
         ["ip_address", "breach"],
+        ["ip_address", "favicon"],
         ["netblock", "domain"],
         ["netblock", "ip_address"],
         ["netblock", "netblock"],
@@ -340,6 +359,7 @@
         ["netblock", "document"],
         ["netblock", "image"],
         ["netblock", "breach"],
+        ["netblock", "favicon"],
         ["asn", "domain"],
         ["asn", "ip_address"],
         ["asn", "netblock"],
@@ -359,6 +379,7 @@
         ["asn", "document"],
         ["asn", "image"],
         ["asn", "breach"],
+        ["asn", "favicon"],
         ["certificate", "domain"],
         ["certificate", "ip_address"],
         ["certificate", "netblock"],
@@ -378,6 +399,7 @@
         ["certificate", "document"],
         ["certificate", "image"],
         ["certificate", "breach"],
+        ["certificate", "favicon"],
         ["url", "domain"],
         ["url", "ip_address"],
         ["url", "netblock"],
@@ -397,6 +419,7 @@
         ["url", "document"],
         ["url", "image"],
         ["url", "breach"],
+        ["url", "favicon"],
         ["service", "domain"],
         ["service", "ip_address"],
         ["service", "netblock"],
@@ -416,6 +439,7 @@
         ["service", "document"],
         ["service", "image"],
         ["service", "breach"],
+        ["service", "favicon"],
         ["technology", "domain"],
         ["technology", "ip_address"],
         ["technology", "netblock"],
@@ -435,6 +459,7 @@
         ["technology", "document"],
         ["technology", "image"],
         ["technology", "breach"],
+        ["technology", "favicon"],
         ["organization", "domain"],
         ["organization", "ip_address"],
         ["organization", "netblock"],
@@ -454,6 +479,7 @@
         ["organization", "document"],
         ["organization", "image"],
         ["organization", "breach"],
+        ["organization", "favicon"],
         ["email", "domain"],
         ["email", "ip_address"],
         ["email", "netblock"],
@@ -473,6 +499,7 @@
         ["email", "document"],
         ["email", "image"],
         ["email", "breach"],
+        ["email", "favicon"],
         ["username", "domain"],
         ["username", "ip_address"],
         ["username", "netblock"],
@@ -492,6 +519,7 @@
         ["username", "document"],
         ["username", "image"],
         ["username", "breach"],
+        ["username", "favicon"],
         ["person", "domain"],
         ["person", "ip_address"],
         ["person", "netblock"],
@@ -511,6 +539,7 @@
         ["person", "document"],
         ["person", "image"],
         ["person", "breach"],
+        ["person", "favicon"],
         ["phone", "domain"],
         ["phone", "ip_address"],
         ["phone", "netblock"],
@@ -530,6 +559,7 @@
         ["phone", "document"],
         ["phone", "image"],
         ["phone", "breach"],
+        ["phone", "favicon"],
         ["social_profile", "domain"],
         ["social_profile", "ip_address"],
         ["social_profile", "netblock"],
@@ -549,6 +579,7 @@
         ["social_profile", "document"],
         ["social_profile", "image"],
         ["social_profile", "breach"],
+        ["social_profile", "favicon"],
         ["location", "domain"],
         ["location", "ip_address"],
         ["location", "netblock"],
@@ -568,6 +599,7 @@
         ["location", "document"],
         ["location", "image"],
         ["location", "breach"],
+        ["location", "favicon"],
         ["crypto_wallet", "domain"],
         ["crypto_wallet", "ip_address"],
         ["crypto_wallet", "netblock"],
@@ -587,6 +619,7 @@
         ["crypto_wallet", "document"],
         ["crypto_wallet", "image"],
         ["crypto_wallet", "breach"],
+        ["crypto_wallet", "favicon"],
         ["document", "domain"],
         ["document", "ip_address"],
         ["document", "netblock"],
@@ -606,6 +639,7 @@
         ["document", "document"],
         ["document", "image"],
         ["document", "breach"],
+        ["document", "favicon"],
         ["image", "domain"],
         ["image", "ip_address"],
         ["image", "netblock"],
@@ -625,6 +659,7 @@
         ["image", "document"],
         ["image", "image"],
         ["image", "breach"],
+        ["image", "favicon"],
         ["breach", "domain"],
         ["breach", "ip_address"],
         ["breach", "netblock"],
@@ -643,7 +678,28 @@
         ["breach", "crypto_wallet"],
         ["breach", "document"],
         ["breach", "image"],
-        ["breach", "breach"]
+        ["breach", "breach"],
+        ["breach", "favicon"],
+        ["favicon", "domain"],
+        ["favicon", "ip_address"],
+        ["favicon", "netblock"],
+        ["favicon", "asn"],
+        ["favicon", "certificate"],
+        ["favicon", "url"],
+        ["favicon", "service"],
+        ["favicon", "technology"],
+        ["favicon", "organization"],
+        ["favicon", "email"],
+        ["favicon", "username"],
+        ["favicon", "person"],
+        ["favicon", "phone"],
+        ["favicon", "social_profile"],
+        ["favicon", "location"],
+        ["favicon", "crypto_wallet"],
+        ["favicon", "document"],
+        ["favicon", "image"],
+        ["favicon", "breach"],
+        ["favicon", "favicon"]
       ]
     }
   ],

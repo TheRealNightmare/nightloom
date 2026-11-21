@@ -48,6 +48,8 @@ ALLOWED_CASES = [
     (R.OWNS, E.ORGANIZATION, E.NETBLOCK),
     (R.OWNS, E.ORGANIZATION, E.ASN),
     (R.HOSTS, E.DOMAIN, E.URL),
+    (R.HAS_FAVICON, E.DOMAIN, E.FAVICON),
+    (R.HAS_FAVICON, E.URL, E.FAVICON),
     (R.REGISTERED_BY, E.DOMAIN, E.ORGANIZATION),
     (R.HAS_EMAIL, E.DOMAIN, E.EMAIL),
     (R.ACCOUNT_OF, E.USERNAME, E.PERSON),
@@ -113,6 +115,12 @@ def test_has_ptr_links_an_address_to_its_reverse_dns_name() -> None:
     assert ALLOWED[R.HAS_PTR] == {(E.IP_ADDRESS, E.DOMAIN)}
     assert R.HAS_PTR.value == "HAS_PTR"
     assert R.HAS_PTR not in NOTE_REQUIRED
+
+
+def test_has_favicon_links_a_site_to_its_icon() -> None:
+    assert ALLOWED[R.HAS_FAVICON] == {(E.DOMAIN, E.FAVICON), (E.URL, E.FAVICON)}
+    assert not is_allowed(R.HAS_FAVICON, E.FAVICON, E.DOMAIN)
+    assert R.HAS_FAVICON not in NOTE_REQUIRED
 
 
 @pytest.mark.parametrize("note", [None, "", "   "])
