@@ -121,6 +121,8 @@ def test_the_repository_changelog_has_the_current_version() -> None:
 
     text = (ROOT / "CHANGELOG.md").read_text()
     section = cs.extract_section(text, version.semver)
-    assert section.startswith(("### ", "First release"))
+    # An optional summary paragraph, then the usual "### Added" / "### Fixed" groups.
+    assert section.strip()
+    assert "\n### " in f"\n{section}"
     assert "## [Unreleased]" in text
     assert f"[{version.semver}]: https://github.com/TheRealNightmare/nightloom/" in text
