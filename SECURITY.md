@@ -2,12 +2,13 @@
 
 ## Supported versions
 
-Nightloom is in early development and has no releases yet. Only the `main` branch is supported; fixes land there.
+Nightloom is in early development (0.x). Security fixes land on `main` and ship in the next release; only the latest release gets them, so upgrade to it ([Upgrades](docs/DEPLOYMENT.md#upgrades)).
 
 | Version | Supported |
 | --- | --- |
+| Latest release (0.2.x) | ✅ |
 | `main` branch | ✅ |
-| Anything else | ❌ |
+| Older releases (0.1.x) | ❌ |
 
 ## Reporting a vulnerability
 

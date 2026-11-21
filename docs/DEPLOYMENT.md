@@ -31,12 +31,12 @@ The limits are ceilings, not reservations. An idle stack uses much less.
 3. **Get the release and create the secrets.** Check out the release you want to run (see [Releases](https://github.com/TheRealNightmare/nightloom/releases)), so the Compose files match its images:
 
    ```sh
-   git clone --branch v0.1.0 https://github.com/TheRealNightmare/nightloom.git
+   git clone --branch v0.2.0 https://github.com/TheRealNightmare/nightloom.git
    cd nightloom
    make secrets ARGS="--domain nightloom.example.org --acme-email you@example.org"
    ```
 
-   See [Secrets](#secrets) for what this does. It also sets `NIGHTLOOM_VERSION=0.1.0`, the checkout's version.
+   See [Secrets](#secrets) for what this does. It also sets `NIGHTLOOM_VERSION=0.2.0`, the checkout's version.
 4. **Download the images and start the stack:**
 
    ```sh
@@ -189,6 +189,8 @@ docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml --env-file .en
 ```
 
 `/api/v1/ready` must answer `200` and `/api/v1/health` show the new `version`; the account menu in the web UI shows it too. To go back, restore the backup you made with the old version's checkout and `NIGHTLOOM_VERSION`. Pinned third-party images (Caddy, cloudflared, the databases) only change with a Nightloom release.
+
+**From 0.1.0 to 0.2.0**: the steps above are all. `migrate` applies migrations `0007` to `0012` (graph layouts, saved views, the result cache, scan profiles, auto-pivot, ownership verification). The result cache works with its defaults; `NIGHTLOOM_RESULT_CACHE_SCOPE`, `NIGHTLOOM_RESULT_CACHE_MAX_BYTES` and `NIGHTLOOM_RESULT_CACHE_MAX_ENTRY_BYTES` are optional (see `.env.example`). The two active Shuttles connect from the worker to the targets a case has verified (HTTPS, HTTP and 20 common TCP ports): an outbound firewall on the host decides whether they can.
 
 **From a version before 0.1.0** (built on the server): add `NIGHTLOOM_VERSION=0.1.0` to `.env`, then follow the steps above. The old locally built `nightloom-api:dev` and `nightloom-web:dev` images are no longer used; `docker image rm nightloom-api:dev nightloom-web:dev` frees their space.
 

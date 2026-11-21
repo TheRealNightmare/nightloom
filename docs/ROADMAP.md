@@ -51,17 +51,18 @@ A new look for the web UI, in steps that each keep every screen working. All six
 - [x] U5 3D graph view (React Three Fiber, lazily loaded: the same layout and pins in space, depth by first seen, type or flat, orbit / pan / zoom / fly-to with mouse, trackpad, touch and keyboard, HTML labels, a minimap, 2D fallback without WebGL; saved views remember 2D or 3D)
 - [x] U6 The 3D loom on the sign-in page (lazily loaded after the form, still drawing with reduced motion, Save-Data or no WebGL), and polish: one focus ring, skeleton loading states, errors with *Try again*, page titles, a themed 404 page, app icons and a web manifest, reduced motion everywhere, contrast checked from the stylesheets, axe-core checks of every screen in both themes, README screenshots (`make screenshots`)
 
-## Next: Milestone 2
+## M2 — Auto-pivot and active checks
 
-## M2 — Auto-pivot
+Complete (0.2.0).
 
 - [x] Auto-pivot (*Pivot from here*, where the case owner allows it: the same profile on the infrastructure it finds, up to 2 hops, 200 jobs and 500 new entities; passive only, never through people or organizations)
 - [x] Scan profiles (four built in, admin-defined ones; runs on up to 25 entities, released within the per-user job limit, grouped in the Jobs panel, cancellable)
 - [x] Result cache (per-Shuttle lifetimes, per case by default, replay through the case's checks, *Run fresh*, admin and owner clearing)
 - [x] Ownership verification before active Shuttles may run against a target (per case, owners; DNS TXT record or a file on the website; covers subdomains and the domain's addresses; re-checked daily, revoked when the proof disappears, 30 days unless renewed)
 - [x] First active Shuttles on verified targets: web server headers and TLS, and a gentle TCP check of 20 common ports
+- [x] Release v0.2 ([0.2.0](../CHANGELOG.md#020---2026-11-21))
 
-## M3 — Web recon and monitoring
+## Next: M3 — Web recon and monitoring
 
 - [ ] Web recon Shuttles
 - [ ] Favicon-hash and screenshot pivots
