@@ -45,6 +45,7 @@ const FIELD_LABELS: Record<string, string> = {
   legal_basis_note: "legal basis note",
   allow_person_entities: "person entities setting",
   allow_auto_pivot: "auto-pivot setting",
+  allow_site_visits: "website visits setting",
   retention_days: "retention period",
 };
 
@@ -62,6 +63,7 @@ const FAILURE_REASONS: Record<string, string> = {
   confirm_title_mismatch: "the title did not match",
   too_many_runs: "two runs already in progress",
   auto_pivot_disabled: "auto-pivot is off for this case",
+  site_visits_disabled: "website visits are off for this case",
 };
 
 /** "a, b and c". */

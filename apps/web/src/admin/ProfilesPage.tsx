@@ -37,7 +37,8 @@ function ProfileDialog({
   const [chosen, setChosen] = useState<string[]>(initial ? [...initial.shuttles] : []);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const passive = shuttles.filter((shuttle) => shuttle.mode === "passive");
+  // Active Shuttles run one at a time; visits run only where a case allows them.
+  const passive = shuttles.filter((shuttle) => shuttle.mode !== "active");
 
   const submit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();

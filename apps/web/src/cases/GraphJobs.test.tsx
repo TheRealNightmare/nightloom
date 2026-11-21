@@ -22,7 +22,7 @@ import { renderApp } from "../test/renderApp";
 import { FakeSigma, waitForSigma } from "../test/sigmaMock";
 import { PULSE_MS } from "./GraphTab";
 import { FROM_CACHE_LABEL, NO_JOBS_MESSAGE } from "./graph/JobsPanel";
-import { ACTIVE_SHUTTLE_HINT, PERSON_SHUTTLE_REASON } from "./graph/jobText";
+import { ACTIVE_SHUTTLE_HINT, PERSON_SHUTTLE_REASON, VISIT_SHUTTLE_HINT } from "./graph/jobText";
 import { NO_SHUTTLES_MESSAGE, USAGE_NOTE_LABEL, USE_RECENT_LABEL } from "./graph/RunShuttles";
 import { JOB_POLL_MS } from "./graph/useCaseJobs";
 
@@ -165,6 +165,16 @@ describe("Run a Shuttle section", () => {
     // The API decides from the case's verified domains.
     expect(within(scan).getByRole("button", { name: "Run Port scan" })).toBeEnabled();
     expect(within(scan).getByText(ACTIVE_SHUTTLE_HINT)).toBeVisible();
+  });
+
+  it("labels Shuttles that visit the site and explains when they run", async () => {
+    const visit = makeShuttle({ name: "site-files", title: "Site files", mode: "visit" });
+    await openGraph({ shuttles: [visit] });
+    await select(apex.key);
+    const card = await within(details()).findByRole("listitem", { name: "Site files" });
+    expect(within(card).getByText("Visits the site")).toBeVisible();
+    expect(within(card).getByText(VISIT_SHUTTLE_HINT)).toBeVisible();
+    expect(within(card).getByRole("button", { name: "Run Site files" })).toBeEnabled();
   });
 
   it("allows person-related Shuttles when the case does", async () => {

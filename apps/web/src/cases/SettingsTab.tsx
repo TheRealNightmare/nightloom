@@ -17,6 +17,7 @@ import { clearCaseResultCache } from "../api/resultCache";
 import { Modal } from "../components/Modal";
 import {
   AutoPivotSwitch,
+  SiteVisitsSwitch,
   LegalBasisFields,
   PersonEntitiesSwitch,
   PurposeField,
@@ -36,6 +37,7 @@ interface SettingsValues {
   legalBasisNote: string;
   allowPersonEntities: boolean;
   allowAutoPivot: boolean;
+  allowSiteVisits: boolean;
   retentionDays: string;
 }
 
@@ -49,6 +51,7 @@ const SETTINGS_ERRORS_CLEARED_BY: Record<keyof SettingsValues, (keyof SettingsEr
   legalBasisNote: ["legal_basis_note"],
   allowPersonEntities: [],
   allowAutoPivot: [],
+  allowSiteVisits: [],
   retentionDays: ["retention_days"],
 };
 
@@ -66,6 +69,7 @@ function valuesOf(value: Case): SettingsValues {
     legalBasisNote: value.legal_basis_note ?? "",
     allowPersonEntities: value.allow_person_entities,
     allowAutoPivot: value.allow_auto_pivot,
+    allowSiteVisits: value.allow_site_visits,
     retentionDays: value.retention_days === null ? "" : String(value.retention_days),
   };
 }
@@ -86,12 +90,15 @@ function settingsChanges(original: Case, values: SettingsValues): CaseUpdate {
   if (values.allowAutoPivot !== original.allow_auto_pivot) {
     changes.allow_auto_pivot = values.allowAutoPivot;
   }
+  if (values.allowSiteVisits !== original.allow_site_visits) {
+    changes.allow_site_visits = values.allowSiteVisits;
+  }
   const retention = values.retentionDays.trim() === "" ? null : Number(values.retentionDays);
   if (retention !== original.retention_days) changes.retention_days = retention;
   return changes;
 }
 
-/** Owner-only: purpose, legal basis, person entities, auto-pivot, retention, status, deletion. */
+/** Owner-only: purpose, legal basis, person entities, auto-pivot, site visits, retention, status, deletion. */
 export function SettingsTab() {
   const { case: current, setCase } = useCase();
   if (!can(current.my_role, "manage")) return <Forbidden />;
@@ -215,6 +222,12 @@ function SettingsForm({ value, onSaved }: { value: Case; onSaved: (next: Case) =
           checked={values.allowAutoPivot}
           onChange={(next) => {
             set("allowAutoPivot", next);
+          }}
+        />
+        <SiteVisitsSwitch
+          checked={values.allowSiteVisits}
+          onChange={(next) => {
+            set("allowSiteVisits", next);
           }}
         />
         <RetentionField

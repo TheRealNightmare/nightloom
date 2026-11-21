@@ -77,6 +77,7 @@ export function makeCase(overrides: Partial<Case> = {}): Case {
     ethics_ack_at: "2026-11-10T10:00:00Z",
     allow_person_entities: false,
     allow_auto_pivot: false,
+    allow_site_visits: false,
     status: "open",
     retention_days: null,
     created_by: TEST_USER.id,

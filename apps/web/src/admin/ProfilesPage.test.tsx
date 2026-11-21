@@ -28,6 +28,7 @@ const SHUTTLES = [
   DNS_SHUTTLE,
   makeShuttle({ name: "rdap", title: "Registration data (RDAP)" }),
   makeShuttle({ name: "active-scan", title: "Active scan", mode: "active" }),
+  makeShuttle({ name: "site-files", title: "Site files", mode: "visit" }),
 ];
 
 beforeEach(() => {
@@ -74,6 +75,8 @@ describe("scan profiles page", () => {
     const dialog = screen.getByRole("dialog", { name: "New scan profile" });
     // Active Shuttles cannot be chosen.
     expect(within(dialog).queryByRole("checkbox", { name: /Active scan/ })).toBeNull();
+    // Shuttles that visit the site may be in a profile.
+    expect(within(dialog).getByRole("checkbox", { name: /Site files/ })).toBeVisible();
     await userEvent.click(within(dialog).getByRole("button", { name: "Save profile" }));
     expect(within(dialog).getByRole("alert")).toHaveTextContent("Give the profile a name.");
     await userEvent.type(within(dialog).getByLabelText("Name"), "Registration first");
