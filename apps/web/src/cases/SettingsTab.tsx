@@ -23,6 +23,7 @@ import {
   RetentionField,
 } from "./CaseFields";
 import { useCase } from "./caseContext";
+import { VerifiedDomains } from "./VerifiedDomains";
 import { ChangeReasonDialog } from "./ChangeReasonDialog";
 import { describeCaseError } from "./errors";
 import { Forbidden } from "./Feedback";
@@ -98,6 +99,7 @@ export function SettingsTab() {
     <div className="settings">
       <SettingsForm key={current.updated_at} value={current} onSaved={setCase} />
       <StatusActions value={current} onChanged={setCase} />
+      <VerifiedDomains value={current} />
       <CachedResults value={current} />
       <DangerZone value={current} />
     </div>

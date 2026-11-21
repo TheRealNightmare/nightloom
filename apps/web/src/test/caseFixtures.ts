@@ -1,6 +1,7 @@
 import type { AuditEvent, Case, CaseRole, Member } from "../api/cases";
 import type { User } from "../api/client";
 import type { ApiEntity, ApiGraph, ApiProvenance, ApiRelationship, Schema } from "../api/graph";
+import type { Verification } from "../api/ownership";
 import type { ScanProfile, ScanRun } from "../api/scans";
 import type { Job, ShuttleInfo } from "../api/shuttles";
 import type { EntityType, Sensitivity } from "../domain/entities";
@@ -234,6 +235,30 @@ export function makeRun(overrides: Partial<ScanRun> = {}): ScanRun {
   };
 }
 
+export function makeVerification(overrides: Partial<Verification> = {}): Verification {
+  return {
+    id: "5f4e3d2c-1b0a-4f9e-8d7c-6b5a4f3e2d1c",
+    domain: "example.org",
+    method: "dns_txt",
+    status: "pending",
+    proof: {
+      record_type: "TXT",
+      record_name: "_nightloom-challenge.example.org",
+      url: null,
+      value: "nightloom-verification=abc123",
+    },
+    checking: false,
+    created_at: "2026-11-20T09:00:00Z",
+    checked_at: null,
+    verified_at: null,
+    expires_at: null,
+    last_error: null,
+    error_message: null,
+    addresses: [],
+    ...overrides,
+  };
+}
+
 export const ADMIN_USER: User = { ...TEST_USER, role: "admin" };
 export const VIEWER_USER: User = { ...TEST_USER, role: "viewer" };
 
@@ -253,6 +278,7 @@ export function serveCase(
     shuttles = [DNS_SHUTTLE],
     profiles = [QUICK_PROFILE, EXPOSURE_PROFILE],
     runs = [],
+    verifications = [],
   }: {
     user?: User;
     role?: CaseRole;
@@ -264,6 +290,7 @@ export function serveCase(
     shuttles?: ShuttleInfo[];
     profiles?: ScanProfile[];
     runs?: ScanRun[];
+    verifications?: Verification[];
   } = {},
 ): void {
   const path = `/cases/${CASE_ID}`;
@@ -280,5 +307,6 @@ export function serveCase(
     .on("GET", "/shuttles?input_type=ip_address", () => json([]))
     .on("GET", "/scan-profiles", () => json(profiles))
     .on("GET", `${path}/scan-runs?limit=20`, () => json({ items: runs }))
+    .on("GET", `${path}/verifications`, () => json({ items: verifications }))
     .on("GET", "/cases?limit=25", () => json(EMPTY_PAGE));
 }

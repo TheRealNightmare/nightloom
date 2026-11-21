@@ -5,7 +5,12 @@ import { getShuttlesFor, type ShuttleInfo } from "../../api/shuttles";
 import type { EntityNode, EntityType } from "../../domain/entities";
 import { describeCaseError } from "../errors";
 import { SensitivityBadge } from "./EntityDetails";
-import { describeJobError, recentResultsHint, shuttleBlockedReason } from "./jobText";
+import {
+  ACTIVE_SHUTTLE_HINT,
+  describeJobError,
+  recentResultsHint,
+  shuttleBlockedReason,
+} from "./jobText";
 
 export const NO_SHUTTLES_MESSAGE = "No installed Shuttle accepts this type of entity.";
 export const USE_RECENT_LABEL = "Use recent results";
@@ -97,6 +102,7 @@ function ShuttleCard({
           </span>
         </p>
       )}
+      {shuttle.mode === "active" && <p className="field__hint">{ACTIVE_SHUTTLE_HINT}</p>}
       {(shuttle.terms_url ?? shuttle.homepage) && (
         <p className="shuttle-card__links">
           {shuttle.terms_url && (

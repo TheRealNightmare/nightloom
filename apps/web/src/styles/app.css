@@ -3338,3 +3338,58 @@ tr[data-active="false"] td:first-child {
     animation: none;
   }
 }
+
+/* Verified domains (case settings) */
+.verification__add {
+  display: grid;
+  gap: 12px;
+  max-width: 480px;
+  margin-bottom: 16px;
+}
+
+.verification__add fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.verification__list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.verification {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.verification__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.verification__domain {
+  overflow-wrap: anywhere;
+}
+
+.verification__proof {
+  margin-top: 8px;
+}
+
+.verification__proof-list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 0;
+}
+
+.verification__proof-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
