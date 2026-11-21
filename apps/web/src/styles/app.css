@@ -2644,6 +2644,15 @@ select.field__input {
   font-size: 17px;
 }
 
+.favicon-searches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
 .panel__actions {
   margin-top: 24px;
 }

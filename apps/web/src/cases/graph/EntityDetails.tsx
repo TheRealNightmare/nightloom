@@ -4,6 +4,7 @@ import { RequestAbortedError } from "../../api/client";
 import { getEntity, type Schema } from "../../api/graph";
 import { Confidence, PropertiesSection, Timestamp } from "../../components/SidePanel";
 import type { EntityNode, Sensitivity } from "../../domain/entities";
+import { FaviconSearchLinks } from "./FaviconSearchLinks";
 import { describeAdmiralty, SENSITIVITY_LABELS } from "./rules";
 
 export function SensitivityBadge({ sensitivity }: { sensitivity: Sensitivity }) {
@@ -207,6 +208,8 @@ export function EntityDetails({
       </dl>
 
       <PropertiesSection properties={entity.properties} />
+
+      <FaviconSearchLinks entity={entity} />
 
       <section>
         <h3 className="panel__section">Provenance</h3>
