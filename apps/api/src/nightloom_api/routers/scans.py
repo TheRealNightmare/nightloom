@@ -307,6 +307,7 @@ async def create_run(
         # and neither do Shuttles that visit the site.
         allow_person_entities=access.case.allow_person_entities and not body.pivot,
         allow_site_visits=access.case.allow_site_visits and not body.pivot,
+        pivot=body.pivot,
     )
     try:
         run = await service.create_run(

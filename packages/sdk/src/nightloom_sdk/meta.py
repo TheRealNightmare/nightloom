@@ -133,6 +133,12 @@ class ShuttleMeta(BaseModel):
     :data:`USAGE_NOTE_MAX_LENGTH` characters) stating conditions the operator
     must respect when using the source, such as a non-commercial licence. The
     API exposes it and the web UI shows it before a run, next to ``terms_url``.
+
+    ``pivots`` (default ``True``) says whether an auto-pivot may plan the
+    Shuttle. ``False`` keeps out Shuttles that turn one entity into many
+    loosely related ones (typosquat candidates): following each of their
+    results with the same Shuttle would multiply the work without getting
+    closer to the target. They still run on their own and in scan profiles.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -167,6 +173,8 @@ class ShuttleMeta(BaseModel):
     # Provenance defaults for every finding; a finding may override them.
     default_admiralty: Admiralty = "F6"
     default_confidence: float = Field(default=0.5, ge=0, le=1, allow_inf_nan=False)
+    # Whether an auto-pivot may plan this Shuttle (see the class docstring).
+    pivots: bool = True
 
     @model_validator(mode="after")
     def _check(self) -> Self:

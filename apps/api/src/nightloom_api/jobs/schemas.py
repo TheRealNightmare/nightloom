@@ -44,6 +44,8 @@ class ShuttleOut(BaseModel):
     usage_note: str | None
     default_admiralty: str
     default_confidence: float
+    # Whether an auto-pivot may plan it (false for Shuttles that fan out widely).
+    pivots: bool
 
     @classmethod
     def build(cls, meta: ShuttleMeta) -> "ShuttleOut":
@@ -74,6 +76,7 @@ class ShuttleOut(BaseModel):
             usage_note=meta.usage_note,
             default_admiralty=meta.default_admiralty,
             default_confidence=meta.default_confidence,
+            pivots=meta.pivots,
         )
 
 

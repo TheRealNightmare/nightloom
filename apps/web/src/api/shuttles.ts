@@ -41,6 +41,8 @@ export interface ShuttleInfo {
   usage_note: string | null;
   default_admiralty: string;
   default_confidence: number;
+  /** Whether an auto-pivot may plan it (false for Shuttles that fan out widely). Missing from older servers. */
+  pivots?: boolean;
 }
 
 /** Mirrors `JobStatus`. */

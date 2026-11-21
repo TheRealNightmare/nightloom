@@ -93,7 +93,11 @@ class ActiveScan(_Nothing):
     meta = _meta("active-scan", mode=Mode.ACTIVE)
 
 
-REGISTRY = ShuttleRegistry([RegistrableDomain, Lookup, Addresses, StaffEmails, ActiveScan])
+class FanOut(_Nothing):
+    meta = _meta("fan-out", pivots=False)
+
+
+REGISTRY = ShuttleRegistry([RegistrableDomain, Lookup, Addresses, StaffEmails, ActiveScan, FanOut])
 PROFILE = Profile(id="test", name="Test", description="", shuttles=("lookup",), built_in=False)
 
 
@@ -449,6 +453,37 @@ async def test_a_pivot_continues_from_what_it_finds_up_to_two_hops(world: World)
     )
     [created] = await world.events("scan_run.create")
     assert created.details["pivot"] is True
+
+
+async def test_a_pivot_never_plans_shuttles_that_fan_out(world: World) -> None:
+    profile = Profile(
+        id="fan", name="Fan", description="", shuttles=("lookup", "fan-out"), built_in=False
+    )
+    user = world.users["editor"]
+    plan = scans.plan_run(
+        profile, [(SEED, EntityType.DOMAIN)], REGISTRY, allow_person_entities=False, pivot=True
+    )
+    assert plan.skipped == {"not_in_pivots": 1}
+    async with world.infra.sessionmaker() as db:
+        run = await scans.create_run(
+            db,
+            case=await world.case(),
+            profile=profile,
+            plan=plan,
+            entities=1,
+            user=user,
+            actor=Actor.for_user(user, None),
+            use_cache=True,
+            pivot=True,
+            seeds=[SEED],
+        )
+    await world.release()
+    [seed_job] = await world.jobs(run.id)
+    await _found(world, seed_job.id, ["domain:www.example.org"])
+    await world.release()
+    hop1 = await world.run(run.id)
+    assert [item["shuttle"] for item in hop1.plan] == ["lookup", "lookup"]
+    assert hop1.skipped == 2
 
 
 async def test_a_pivot_stops_planning_at_its_limits(world: World) -> None:
