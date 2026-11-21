@@ -153,6 +153,8 @@ def test_built_in_shuttles_cache_lifetimes() -> None:
         "internetdb": day,
         "rdap": 7 * day,
         "wayback": 7 * day,
+        "http-headers": 0,  # active: never cached
+        "port-check": 0,
     }
     registry = ShuttleRegistry.discover()
     for name, seconds in expected.items():
