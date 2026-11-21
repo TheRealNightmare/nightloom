@@ -195,12 +195,13 @@ async def test_shuttles_list_metadata(world: World) -> None:
     response = await viewer.get(f"{PREFIX}/shuttles")
     assert response.status_code == 200
     names = [item["name"] for item in response.json()]
-    assert names == ["active-scan", "ip-info", "registrable-domain", "staff-emails"]
+    assert names == ["active-scan", "ip-info", "registrable-domain", "site-visit", "staff-emails"]
 
     domain = await viewer.get(f"{PREFIX}/shuttles", params={"input_type": "domain"})
     assert [item["name"] for item in domain.json()] == [
         "active-scan",
         "registrable-domain",
+        "site-visit",
         "staff-emails",
     ]
     item = domain.json()[1]
