@@ -8,26 +8,44 @@ How releases are cut is described in [docs/RELEASING.md](docs/RELEASING.md).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-21
+
+Scanning at scale, and the first active checks. Scan profiles run several Shuttles on many entities at once, auto-pivot follows what they find, a result cache spares the sources, and case owners can verify domains they control so that the first two active Shuttles may check them. The case graph gains pins, saved views and a 3D view, and the whole interface has a new look, *Loom & thread*.
+
 ### Added
 
-- The first active Shuttles (`shuttles/active`), which run only on verified targets and are never cached: **Web server headers and TLS** (`http-headers`, on a domain) records the HTTPS status, the security headers sent and missing, `Server` / `X-Powered-By`, HSTS, the TLS version, whether the certificate was valid, the address and service that answered, the certificate presented and the named software as Technologies (same-host redirects only, headers only); **Common open ports** (`port-check`, on an IP address) tries a plain TCP connect to 20 common ports, four at a time, closes each at once without sending anything, and adds the open ones as Services. New Domain and IP address properties for both.
-- Ownership verification: case owners add a domain in *Settings → Verified domains* and prove they control it with a DNS TXT record (`_nightloom-challenge.<domain>`) or a file at `https://<domain>/.well-known/nightloom-verification.txt`. The worker checks the proof (*Check now*), re-checks verified domains every day, revokes a verification whose proof disappeared and expires it after 30 days unless renewed (`/cases/{id}/verifications`, migration `0012_ownership_verification`, audited as `ownership.*`). Active Shuttles now run on what a verification covers (the domain, its subdomains and the public addresses it resolves to, confirmed again before an address is scanned) instead of being refused outright; elsewhere they get `403` with `target_not_verified`.
-- Auto-pivot: *Pivot from here* runs a profile on infrastructure entities, then again on the infrastructure it finds (never people or organizations, never person-related Shuttles), up to 2 hops, 200 jobs and 500 new entities per pivot. Only in cases whose owner turned on *Allow auto-pivot* in *Settings* (`allow_auto_pivot`, off by default); `pivot: true` on `POST /cases/{id}/scan-runs`, refused with `403` elsewhere. The Jobs panel shows a pivot's new entities, hop and the limit it reached (migration `0011_auto_pivot`).
+#### Scanning: profiles, auto-pivot and the result cache
+
 - Scan profiles: run several Shuttles on one entity or a selection of up to 25 at once. Four built-in profiles (*Quick domain recon*, *Deep domain recon*, *IP / network context*, *Exposure check*) and profiles admins add on the new *Profiles* page (`/scan-profiles`, migration `0010_scan_profiles`). A run plans every (Shuttle, entity) pair the guardrails allow (at most 100 jobs, two runs in progress per user) and queues its jobs only as the requester's job slots free up, so the per-user limit holds (`/cases/{id}/scan-runs`; the worker queues the next jobs after each one, and every minute). The Jobs panel shows each run with its progress, *Cancel run* and its jobs; jobs report `run_id`. Audited as `scan_profile.*`, `scan_run.create` and `scan_run.cancel`.
+- Auto-pivot: *Pivot from here* runs a profile on infrastructure entities, then again on the infrastructure it finds (never people or organizations, never person-related Shuttles), up to 2 hops, 200 jobs and 500 new entities per pivot. Only in cases whose owner turned on *Allow auto-pivot* in *Settings* (`allow_auto_pivot`, off by default); `pivot: true` on `POST /cases/{id}/scan-runs`, refused with `403` elsewhere. The Jobs panel shows a pivot's new entities, hop and the limit it reached (migration `0011_auto_pivot`).
 - A result cache for passive Shuttles: running a Shuttle again on the same entity reuses its recent results instead of asking the source again. Shuttles declare how long (`cache_ttl_seconds`: DNS and reverse DNS 1 hour; crt.sh, RIPEstat and InternetDB 24 hours; RDAP and Wayback 7 days; never for active Shuttles), and the key includes the Shuttle's version. Cached findings are replayed through the same checks as a live run, so the case's person gate applies again, and provenance keeps when the source was asked. Per case by default (`NIGHTLOOM_RESULT_CACHE_SCOPE=case`; `instance` or `off`), with a size cap and a purge every 10 minutes (migration `0009_result_cache`).
 - *Use recent results* before a run, and *From cache · fetched …* with *Run fresh* in the Jobs panel (`fresh` on `POST /cases/{id}/jobs`; jobs report `use_cache`, `from_cache` and `cached_fetched_at`, Shuttles `cache_ttl_seconds`).
 - An admin *Cache* page (`GET`/`DELETE /admin/result-cache`) and *Settings → Cached Shuttle results* for case owners (`DELETE /cases/{id}/result-cache`), audited as `result_cache.clear` with counts only.
+
+#### Active Shuttles and ownership verification
+
+- Ownership verification: case owners add a domain in *Settings → Verified domains* and prove they control it with a DNS TXT record (`_nightloom-challenge.<domain>`) or a file at `https://<domain>/.well-known/nightloom-verification.txt`. The worker checks the proof (*Check now*), re-checks verified domains every day, revokes a verification whose proof disappeared and expires it after 30 days unless renewed (`/cases/{id}/verifications`, migration `0012_ownership_verification`, audited as `ownership.*`). Active Shuttles now run on what a verification covers (the domain, its subdomains and the public addresses it resolves to, confirmed again before an address is scanned) instead of being refused outright; elsewhere they get `403` with `target_not_verified`.
+- The first active Shuttles (`shuttles/active`), which run only on verified targets and are never cached: **Web server headers and TLS** (`http-headers`, on a domain) records the HTTPS status, the security headers sent and missing, `Server` / `X-Powered-By`, HSTS, the TLS version, whether the certificate was valid, the address and service that answered, the certificate presented and the named software as Technologies (same-host redirects only, headers only); **Common open ports** (`port-check`, on an IP address) tries a plain TCP connect to 20 common ports, four at a time, closes each at once without sending anything, and adds the open ones as Services. New Domain and IP address properties for both.
+
+#### Graph and views
+
 - 2D graph interactions: drag an entity to pin it where you drop it (or a whole selection), saved per user and case (`GET`/`PUT /cases/{id}/layout`, migration `0007_graph_layouts`); unpin from the side panel, a node menu or *View → Unpin all*.
 - Zoom toward the pointer, trackpad two-finger panning (with a *Scroll wheel* setting), rotation (Alt or right-drag, ⟲ / ⟳, twist), Ctrl/⌘+click and Shift+drag selection, a minimap, and full keyboard control with announcements and a shortcuts dialog.
 - Shorter labels on the canvas: certificates show their subject's common name or a short fingerprint, long values are cut in the middle.
 - Saved views: named snapshots of a case graph's camera, filters, expanded groups and pins, shared with the case's members (`/cases/{id}/views`, migration `0008_saved_views`, audited as `view.create` / `view.update` / `view.delete` without names). A *Views* menu (or <kbd>V</kbd>) applies one with *Undo*; editors and owners save views, and a view's creator or an owner updates, renames or deletes it; *Copy link* shares `?view=<id>`.
-- A 3D view of the case graph (*2D | 3D* on the toolbar, kept in the URL as `?mode=3d` and remembered per browser): the same layout, pins, selection, filters and groups, with depth by first seen (oldest at the back, undated entities on their own plane, a date ruler), by entity type, or flat. Orbit, pan, zoom toward the pointer, fly-to, box selection, drag to pin (the same pins as 2D), the node menu, a minimap and the full keyboard map with the same announcements. Loaded only when used (three.js and React Three Fiber in their own chunk, about 200 KiB gzip); without WebGL the graph stays in 2D with a notice.
 - Saved views store version 2 of the view state: `mode` (`2d` or `3d`), an optional `camera3d` and the `depth`. Version-1 views still load, in 2D.
-- `make web-size` (run in CI) checks the built bundle against `apps/web/bundle-budget.json`.
+- A 3D view of the case graph (*2D | 3D* on the toolbar, kept in the URL as `?mode=3d` and remembered per browser): the same layout, pins, selection, filters and groups, with depth by first seen (oldest at the back, undated entities on their own plane, a date ruler), by entity type, or flat. Orbit, pan, zoom toward the pointer, fly-to, box selection, drag to pin (the same pins as 2D), the node menu, a minimap and the full keyboard map with the same announcements. Loaded only when used (three.js and React Three Fiber in their own chunk, about 200 KiB gzip); without WebGL the graph stays in 2D with a notice.
+
+#### Interface
+
 - The sign-in page shows a slow 3D loom beside the form (behind it on narrow screens): a brass weft passing over and under the warp threads, knots forming where it crosses. It is fetched only after the form is ready and the browser is idle, from the 3D view's three.js chunk, at most 30 frames a second, paused while hidden or off-screen; a still drawing of the same loom is shown with reduced motion, Save-Data, without WebGL, or if it fails to load. `make web-size` also checks that the sign-in page's initial JavaScript has no three.js.
 - Every page has its own title ("Cases · Nightloom", "*case* · Graph · Nightloom", …), the 404 page has the new look and shows the address, and Nightloom has a knot-on-thread app icon (SVG and PNG sizes) and a web manifest.
 - Loading states show what is loading over still skeleton lines; a page whose list fails to load offers *Try again*.
-- `make screenshots` takes the README screenshots (`docs/images/`) on a throwaway stack of its own with fictional demo data.
+
+#### Development
+
+- `make web-size` (run in CI) checks the built bundle against `apps/web/bundle-budget.json`.
+- `make screenshots` takes the README screenshots (`docs/images/`) on a throwaway stack of its own with fictional demo data; it also shows a profile run in the Jobs panel, the case settings' *Verified domains* and the admin *Scan profiles* page.
 - Browser tests of the sign-in loom and axe-core accessibility checks (`@axe-core/playwright`) of every screen in both themes.
 
 ### Changed
@@ -38,6 +56,19 @@ How releases are cut is described in [docs/RELEASING.md](docs/RELEASING.md).
 - The contrast test reads the stylesheets, so every text color in use, and every text and background pair declared together, is checked in both themes.
 - `prefers-reduced-motion` now ends every CSS animation and transition at once.
 - The case graph's outer region is named "Case graph" (it had the same name as the graph stage inside it).
+
+### Upgrading from 0.1.0
+
+- The `migrate` service applies migrations `0007` to `0012` on `make up`; nothing else is needed. Back up first, as always ([Upgrades](docs/DEPLOYMENT.md#upgrades)).
+- New optional settings, all with defaults: `NIGHTLOOM_RESULT_CACHE_SCOPE`, `NIGHTLOOM_RESULT_CACHE_MAX_BYTES` and `NIGHTLOOM_RESULT_CACHE_MAX_ENTRY_BYTES` (see `.env.example`).
+- Active Shuttles connect from the worker to the verified targets themselves (HTTPS, HTTP and 20 common TCP ports); a firewall in front of the worker host decides whether they can.
+
+### Known limitations
+
+- Only two active Shuttles, and they run one at a time (not in scan profiles or auto-pivots).
+- Ownership can only be proven for domains (an address is covered through a verified domain that resolves to it).
+- Single-node deployment only (one host running the whole Compose stack).
+- Backups stop Neo4j briefly, because Neo4j Community Edition can only be dumped while stopped.
 
 ## [0.1.0] - 2026-11-19
 
@@ -115,5 +146,6 @@ First release: self-hosted, passive collection of public infrastructure data int
 - Single-node deployment only (one host running the whole Compose stack).
 - Backups stop Neo4j briefly, because Neo4j Community Edition can only be dumped while stopped.
 
-[Unreleased]: https://github.com/TheRealNightmare/nightloom/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/TheRealNightmare/nightloom/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/TheRealNightmare/nightloom/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/TheRealNightmare/nightloom/releases/tag/v0.1.0

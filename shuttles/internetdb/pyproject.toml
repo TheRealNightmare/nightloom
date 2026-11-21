@@ -1,6 +1,6 @@
 [project]
 name = "nightloom-shuttle-internetdb"
-version = "0.1.0"
+version = "0.2.0"
 description = "Built-in Nightloom Shuttle: open ports, software (CPEs), known vulnerabilities, tags and hostnames of an IPv4 address from Shodan's InternetDB."
 readme = "README.md"
 requires-python = ">=3.12"
