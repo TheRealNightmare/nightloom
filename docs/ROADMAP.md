@@ -56,7 +56,7 @@ A new look for the web UI, in steps that each keep every screen working. All six
 ## M2 — Auto-pivot
 
 - [ ] Auto-pivot with depth, budget, type allowlist and passive-only mode
-- [ ] Scan profiles
+- [x] Scan profiles (four built in, admin-defined ones; runs on up to 25 entities, released within the per-user job limit, grouped in the Jobs panel, cancellable)
 - [x] Result cache (per-Shuttle lifetimes, per case by default, replay through the case's checks, *Run fresh*, admin and owner clearing)
 - [ ] Ownership verification before active Shuttles may run against a target
 

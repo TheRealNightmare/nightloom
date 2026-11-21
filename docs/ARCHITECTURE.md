@@ -828,10 +828,15 @@ In the web UI's *Jobs* panel, a running job's elapsed time stops at its deadline
 | `GET /shuttles` | signed in | installed Shuttles' metadata, by name; `?input_type=domain` keeps those accepting it |
 | `POST /cases/{id}/jobs` | editor, owner; case `open` | `{shuttle, entity_key, fresh?}` → `201` with the queued job (`fresh: true` skips the [result cache](#the-result-cache)); `403` active or person-gated Shuttle (recorded as `authz.denied`), `409` case not open, `422` unknown Shuttle, type not accepted or no such entity, `429` too many jobs, `503` Neo4j or the queue unavailable |
 | `GET /cases/{id}/jobs` | member | newest first, `{items, next_cursor}`; `limit` 1–200, `status` filter |
-| `GET /cases/{id}/jobs/{job_id}` | member | one job, with `stats.entities_touched`, the Shuttle's `timeout_seconds`, `deadline` and `overdue_at` (null until it starts), `use_cache`, `from_cache` and `cached_fetched_at`; `404` for a job of another case |
+| `GET /cases/{id}/jobs/{job_id}` | member | one job, with `stats.entities_touched`, the Shuttle's `timeout_seconds`, `deadline` and `overdue_at` (null until it starts), `use_cache`, `from_cache`, `cached_fetched_at` and `run_id`; `404` for a job of another case |
 | `GET /admin/result-cache` | admin | the result cache's scope and limits, and per Shuttle its entries, size, hits and recent jobs from the cache |
 | `DELETE /admin/result-cache` | admin | clears every entry, or one Shuttle's (`?shuttle=dns`); `{deleted}`; audited |
 | `DELETE /cases/{id}/result-cache` | owner (also when the case is closed) | clears the case's entries; `{deleted}`; audited |
+| `GET /scan-profiles` | signed in | built-in profiles, then custom ones: `shuttles`, `input_types` (types at least one installed Shuttle accepts), `missing_shuttles` |
+| `POST /scan-profiles`, `PATCH`/`DELETE /scan-profiles/{id}` | admin | custom profiles; `403` for a built-in one, `409` name taken or 50 profiles, `422` unknown or active Shuttle |
+| `POST /cases/{id}/scan-runs` | editor, owner; case `open` | `{profile_id, entity_keys (1–25), fresh?}` → `201` with the run (`total`, `released`, `waiting`, `skipped`, `jobs` by status); `422` unknown profile, missing entities, nothing to run or over 100 jobs; `429` two runs in progress |
+| `GET /cases/{id}/scan-runs[/{run_id}]` | member | the newest runs (`limit` 1–50), or one |
+| `POST /cases/{id}/scan-runs/{run_id}/cancel` | editor, owner (also when the case is closed) | `409` once ended |
 | `POST /cases/{id}/jobs/{job_id}/cancel` | editor, owner (also when the case is closed) | a queued job becomes `cancelled` at once; a running one gets `cancel_requested` and stops between findings; `409` once finished |
 
 #### The result cache
@@ -846,6 +851,18 @@ A passive Shuttle with a `cache_ttl_seconds` (DNS and reverse DNS 1 hour; crt.sh
 - **Failure is harmless.** A cache that cannot be read means a live run; one that cannot be written means a job that still succeeds. Both are logged by error type only.
 - **Limits.** A run whose results are larger than `NIGHTLOOM_RESULT_CACHE_MAX_ENTRY_BYTES` (5 MiB) is not stored. Every 10 minutes the reaper's thread purges, under its own Valkey lock (`nightloom:worker:result-cache-purge`), expired entries and then the least recently used ones beyond `NIGHTLOOM_RESULT_CACHE_MAX_BYTES` (512 MiB).
 - **Clearing.** Admins see the scope, the limits and per Shuttle the entries, size, reuse and how many of the last 30 days' successful jobs came from the cache (`GET /admin/result-cache`, the *Cache* page), and clear everything or one Shuttle's entries (`DELETE /admin/result-cache[?shuttle=]`). Case owners clear their case's entries (`DELETE /cases/{id}/result-cache`, *Settings → Cached Shuttle results*). Both are audited as `result_cache.clear` with the Shuttle name and a count, never entity keys.
+
+#### Scan profiles and runs
+
+A **scan profile** names Shuttles to run together ([`scans/`](../apps/api/src/nightloom_api/scans)). Four are built in (code, the same everywhere, not editable): *Quick domain recon* (DNS, RDAP, registrable domain), *Deep domain recon* (DNS, crt.sh, RDAP, Wayback, registrable domain), *IP / network context* (reverse DNS, RIPEstat, RDAP, InternetDB) and *Exposure check* (InternetDB, reverse DNS). Admins add their own (table `scan_profiles`, migration `0010`; at most 50, names unique ignoring case and distinct from the built-in ones, 1–15 Shuttles, passive only), which every user can run; changes are audited (`scan_profile.create` / `update` / `delete`, with the name and Shuttles). A profile names Shuttles, not versions: it runs whatever is installed, and an uninstalled one is left out and reported.
+
+A **run** (table `scan_runs`, deleted with its case) runs a profile on 1–25 entities of an open case (editors and owners):
+
+- **Planned** when created: every (Shuttle, entity) pair the guardrails allow, entity by entity in the profile's order; pairs the Shuttle does not accept, that the case's person gate refuses or whose Shuttle is not installed are skipped and counted. At most 100 jobs per run and two runs in progress per user (`429`, audited as a failed `scan_run.create`). `fresh: true` skips the [result cache](#the-result-cache) for every job.
+- **Released in batches**: a planned job becomes a real job (`jobs.run_id`) only while the requester has fewer queued or running jobs than the per-user limit (`NIGHTLOOM_MAX_ACTIVE_JOBS_PER_USER`, 5), under the same per-user lock as queueing a single job, so the limit always holds. Releasing happens right after the run is created, in the worker after each job of a run finishes, and from the reaper's thread every minute as a safety net. Released jobs are ordinary jobs (`job.create` by `system:scan-run`, with the `run_id`), checked again by the worker when they start; older runs release first, and single jobs take slots too.
+- **Ends** as `finished` (everything released and done), `cancelled` (`POST …/cancel`: nothing more is released, queued jobs are cancelled and running ones asked to stop; audited `scan_run.cancel`), or `stopped` (the case is no longer open, or the requester may no longer run Shuttles, or was deleted).
+
+In the web UI, *Run a profile* sits above *Run a Shuttle* for the selected entity and in the side panel of a multi-selection; the *Jobs* panel shows each run as one row (profile, progress such as *7 of 12 done · 2 running · 3 waiting*, *Cancel run*) with its jobs inside on demand, and polls running runs so newly released jobs appear. Admins manage profiles on the *Profiles* page.
 
 The Compose stack runs the worker as the `worker` service (same image as the API, 4 processes by default, health-checked with `celery inspect ping`, with `NIGHTLOOM_DNS_RESOLVERS` for the [DNS](#the-dns-shuttle) and [reverse DNS](#the-reverse-dns-shuttle) Shuttles); `make worker` runs one on your machine against the stack's services.
 
