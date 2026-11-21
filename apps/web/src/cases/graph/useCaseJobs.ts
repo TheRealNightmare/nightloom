@@ -15,7 +15,7 @@ import { describeCaseError } from "../errors";
 /** How often queued and running jobs are polled while the page is visible. */
 export const JOB_POLL_MS = 2000;
 
-function usePageVisible(): boolean {
+export function usePageVisible(): boolean {
   const [visible, setVisible] = useState(() => document.visibilityState !== "hidden");
   useEffect(() => {
     const update = () => {
@@ -54,6 +54,11 @@ export interface CaseJobs {
   start: (shuttle: string, entityKey: string, options?: { fresh?: boolean }) => Promise<Job>;
   /** Cancels a job; rejects with the API's error. */
   cancel: (jobId: string) => Promise<Job>;
+  /**
+   * Loads the newest page again and merges it in: picks up jobs queued
+   * elsewhere (a profile run's next jobs). Errors are ignored.
+   */
+  refresh: () => Promise<void>;
 }
 
 /**
@@ -183,6 +188,16 @@ export function useCaseJobs(caseId: string, onFinished: (job: Job) => void): Cas
     [caseId, report],
   );
 
+  const refresh = useCallback(async () => {
+    try {
+      const page = await listJobs(caseId, {});
+      setJobs((previous) => mergeJobs(previous, page.items));
+      report(page.items);
+    } catch {
+      // The next poll tries again.
+    }
+  }, [caseId, report]);
+
   return {
     jobs,
     loading,
@@ -193,5 +208,6 @@ export function useCaseJobs(caseId: string, onFinished: (job: Job) => void): Cas
     loadMore,
     start,
     cancel,
+    refresh,
   };
 }

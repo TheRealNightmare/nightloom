@@ -3010,6 +3010,72 @@ button.admiralty__code {
 }
 
 /* Running past the worker's hard time limit: its worker most likely stopped. */
+.job__progress {
+  width: 100%;
+  height: 4px;
+  border: 0;
+  border-radius: 2px;
+  background: var(--surface-2);
+  accent-color: var(--brass);
+  appearance: none;
+}
+
+.job__progress::-webkit-progress-bar {
+  border-radius: 2px;
+  background: var(--surface-2);
+}
+
+.job__progress::-webkit-progress-value {
+  border-radius: 2px;
+  background: var(--brass);
+}
+
+.job__progress::-moz-progress-bar {
+  border-radius: 2px;
+  background: var(--brass);
+}
+
+.job__toggle {
+  justify-self: start;
+  font-size: 13px;
+}
+
+.jobs-list--nested {
+  margin-top: 4px;
+  padding-left: 12px;
+  border-left: 1px solid var(--line);
+}
+
+.run-profile {
+  display: grid;
+  gap: 10px;
+}
+
+.run-profile__description {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.run-profile__shuttles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+}
+
+.run-profile__shuttle {
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.run-profile__shuttle[data-missing] {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
 .job__cached {
   display: flex;
   flex-wrap: wrap;

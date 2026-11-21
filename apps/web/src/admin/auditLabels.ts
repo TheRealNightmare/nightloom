@@ -40,6 +40,11 @@ export const ACTION_LABELS: Record<AuditAction, string> = {
   "job.cancel": "Shuttle job cancelled",
   "job.finish": "Shuttle job finished",
   "result_cache.clear": "Result cache cleared",
+  "scan_profile.create": "Scan profile created",
+  "scan_profile.update": "Scan profile changed",
+  "scan_profile.delete": "Scan profile deleted",
+  "scan_run.create": "Profile run started",
+  "scan_run.cancel": "Profile run cancelled",
 };
 
 /** `reason` codes of failed sign-ins and admin actions. */
@@ -173,6 +178,15 @@ export function describeAuditEvent(event: AuditEvent, users: readonly User[] = [
       return "cancelled a Shuttle job";
     case "job.finish":
       return `finished a Shuttle job (${text(details["status"]) ?? outcome})`;
+    case "scan_profile.create":
+      return `created the scan profile ${text(details["name"]) ?? ""}`.trimEnd();
+    case "scan_profile.update":
+      return `changed the scan profile ${text(details["name"]) ?? ""}`.trimEnd();
+    case "scan_profile.delete":
+      return `deleted the scan profile ${text(details["name"]) ?? ""}`.trimEnd();
+    case "scan_run.create":
+    case "scan_run.cancel":
+      return describeEvent(event);
     case "result_cache.clear": {
       if (event.case_id !== null) return describeEvent(event);
       const shuttle = text(details["shuttle"]);

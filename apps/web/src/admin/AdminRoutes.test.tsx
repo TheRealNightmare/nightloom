@@ -33,7 +33,13 @@ describe("admin routes", () => {
     ["viewer", VIEWER_USER],
   ])("show Page not found to an %s and ask the API for nothing", async (_role, user) => {
     signInAs(user);
-    for (const path of ["/admin/users", "/admin/audit", "/admin/result-cache", "/admin"]) {
+    for (const path of [
+      "/admin/users",
+      "/admin/audit",
+      "/admin/profiles",
+      "/admin/result-cache",
+      "/admin",
+    ]) {
       const view = renderApp(path);
       expect(await screen.findByRole("heading", { name: "Page not found" })).toBeVisible();
       view.unmount();
@@ -50,6 +56,7 @@ describe("admin routes", () => {
     expect(within(nav()).queryByRole("link", { name: "Users" })).not.toBeInTheDocument();
     expect(within(nav()).queryByRole("link", { name: "Audit log" })).not.toBeInTheDocument();
     expect(within(nav()).queryByRole("link", { name: "Cache" })).not.toBeInTheDocument();
+    expect(within(nav()).queryByRole("link", { name: "Profiles" })).not.toBeInTheDocument();
   });
 
   it("are linked from the top bar for admins", async () => {
@@ -64,6 +71,10 @@ describe("admin routes", () => {
     expect(within(nav()).getByRole("link", { name: "Audit log" })).toHaveAttribute(
       "href",
       "/admin/audit",
+    );
+    expect(within(nav()).getByRole("link", { name: "Profiles" })).toHaveAttribute(
+      "href",
+      "/admin/profiles",
     );
     expect(within(nav()).getByRole("link", { name: "Cache" })).toHaveAttribute(
       "href",

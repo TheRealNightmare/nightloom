@@ -143,6 +143,14 @@ describe("describeAuditEvent", () => {
       "cleared the cached results of crtsh (1 entry)",
     ],
     [ev("result_cache.clear", {}), "cleared the result cache"],
+    [ev("scan_profile.create", { name: "Mail check" }), "created the scan profile Mail check"],
+    [ev("scan_profile.update", { name: "Mail" }), "changed the scan profile Mail"],
+    [ev("scan_profile.delete", {}), "deleted the scan profile"],
+    [
+      ev("scan_run.create", { profile_name: "Exposure check", jobs: 4 }, { case_id: "c-1" }),
+      "ran Exposure check (4 jobs)",
+    ],
+    [ev("scan_run.cancel", {}, { case_id: "c-1" }), "cancelled a profile run"],
     [
       ev("result_cache.clear", { shuttle: "all", deleted: 2 }, { case_id: "c-1" }),
       "cleared the case's cached Shuttle results",

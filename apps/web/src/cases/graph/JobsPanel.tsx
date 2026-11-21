@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
+import { runLabel, type ScanRun } from "../../api/scans";
 import { isActive, type Job, type JobStatus } from "../../api/shuttles";
 import { RelativeTime } from "../RelativeTime";
 import {
@@ -11,6 +12,7 @@ import {
   OVERDUE_MESSAGE,
   statsText,
 } from "./jobText";
+import { panelEntries, RUN_STATUS_LABELS, runProgressText } from "./runText";
 
 export const FROM_CACHE_LABEL = "From cache";
 export const NO_JOBS_MESSAGE =
@@ -243,6 +245,114 @@ function JobRow({
   );
 }
 
+const STOP_REASONS: Record<string, string> = {
+  case_not_open: "Stopped because the case is no longer open.",
+  requester_not_allowed: "Stopped because its requester may no longer run Shuttles here.",
+};
+
+/** A profile run, with its progress and (on demand) its jobs. */
+function RunRow({
+  run,
+  jobs,
+  canCancel,
+  onCancelRun,
+  renderJob,
+}: {
+  run: ScanRun;
+  jobs: readonly Job[];
+  canCancel: boolean;
+  onCancelRun: ((runId: string) => Promise<unknown>) | undefined;
+  renderJob: (job: Job) => ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const label = runLabel(run);
+  const done = run.jobs.succeeded + run.jobs.failed + run.jobs.cancelled;
+  const cancel = () => {
+    if (!onCancelRun) return;
+    setCancelling(true);
+    setError(null);
+    onCancelRun(run.id).then(
+      () => {
+        setCancelling(false);
+      },
+      (caught: unknown) => {
+        setCancelling(false);
+        setError(describeJobError(caught));
+      },
+    );
+  };
+  return (
+    <li className="job job--run" data-status={run.status} aria-label={label}>
+      <div className="job__head">
+        <span
+          className="job-status"
+          data-status={run.status === "finished" ? "succeeded" : run.status}
+        >
+          {RUN_STATUS_LABELS[run.status]}
+        </span>
+        <span className="job__title">
+          <strong>{run.profile_name}</strong> <span className="table__muted">on</span>{" "}
+          {run.entities === 1 ? "1 entity" : `${String(run.entities)} entities`}
+        </span>
+        {canCancel && onCancelRun && run.status === "running" && (
+          <button
+            type="button"
+            className="button button--ghost button--small job__cancel"
+            aria-label={`Cancel ${label}`}
+            disabled={cancelling}
+            onClick={cancel}
+          >
+            {cancelling ? "Cancelling…" : "Cancel run"}
+          </button>
+        )}
+      </div>
+      <progress
+        className="job__progress"
+        value={done}
+        max={Math.max(1, run.total)}
+        aria-label={`${label}: ${String(done)} of ${String(run.total)} jobs done`}
+      />
+      <p className="job__stats" data-testid="run-progress">
+        {runProgressText(run)}
+      </p>
+      <p className="job__meta">
+        started <RelativeTime iso={run.created_at} />
+        {run.skipped > 0 && ` · ${String(run.skipped)} skipped`}
+        {!run.use_cache && " · fresh"}
+      </p>
+      {run.stop_reason !== null && (
+        <p className="job__error">{STOP_REASONS[run.stop_reason] ?? "Stopped."}</p>
+      )}
+      {error && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      )}
+      {jobs.length > 0 && (
+        <>
+          <button
+            type="button"
+            className="link-button job__toggle"
+            aria-expanded={open}
+            onClick={() => {
+              setOpen((value) => !value);
+            }}
+          >
+            {open ? "Hide its jobs" : `Show its jobs (${String(jobs.length)})`}
+          </button>
+          {open && (
+            <ol className="jobs-list jobs-list--nested" aria-label={`Jobs of ${label}`}>
+              {jobs.map(renderJob)}
+            </ol>
+          )}
+        </>
+      )}
+    </li>
+  );
+}
+
 export interface JobsPanelProps {
   jobs: Job[];
   loading: boolean;
@@ -253,6 +363,10 @@ export interface JobsPanelProps {
   onCancel: (jobId: string) => Promise<unknown>;
   /** Runs a cached job's Shuttle again, asking the source (omitted: no "Run fresh"). */
   onRunFresh?: (job: Job) => Promise<unknown>;
+  /** The case's profile runs, newest first; their jobs are shown inside them. */
+  runs?: readonly ScanRun[];
+  /** Cancels a profile run (shown with `canCancel`). */
+  onCancelRun?: (runId: string) => Promise<unknown>;
   onLoadMore: () => void;
   onClose: () => void;
 }
@@ -267,9 +381,21 @@ export function JobsPanel({
   canCancel,
   onCancel,
   onRunFresh,
+  runs = [],
+  onCancelRun,
   onLoadMore,
   onClose,
 }: JobsPanelProps) {
+  const { entries, byRun } = panelEntries(jobs, runs);
+  const renderJob = (job: Job) => (
+    <JobRow
+      key={job.id}
+      job={job}
+      canCancel={canCancel}
+      onCancel={onCancel}
+      onRunFresh={onRunFresh}
+    />
+  );
   return (
     <section className="jobs-panel" aria-labelledby="jobs-panel-title">
       <div className="jobs-panel__head">
@@ -289,19 +415,24 @@ export function JobsPanel({
         <p className="loading" role="status">
           Loading jobs…
         </p>
-      ) : jobs.length === 0 ? (
+      ) : entries.length === 0 ? (
         <p className="jobs-panel__empty">{NO_JOBS_MESSAGE}</p>
       ) : (
         <ol className="jobs-list" aria-label="Job history">
-          {jobs.map((job) => (
-            <JobRow
-              key={job.id}
-              job={job}
-              canCancel={canCancel}
-              onCancel={onCancel}
-              onRunFresh={onRunFresh}
-            />
-          ))}
+          {entries.map((entry) =>
+            entry.kind === "job" ? (
+              renderJob(entry.job)
+            ) : (
+              <RunRow
+                key={entry.run.id}
+                run={entry.run}
+                jobs={byRun.get(entry.run.id) ?? []}
+                canCancel={canCancel}
+                onCancelRun={onCancelRun}
+                renderJob={renderJob}
+              />
+            ),
+          )}
         </ol>
       )}
       {hasMore && (

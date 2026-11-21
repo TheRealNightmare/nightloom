@@ -143,6 +143,8 @@ export interface GraphViewProps {
   overview: (summary: GraphSummary) => ReactNode;
   /** The selected entity's details in the side panel (default: id, properties, provenance). */
   renderEntity?: (entity: EntityNode) => ReactNode;
+  /** More side panel content while several entities are selected (e.g. running a profile). */
+  renderSelection?: (entities: readonly EntityNode[]) => ReactNode;
   /** Extra content at the end of the toolbar (e.g. a summary and the case's actions). */
   toolbar?: ReactNode;
   /** Shown over the canvas's top-right corner (e.g. the running job). */
@@ -202,6 +204,7 @@ export function GraphView({
   data,
   overview,
   renderEntity,
+  renderSelection,
   toolbar,
   overlay,
   focus = null,
@@ -411,6 +414,8 @@ export function GraphView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [graph, multi, view, snapshot],
   );
+
+  const selectedSet = useMemo(() => new Set(selection), [selection]);
 
   /** Selects `nodes`: none, one (the explorer's selection) or several. */
   const selectMany = useCallback(
@@ -950,6 +955,11 @@ export function GraphView({
         overview={
           selection.length >= 2 ? (
             <SelectionSummary
+              {...(renderSelection
+                ? {
+                    extra: renderSelection(data.nodes.filter((node) => selectedSet.has(node.id))),
+                  }
+                : {})}
               count={selection.length}
               pinned={selection.filter((node) => pins.isPinned(node)).length}
               onPinAll={() => {
@@ -1095,12 +1105,14 @@ function SelectionSummary({
   onPinAll,
   onUnpinAll,
   onClear,
+  extra,
 }: {
   count: number;
   pinned: number;
   onPinAll: () => void;
   onUnpinAll: () => void;
   onClear: () => void;
+  extra?: ReactNode;
 }) {
   return (
     <section aria-labelledby="selection-title">
@@ -1126,6 +1138,7 @@ function SelectionSummary({
           Clear
         </button>
       </div>
+      {extra}
     </section>
   );
 }

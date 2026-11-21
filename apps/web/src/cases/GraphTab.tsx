@@ -4,6 +4,7 @@ import { useSearchParams } from "react-router";
 import { can } from "../api/cases";
 import { RequestAbortedError } from "../api/client";
 import { DEFAULT_GRAPH_LIMIT, getCaseGraph, getSchema, type Schema } from "../api/graph";
+import type { ScanProfile } from "../api/scans";
 import { isActive, type Job, type ShuttleInfo } from "../api/shuttles";
 import { TypeSummary, type GraphSummary } from "../components/SidePanel";
 import type { EntityNode, InvestigationGraph } from "../domain/entities";
@@ -31,10 +32,12 @@ import {
   withoutEntity,
   withRelationship,
 } from "./graph/mapping";
+import { RunProfile } from "./graph/RunProfile";
 import { RunShuttles } from "./graph/RunShuttles";
 import { SavedViews } from "./graph/SavedViews";
 import { graphSummaryText, readOnlyReason } from "./graph/text";
 import { useCaseJobs } from "./graph/useCaseJobs";
+import { useCaseRuns } from "./graph/useCaseRuns";
 
 // sigma and graphology are loaded only when there is a graph to draw.
 const GraphView = lazy(() => import("../graph/GraphView"));
@@ -152,6 +155,8 @@ export function GraphTab() {
   );
   const jobs = useCaseJobs(caseId, onJobFinished);
   const { start: startJob } = jobs;
+  const runs = useCaseRuns(caseId, jobs.refresh);
+  const { start: startRun } = runs;
 
   useEffect(() => {
     if (pulse === null) return;
@@ -212,6 +217,14 @@ export function GraphTab() {
     },
     [startJob],
   );
+  const runProfile = useCallback(
+    async (profile: ScanProfile, entityKeys: string[], options: { fresh?: boolean } = {}) => {
+      const run = await startRun(profile.id, entityKeys, options);
+      setJobsOpen(true);
+      return run;
+    },
+    [startRun],
+  );
   // Runs a cached job's Shuttle again on the same entity, asking the source.
   const runFresh = useCallback(
     (job: Job) => startJob(job.shuttle_name, job.input_key, { fresh: true }),
@@ -232,6 +245,7 @@ export function GraphTab() {
           setDialog({ kind: "delete", entity: target });
         }}
       >
+        {canEdit && <RunProfile entities={[entity]} onRun={runProfile} />}
         {canEdit && (
           <RunShuttles
             entity={entity}
@@ -241,7 +255,14 @@ export function GraphTab() {
         )}
       </EntityDetails>
     );
-  }, [load, caseId, revision, canEdit, allowPersonEntities, runShuttle]);
+  }, [load, caseId, revision, canEdit, allowPersonEntities, runShuttle, runProfile]);
+  const renderSelection = useMemo(
+    () =>
+      canEdit
+        ? (entities: readonly EntityNode[]) => <RunProfile entities={entities} onRun={runProfile} />
+        : undefined,
+    [canEdit, runProfile],
+  );
 
   if (load.kind === "loading") return <Loading label="Loading graph…" />;
   if (load.kind === "error") {
@@ -379,6 +400,8 @@ export function GraphTab() {
             // Editors and owners may cancel, also while the case is closed.
             canCancel={canCancel}
             onCancel={jobs.cancel}
+            runs={runs.runs}
+            onCancelRun={runs.cancel}
             // Running again needs an open case, like any new job.
             {...(canEdit ? { onRunFresh: runFresh } : {})}
             onLoadMore={jobs.loadMore}
@@ -414,6 +437,7 @@ export function GraphTab() {
             data={data}
             overview={overview}
             {...(renderEntity ? { renderEntity } : {})}
+            {...(renderSelection ? { renderSelection } : {})}
             focus={focus}
             onSelectionChange={setSelectedId}
             {...(pulse ? { pulse } : {})}
