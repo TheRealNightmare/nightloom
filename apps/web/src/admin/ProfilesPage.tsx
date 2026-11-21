@@ -64,7 +64,11 @@ function ProfileDialog({
   };
 
   return (
-    <Modal title={initial === null ? "New scan profile" : `Edit ${initial.name}`} onClose={onClose}>
+    <Modal
+      title={initial === null ? "New scan profile" : `Edit ${initial.name}`}
+      onClose={onClose}
+      wide
+    >
       <form
         noValidate
         onSubmit={(event) => {
