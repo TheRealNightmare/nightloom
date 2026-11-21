@@ -163,6 +163,39 @@ export function PersonEntitiesSwitch({
   );
 }
 
+export function AutoPivotSwitch({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <div className="field">
+      <label className="switch">
+        <input
+          type="checkbox"
+          role="switch"
+          name="allow_auto_pivot"
+          className="switch__input"
+          checked={checked}
+          aria-describedby="auto-pivot-hint"
+          onChange={(event) => {
+            onChange(event.target.checked);
+          }}
+        />
+        <span className="switch__track" aria-hidden="true" />
+        <span className="switch__label">Allow auto-pivot</span>
+      </label>
+      <p className="field__hint" id="auto-pivot-hint">
+        Off by default. Lets editors start a profile run that also scans the domains, addresses and
+        other infrastructure it finds, up to 2 hops, 200 jobs and 500 new entities. A pivot never
+        continues through people or organizations, and never runs person-related Shuttles.
+      </p>
+    </div>
+  );
+}
+
 export function RetentionField({
   value,
   onChange,

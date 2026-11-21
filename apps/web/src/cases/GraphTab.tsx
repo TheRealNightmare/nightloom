@@ -37,7 +37,7 @@ import { RunShuttles } from "./graph/RunShuttles";
 import { SavedViews } from "./graph/SavedViews";
 import { graphSummaryText, readOnlyReason } from "./graph/text";
 import { useCaseJobs } from "./graph/useCaseJobs";
-import { useCaseRuns } from "./graph/useCaseRuns";
+import { useCaseRuns, type RunOptions } from "./graph/useCaseRuns";
 
 // sigma and graphology are loaded only when there is a graph to draw.
 const GraphView = lazy(() => import("../graph/GraphView"));
@@ -209,6 +209,7 @@ export function GraphTab() {
   const openDialog = canEdit || dialog?.kind === "export" ? dialog : null;
 
   const allowPersonEntities = current.allow_person_entities;
+  const allowAutoPivot = current.allow_auto_pivot;
   const runShuttle = useCallback(
     async (shuttle: ShuttleInfo, entity: EntityNode, options: { fresh?: boolean } = {}) => {
       const job = await startJob(shuttle.name, entity.id, options);
@@ -218,7 +219,7 @@ export function GraphTab() {
     [startJob],
   );
   const runProfile = useCallback(
-    async (profile: ScanProfile, entityKeys: string[], options: { fresh?: boolean } = {}) => {
+    async (profile: ScanProfile, entityKeys: string[], options: RunOptions = {}) => {
       const run = await startRun(profile.id, entityKeys, options);
       setJobsOpen(true);
       return run;
@@ -245,7 +246,9 @@ export function GraphTab() {
           setDialog({ kind: "delete", entity: target });
         }}
       >
-        {canEdit && <RunProfile entities={[entity]} onRun={runProfile} />}
+        {canEdit && (
+          <RunProfile entities={[entity]} onRun={runProfile} allowPivot={allowAutoPivot} />
+        )}
         {canEdit && (
           <RunShuttles
             entity={entity}
@@ -255,13 +258,24 @@ export function GraphTab() {
         )}
       </EntityDetails>
     );
-  }, [load, caseId, revision, canEdit, allowPersonEntities, runShuttle, runProfile]);
+  }, [
+    load,
+    caseId,
+    revision,
+    canEdit,
+    allowPersonEntities,
+    allowAutoPivot,
+    runShuttle,
+    runProfile,
+  ]);
   const renderSelection = useMemo(
     () =>
       canEdit
-        ? (entities: readonly EntityNode[]) => <RunProfile entities={entities} onRun={runProfile} />
+        ? (entities: readonly EntityNode[]) => (
+            <RunProfile entities={entities} onRun={runProfile} allowPivot={allowAutoPivot} />
+          )
         : undefined,
-    [canEdit, runProfile],
+    [canEdit, allowAutoPivot, runProfile],
   );
 
   if (load.kind === "loading") return <Loading label="Loading graph…" />;

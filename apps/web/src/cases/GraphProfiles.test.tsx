@@ -22,6 +22,7 @@ import { clearCookies, FakeApi, json } from "../test/fakeApi";
 import { renderApp } from "../test/renderApp";
 import { FakeSigma, sigmaEvent, waitForSigma } from "../test/sigmaMock";
 import { NO_PROFILES_MESSAGE, PROFILE_RECENT_HINT } from "./graph/RunProfile";
+import { PIVOT_HINT, PIVOT_INFRASTRUCTURE_HINT } from "./graph/runText";
 import { JOB_POLL_MS } from "./graph/useCaseJobs";
 
 vi.mock("sigma", () => import("../test/sigmaMock"));
@@ -31,7 +32,8 @@ const path = `/cases/${CASE_ID}`;
 const apex = makeEntity("domain", "example.org");
 const www = makeEntity("domain", "www.example.org");
 const ip = makeEntity("ip_address", "192.0.2.1");
-const GRAPH: ApiGraph = { nodes: [apex, www, ip], edges: [], truncated: false };
+const email = makeEntity("email", "alex@example.org");
+const GRAPH: ApiGraph = { nodes: [apex, www, ip, email], edges: [], truncated: false };
 
 beforeEach(() => {
   api = new FakeApi().install();
@@ -49,7 +51,7 @@ type ServeOptions = Parameters<typeof serveCase>[1];
 
 async function openGraph(options: ServeOptions = {}) {
   serveCase(api, { graph: GRAPH, ...options });
-  for (const entity of [apex, www, ip]) {
+  for (const entity of [apex, www, ip, email]) {
     api.on("GET", `${path}/entities/${encodeURIComponent(entity.key)}`, () =>
       json({ ...entity, neighbours: 0 }),
     );
@@ -153,6 +155,46 @@ describe("Run a profile", () => {
     expect(await within(profileSection()).findByText(NO_PROFILES_MESSAGE)).toBeVisible();
   });
 
+  it("offers Pivot from here only where the case allows auto-pivot", async () => {
+    await openGraph();
+    await select(apex.key);
+    const section = await waitFor(profileSection);
+    expect(within(section).queryByRole("button", { name: "Pivot from here" })).toBeNull();
+  });
+
+  it("starts a pivot from infrastructure", async () => {
+    const started = makeRun({
+      entities: 1,
+      total: 3,
+      released: 3,
+      waiting: 0,
+      pivot: true,
+      max_depth: 2,
+      max_jobs: 200,
+      max_entities: 500,
+    });
+    api.on("POST", `${path}/scan-runs`, () => json(started, 201));
+    await openGraph({ overrides: { allow_auto_pivot: true } });
+    await select(apex.key);
+    const section = await waitFor(profileSection);
+    const pivot = within(section).getByRole("button", { name: "Pivot from here" });
+    expect(pivot).toHaveAccessibleDescription(PIVOT_HINT);
+    await userEvent.click(pivot);
+    expect(await within(section).findByRole("status")).toHaveTextContent("Queued 3 jobs.");
+    expect(runsBody()).toEqual({
+      profile_id: "quick-domain-recon",
+      entity_keys: [apex.key],
+      pivot: true,
+    });
+
+    // Not from a selection with a person-related entity.
+    await select(apex.key, email.key);
+    const mixed = await waitFor(profileSection);
+    const refused = within(mixed).getByRole("button", { name: "Pivot from here" });
+    expect(refused).toBeDisabled();
+    expect(refused).toHaveAccessibleDescription(PIVOT_INFRASTRUCTURE_HINT);
+  });
+
   it("is hidden from viewers", async () => {
     await openGraph({ role: "viewer" });
     await select(apex.key);
@@ -241,6 +283,29 @@ describe("runs in the Jobs panel", () => {
     });
     expect(within(rows[1]!).getByText(/case is no longer open/)).toBeVisible();
     expect(within(jobsPanel()).queryByRole("button", { name: /^Cancel Quick/ })).toBeNull();
+  });
+
+  it("shows what a pivot found and the limit it reached", async () => {
+    const pivot = makeRun({
+      pivot: true,
+      max_depth: 2,
+      max_jobs: 200,
+      max_entities: 500,
+      discovered: 12,
+      depth: 1,
+      capped: "entities",
+    });
+    await openGraph({ runs: [pivot] });
+    await openJobs();
+    const row = within(jobsPanel()).getByRole("listitem", {
+      name: "Quick domain recon on 2 entities",
+    });
+    expect(within(row).getByTestId("run-pivot")).toHaveTextContent(
+      "Pivot · 12 new entities · hop 1 of 2",
+    );
+    expect(within(row).getByRole("note")).toHaveTextContent(
+      "Reached the limit of 500 new entities, so it stopped adding more.",
+    );
   });
 
   it("polls a running run and picks up the jobs it queues", async () => {

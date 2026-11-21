@@ -68,6 +68,20 @@ describe("settings form", () => {
     expect(patches()).toHaveLength(0);
   });
 
+  it("turns auto-pivot on without asking for a reason", async () => {
+    await openSettings();
+    const toggle = screen.getByRole("switch", { name: "Allow auto-pivot" });
+    expect(toggle).not.toBeChecked();
+    expect(toggle).toHaveAccessibleDescription(/up to 2 hops, 200 jobs and 500 new entities/);
+    await userEvent.click(toggle);
+    await save();
+    await waitFor(() => {
+      expect(patches()).toEqual([{ allow_auto_pivot: true }]);
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(await screen.findByRole("switch", { name: "Allow auto-pivot" })).toBeChecked();
+  });
+
   it("saves retention without asking for a reason", async () => {
     await openSettings();
     await userEvent.type(screen.getByLabelText(/Retention/), "365");

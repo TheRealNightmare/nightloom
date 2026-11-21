@@ -5,16 +5,18 @@ import { cancelRun, createRun, listRuns, type ScanRun } from "../../api/scans";
 import { describeCaseError } from "../errors";
 import { JOB_POLL_MS, usePageVisible } from "./useCaseJobs";
 
+/** `fresh` skips the result cache; `pivot` also scans what the run finds. */
+export interface RunOptions {
+  fresh?: boolean;
+  pivot?: boolean;
+}
+
 export interface CaseRuns {
   /** Newest first. */
   runs: ScanRun[];
   error: string | null;
   /** Starts a profile run; rejects with the API's error so the caller can show it. */
-  start: (
-    profileId: string,
-    entityKeys: string[],
-    options?: { fresh?: boolean },
-  ) => Promise<ScanRun>;
+  start: (profileId: string, entityKeys: string[], options?: RunOptions) => Promise<ScanRun>;
   /** Cancels a run; rejects with the API's error. */
   cancel: (runId: string) => Promise<ScanRun>;
 }
@@ -83,12 +85,13 @@ export function useCaseRuns(caseId: string, refreshJobs: () => Promise<void>): C
     async (
       profileId: string,
       entityKeys: string[],
-      { fresh = false }: { fresh?: boolean } = {},
+      { fresh = false, pivot = false }: RunOptions = {},
     ) => {
       const run = await createRun(caseId, {
         profile_id: profileId,
         entity_keys: entityKeys,
         ...(fresh ? { fresh: true } : {}),
+        ...(pivot ? { pivot: true } : {}),
       });
       setRuns((previous) => mergeRuns(previous, [run]));
       await refreshJobs();

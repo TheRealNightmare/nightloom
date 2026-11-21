@@ -6,7 +6,8 @@ import type { EntityNode } from "../../domain/entities";
 import { describeCaseError } from "../errors";
 import { USE_RECENT_LABEL } from "./RunShuttles";
 import { describeJobError } from "./jobText";
-import { runStartedText } from "./runText";
+import { PIVOT_HINT, PIVOT_INFRASTRUCTURE_HINT, PIVOT_LABEL, runStartedText } from "./runText";
+import type { RunOptions } from "./useCaseRuns";
 
 export const NO_PROFILES_MESSAGE = "No profile has a Shuttle for this type of entity.";
 export const TOO_MANY_ENTITIES_MESSAGE = `A profile runs on at most ${String(MAX_RUN_ENTITIES)} entities. Select fewer.`;
@@ -21,15 +22,13 @@ type Load =
 export interface RunProfileProps {
   /** The entities to run on: the selected one, or a multi-selection. */
   entities: readonly EntityNode[];
-  onRun: (
-    profile: ScanProfile,
-    entityKeys: string[],
-    options: { fresh: boolean },
-  ) => Promise<ScanRun>;
+  onRun: (profile: ScanProfile, entityKeys: string[], options: RunOptions) => Promise<ScanRun>;
+  /** Whether the case's owners allow auto-pivot (offers "Pivot from here"). */
+  allowPivot?: boolean;
 }
 
 /** Choose a scan profile and run its Shuttles on the selected entities. */
-export function RunProfile({ entities, onRun }: RunProfileProps) {
+export function RunProfile({ entities, onRun, allowPivot = false }: RunProfileProps) {
   const id = useId();
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [chosen, setChosen] = useState<string | null>(null);
@@ -63,8 +62,9 @@ export function RunProfile({ entities, onRun }: RunProfileProps) {
   const tooMany = entities.length > MAX_RUN_ENTITIES;
   const target =
     entities.length === 1 ? (entities[0]?.label ?? "") : `${String(entities.length)} entities`;
+  const infrastructure = entities.every((entity) => entity.sensitivity === "infrastructure");
 
-  const run = () => {
+  const run = (pivot: boolean) => {
     if (profile === null) return;
     setBusy(true);
     setError(null);
@@ -72,7 +72,7 @@ export function RunProfile({ entities, onRun }: RunProfileProps) {
     onRun(
       profile,
       entities.map((entity) => entity.id),
-      { fresh: !useRecent },
+      { fresh: !useRecent, pivot },
     ).then(
       (created) => {
         setBusy(false);
@@ -163,11 +163,31 @@ export function RunProfile({ entities, onRun }: RunProfileProps) {
               className="button"
               disabled={busy || tooMany}
               aria-describedby={tooMany ? `${id}-too-many` : undefined}
-              onClick={run}
+              onClick={() => {
+                run(false);
+              }}
             >
               {busy ? "Starting…" : `Run on ${target}`}
             </button>
+            {allowPivot && (
+              <button
+                type="button"
+                className="button button--ghost"
+                disabled={busy || tooMany || !infrastructure}
+                aria-describedby={`${id}-pivot`}
+                onClick={() => {
+                  run(true);
+                }}
+              >
+                {PIVOT_LABEL}
+              </button>
+            )}
           </div>
+          {allowPivot && (
+            <p className="field__hint" id={`${id}-pivot`}>
+              {infrastructure ? PIVOT_HINT : PIVOT_INFRASTRUCTURE_HINT}
+            </p>
+          )}
           {started !== null && (
             <p className="shuttle-card__started" role="status">
               {started} Follow it under Jobs.

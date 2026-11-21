@@ -44,6 +44,7 @@ const FIELD_LABELS: Record<string, string> = {
   legal_basis: "legal basis",
   legal_basis_note: "legal basis note",
   allow_person_entities: "person entities setting",
+  allow_auto_pivot: "auto-pivot setting",
   retention_days: "retention period",
 };
 
@@ -60,6 +61,7 @@ const FAILURE_REASONS: Record<string, string> = {
   not_found: "no such user or member",
   confirm_title_mismatch: "the title did not match",
   too_many_runs: "two runs already in progress",
+  auto_pivot_disabled: "auto-pivot is off for this case",
 };
 
 /** "a, b and c". */
@@ -148,9 +150,8 @@ export function describeEvent(event: AuditEvent, members: readonly Member[] = []
       const name = text(details["profile_name"]) ?? "a profile";
       if (failed) return `tried to run ${name}${failureNote}`;
       const count = typeof details["jobs"] === "number" ? details["jobs"] : null;
-      return count === null
-        ? `ran ${name}`
-        : `ran ${name} (${String(count)} job${count === 1 ? "" : "s"})`;
+      const verb = details["pivot"] === true ? `started a pivot with ${name}` : `ran ${name}`;
+      return count === null ? verb : `${verb} (${String(count)} job${count === 1 ? "" : "s"})`;
     }
     case "scan_run.cancel":
       return "cancelled a profile run";
