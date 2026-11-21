@@ -10,7 +10,6 @@ import {
 import { makeJob, makeShuttle } from "../../test/caseFixtures";
 import { FORBIDDEN_MESSAGE } from "../errors";
 import {
-  ACTIVE_SHUTTLE_REASON,
   describeJobError,
   elapsedMs,
   isOverdue,
@@ -106,7 +105,8 @@ describe("job text", () => {
 
   it("explains which Shuttles cannot run in a case", () => {
     expect(shuttleBlockedReason(makeShuttle(), false)).toBeNull();
-    expect(shuttleBlockedReason(makeShuttle({ mode: "active" }), true)).toBe(ACTIVE_SHUTTLE_REASON);
+    // Active Shuttles are not blocked here: the API checks the case's verified domains.
+    expect(shuttleBlockedReason(makeShuttle({ mode: "active" }), true)).toBeNull();
     const person = makeShuttle({ sensitivity: "person" });
     expect(shuttleBlockedReason(person, false)).toBe(PERSON_SHUTTLE_REASON);
     expect(shuttleBlockedReason(person, true)).toBeNull();

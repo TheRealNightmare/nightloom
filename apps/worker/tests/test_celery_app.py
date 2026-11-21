@@ -210,10 +210,19 @@ async def _no_release(settings: Settings) -> int:
     return 0
 
 
+async def _no_sweep(settings: Settings) -> int | None:
+    return 0
+
+
 def test_reaper_runs_now_and_then_every_interval(caplog: pytest.LogCaptureFixture) -> None:
     fake = _FakeReap(3, OSError("down"), None)
     reaper = celery_app.Reaper(
-        Settings(env="test"), interval=0.05, reap=fake, purge=_no_purge, release=_no_release
+        Settings(env="test"),
+        interval=0.05,
+        reap=fake,
+        purge=_no_purge,
+        release=_no_release,
+        sweep=_no_sweep,
     )
     reaper.start()
     try:
@@ -381,9 +390,28 @@ def test_reaper_releases_scan_run_jobs_and_logs_failures(
     assert reaper.release() == 0
 
 
+def test_reaper_sweeps_ownership(caplog: pytest.LogCaptureFixture) -> None:
+    results: list[int | Exception | None] = [2, OSError("down"), None]
+
+    async def sweep(settings: Settings) -> int | None:
+        result = results.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    caplog.set_level(logging.INFO, logger="nightloom_worker.celery_app")
+    reaper = celery_app.Reaper(Settings(env="test"), sweep=sweep)
+    assert reaper.sweep() == 2
+    assert "Queued 2 ownership check(s)." in caplog.text
+    assert reaper.sweep() is None
+    assert "The ownership sweep failed: OSError." in caplog.text
+    assert reaper.sweep() is None  # another worker held the lock
+
+
 class _SentQueue:
     def __init__(self, settings: Settings) -> None:
         self.sent: list[uuid.UUID] = []
+        self.checks: list[uuid.UUID] = []
         _SentQueue.last = self
 
     last: "_SentQueue | None" = None
@@ -391,8 +419,79 @@ class _SentQueue:
     async def enqueue(self, job_id: uuid.UUID, *, timeout_seconds: int) -> None:
         self.sent.append(job_id)
 
+    async def enqueue_check(self, verification_id: uuid.UUID) -> None:
+        self.checks.append(verification_id)
+
     def close(self) -> None:
         pass
+
+
+@pytest.mark.db
+def test_the_ownership_sweep_queues_due_checks(
+    monkeypatch: pytest.MonkeyPatch, migrated_database: str
+) -> None:
+    from sqlalchemy import text as sql
+
+    from nightloom_api.infra import db as db_infra
+    from nightloom_api.ownership.models import OwnershipVerification
+
+    monkeypatch.setenv("NIGHTLOOM_DATABASE_URL", TEST_DATABASE_URL)
+    monkeypatch.setenv("NIGHTLOOM_VALKEY_URL", TEST_VALKEY_URL)
+    get_settings.cache_clear()
+    settings = get_settings()
+    monkeypatch.setattr(celery_app, "CeleryJobQueue", _SentQueue)
+
+    async def scenario() -> tuple[int | None, list[uuid.UUID], uuid.UUID]:
+        engine = db_infra.create_engine(settings)
+        sessionmaker = db_infra.create_sessionmaker(engine)
+        user_id, case_id = uuid.uuid4(), uuid.uuid4()
+        try:
+            async with sessionmaker() as db:
+                await db.execute(
+                    sql(
+                        "INSERT INTO users (id, email, display_name, password_hash, role,"
+                        " is_active) VALUES (:id, :email, 'Sweep tester', 'x', 'analyst', true)"
+                    ),
+                    {"id": user_id, "email": f"sweep-{user_id.hex[:8]}@example.org"},
+                )
+                await db.execute(
+                    sql(
+                        "INSERT INTO cases (id, title, purpose, legal_basis, ethics_ack_version,"
+                        " ethics_ack_at, created_by) VALUES (:id, 'Sweep',"
+                        " 'Check that verified domains are checked again every day.',"
+                        " 'owned_assets', '1', now(), :user)"
+                    ),
+                    {"id": case_id, "user": user_id},
+                )
+                row = OwnershipVerification(
+                    case_id=case_id,
+                    domain=f"sweep-{case_id.hex[:8]}.example.org",
+                    method="dns_txt",
+                    token="t",
+                    status="verified",
+                    verified_at=sql("now() - interval '2 days'"),
+                    expires_at=sql("now() + interval '28 days'"),
+                    checked_at=sql("now() - interval '25 hours'"),
+                )
+                db.add(row)
+                await db.commit()
+                verification_id = row.id
+            queued = await celery_app.sweep_ownership(settings)
+            assert _SentQueue.last is not None
+            return queued, _SentQueue.last.checks, verification_id
+        finally:
+            async with sessionmaker() as db:
+                await db.execute(sql("DELETE FROM cases WHERE id = :id"), {"id": case_id})
+                await db.execute(sql("DELETE FROM users WHERE id = :id"), {"id": user_id})
+                await db.commit()
+            await engine.dispose()
+
+    try:
+        queued, checks, verification_id = asyncio.run(scenario())
+    finally:
+        get_settings.cache_clear()
+    assert queued is not None and queued >= 1
+    assert verification_id in checks
 
 
 @pytest.mark.db

@@ -147,6 +147,16 @@ def registrable_domain(value: str) -> str | None:
     return result or None
 
 
+def is_public_suffix(value: str) -> bool:
+    """Whether the domain is itself a public suffix (``co.uk``), from the bundled list.
+
+    A name under a suffix the list does not know (``nightloom-test.example``)
+    is not one.
+    """
+    domain = normalize_domain(value).removeprefix("*.")
+    return _SUFFIXES(domain).suffix == domain
+
+
 # --- addresses and networks -------------------------------------------------------------
 
 
@@ -629,6 +639,7 @@ __all__ = [
     "canonical_network",
     "format_ipv4",
     "format_ipv6",
+    "is_public_suffix",
     "normalize",
     "normalize_asn",
     "normalize_certificate",

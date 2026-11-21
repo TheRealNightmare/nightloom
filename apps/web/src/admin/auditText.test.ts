@@ -164,6 +164,18 @@ describe("describeAuditEvent", () => {
     ],
     [ev("case.update", { fields: ["allow_auto_pivot"] }), "changed auto-pivot setting"],
     [ev("scan_run.cancel", {}, { case_id: "c-1" }), "cancelled a profile run"],
+    [ev("ownership.create", { domain: "example.org" }), "added example.org to verify"],
+    [ev("ownership.delete", { domain: "example.org" }), "removed the verified domain example.org"],
+    [ev("ownership.check", { domain: "example.org" }), "verified example.org"],
+    [
+      ev("ownership.check", { domain: "example.org" }, { outcome: "failure" }),
+      "did not find the proof for example.org",
+    ],
+    [ev("ownership.revoke", { domain: "example.org" }), "revoked example.org: its proof is gone"],
+    [
+      ev("ownership.expire", { domain: "example.org" }),
+      "let the verification of example.org expire",
+    ],
     [
       ev("result_cache.clear", { shuttle: "all", deleted: 2 }, { case_id: "c-1" }),
       "cleared the case's cached Shuttle results",

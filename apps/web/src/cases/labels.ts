@@ -155,6 +155,18 @@ export function describeEvent(event: AuditEvent, members: readonly Member[] = []
     }
     case "scan_run.cancel":
       return "cancelled a profile run";
+    case "ownership.create":
+      return `added ${text(details["domain"]) ?? "a domain"} to verify`;
+    case "ownership.delete":
+      return `removed the verified domain ${text(details["domain"]) ?? ""}`.trimEnd();
+    case "ownership.check": {
+      const domain = text(details["domain"]) ?? "a domain";
+      return failed ? `did not find the proof for ${domain}` : `verified ${domain}`;
+    }
+    case "ownership.revoke":
+      return `revoked ${text(details["domain"]) ?? "a domain"}: its proof is gone`;
+    case "ownership.expire":
+      return `let the verification of ${text(details["domain"]) ?? "a domain"} expire`;
     case "authz.denied": {
       if (details["reason"] === "not_a_member") return "was refused access (not a member)";
       if (details["reason"] === "not_view_creator") {

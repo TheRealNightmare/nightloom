@@ -45,6 +45,11 @@ export const ACTION_LABELS: Record<AuditAction, string> = {
   "scan_profile.delete": "Scan profile deleted",
   "scan_run.create": "Profile run started",
   "scan_run.cancel": "Profile run cancelled",
+  "ownership.create": "Domain to verify added",
+  "ownership.delete": "Verified domain removed",
+  "ownership.check": "Domain checked",
+  "ownership.revoke": "Domain verification revoked",
+  "ownership.expire": "Domain verification expired",
 };
 
 /** `reason` codes of failed sign-ins and admin actions. */
@@ -186,6 +191,11 @@ export function describeAuditEvent(event: AuditEvent, users: readonly User[] = [
       return `deleted the scan profile ${text(details["name"]) ?? ""}`.trimEnd();
     case "scan_run.create":
     case "scan_run.cancel":
+    case "ownership.create":
+    case "ownership.delete":
+    case "ownership.check":
+    case "ownership.revoke":
+    case "ownership.expire":
       return describeEvent(event);
     case "result_cache.clear": {
       if (event.case_id !== null) return describeEvent(event);

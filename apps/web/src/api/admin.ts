@@ -54,6 +54,11 @@ export const AUDIT_ACTIONS = [
   "scan_profile.delete",
   "scan_run.create",
   "scan_run.cancel",
+  "ownership.create",
+  "ownership.delete",
+  "ownership.check",
+  "ownership.revoke",
+  "ownership.expire",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 

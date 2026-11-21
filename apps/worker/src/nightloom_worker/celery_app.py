@@ -31,6 +31,11 @@ After each job of a **scan run** (and from the reaper's thread every
 interval), the run's next planned jobs are queued while the requester has
 free job slots (see :mod:`nightloom_api.scans.service`).
 
+The reaper's thread also runs the **ownership sweep** every interval
+(verifications past their 30 days expire; verified domains not checked for
+a day, and owners' checks that never reported, are queued for checking by
+the ``check_ownership`` task; see :mod:`nightloom_worker.ownership`).
+
 The reaper's thread also purges the **result cache** every
 :data:`PURGE_INTERVAL_SECONDS` (expired entries, then least recently used
 ones beyond ``NIGHTLOOM_RESULT_CACHE_MAX_BYTES``), under its own lock.
@@ -60,12 +65,19 @@ from nightloom_api.infra import db as db_infra
 from nightloom_api.infra import graph as graph_infra
 from nightloom_api.jobs import deadlines, result_cache
 from nightloom_api.jobs.models import Job, JobStatus
-from nightloom_api.jobs.queue import TASK_NAME, CeleryJobQueue, create_celery
+from nightloom_api.jobs.queue import (
+    CHECK_TASK_NAME,
+    TASK_NAME,
+    CeleryJobQueue,
+    create_celery,
+)
 from nightloom_api.logging import configure_logging
+from nightloom_api.ownership import service as ownership
 from nightloom_api.scans import service as scans
 from nightloom_sdk.meta import MAX_TIMEOUT_SECONDS
 from nightloom_sdk.registry import RegistryError, default_registry
 from nightloom_worker.loop import run_bounded
+from nightloom_worker.ownership import check_verification, default_prover
 from nightloom_worker.runner import (
     ERROR_TIME_LIMIT,
     ERROR_WORKER_LOST,
@@ -94,6 +106,9 @@ REAPER_LOCK_SECONDS = 50
 PURGE_INTERVAL_SECONDS = 600.0
 PURGE_LOCK = "nightloom:worker:result-cache-purge"
 PURGE_LOCK_SECONDS = 50
+# The ownership sweep, from the reaper's thread every interval, one worker at a time.
+OWNERSHIP_LOCK = "nightloom:worker:ownership-sweep"
+OWNERSHIP_LOCK_SECONDS = 50
 # Releasing a scan run's next jobs after a job, and from the reaper's thread.
 RELEASE_SECONDS = 20.0
 # Which worker runs a job: the node name, until the job ends or the longest
@@ -182,6 +197,7 @@ async def _with_config(settings: Settings, job_id: uuid.UUID, *, abandoned: bool
             registry=default_registry(),
             cache_scope=result_cache.CacheScope(settings.result_cache_scope),
             cache_max_entry_bytes=settings.result_cache_max_entry_bytes,
+            prover=default_prover(),
         )
         status = await run_job(job_id, config)
         # A finished job frees a job slot: its scan run (if any) may queue the next.
@@ -248,6 +264,27 @@ def run_job_task(job_id: str) -> str | None:
     finally:
         if noted:
             _forget_running(settings, parsed)
+
+
+async def _check_ownership(settings: Settings, verification_id: uuid.UUID) -> str | None:
+    engine = db_infra.create_engine(settings)
+    try:
+        return await check_verification(
+            db_infra.create_sessionmaker(engine), verification_id, default_prover()
+        )
+    finally:
+        await bounded(engine.dispose(), CLOSE_SECONDS, "Closing the database engine")
+
+
+@app.task(name=CHECK_TASK_NAME, acks_late=True)
+def check_ownership_task(verification_id: str) -> str | None:
+    """Look for one ownership verification's proof. The argument is its ID."""
+    try:
+        parsed = uuid.UUID(verification_id)
+    except (TypeError, ValueError):
+        logger.error("Ignoring a check with an invalid verification ID.")
+        return None
+    return run_bounded(_check_ownership(get_settings(), parsed))
 
 
 # --- the main process: time limits and lost workers -----------------------------------------
@@ -400,6 +437,36 @@ async def release_all_runs(settings: Settings) -> int:
     return released
 
 
+async def sweep_ownership(settings: Settings) -> int | None:
+    """Expire verifications and queue due checks, unless another worker sweeps. Returns how many."""
+    client = Redis.from_url(
+        settings.valkey_url.get_secret_value(),
+        socket_connect_timeout=RECORD_STATEMENT_SECONDS,
+        socket_timeout=RECORD_STATEMENT_SECONDS,
+    )
+    engine = db_infra.create_engine(settings, statement_timeout_seconds=RECORD_STATEMENT_SECONDS)
+    queue = CeleryJobQueue(settings)
+    try:
+        lock = client.lock(OWNERSHIP_LOCK, timeout=OWNERSHIP_LOCK_SECONDS, blocking=False)
+        if not await lock.acquire():
+            return None
+        try:
+            async with db_infra.create_sessionmaker(engine)() as db:
+                due = await ownership.sweep(db, clock.utcnow())
+            for verification_id in due:
+                await queue.enqueue_check(verification_id)
+            return len(due)
+        finally:
+            try:
+                await lock.release()
+            except LockError:  # expired meanwhile: another worker may hold it now
+                logger.warning("The ownership sweep lock expired before the sweep finished.")
+    finally:
+        queue.close()
+        await bounded(engine.dispose(), CLOSE_SECONDS, "Closing the database engine")
+        await bounded(client.aclose(), CLOSE_SECONDS, "Closing the Valkey client")
+
+
 async def reap_own(settings: Settings, hostname: str) -> int:
     """Fail the jobs this worker's previous run (same node name) left running. Returns how many.
 
@@ -459,6 +526,7 @@ class Reaper(threading.Thread):
         ] = purge_cache_once,
         monotonic: Callable[[], float] = time.monotonic,
         release: Callable[[Settings], Coroutine[Any, Any, int]] = release_all_runs,
+        sweep: Callable[[Settings], Coroutine[Any, Any, int | None]] = sweep_ownership,
     ) -> None:
         super().__init__(name="nightloom-reaper", daemon=True)
         self.settings = settings
@@ -471,6 +539,7 @@ class Reaper(threading.Thread):
         self._monotonic = monotonic
         self._last_purge: float | None = None
         self._release = release
+        self._sweep = sweep
         self.stopped = threading.Event()
 
     def reap_previous_run(self) -> int | None:
@@ -524,11 +593,25 @@ class Reaper(threading.Thread):
             logger.info("Released %d scan run job(s).", released)
         return released
 
+    def sweep(self) -> int | None:
+        """Expire ownership verifications and queue the checks that are due."""
+        try:
+            queued = run_bounded(
+                asyncio.wait_for(self._sweep(self.settings), OWNERSHIP_LOCK_SECONDS)
+            )
+        except Exception as error:  # the reaper keeps going
+            logger.warning("The ownership sweep failed: %s.", type(error).__name__)
+            return None
+        if queued:
+            logger.info("Queued %d ownership check(s).", queued)
+        return queued
+
     def run(self) -> None:
         self.reap_previous_run()
         while not self.stopped.is_set():
             self.reap()
             self.release()
+            self.sweep()
             self.purge()
             self.stopped.wait(self.interval)
 

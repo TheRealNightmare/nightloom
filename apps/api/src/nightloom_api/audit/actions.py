@@ -51,6 +51,14 @@ class AuditAction(StrEnum):
     SCAN_PROFILE_DELETE = "scan_profile.delete"
     SCAN_RUN_CREATE = "scan_run.create"
     SCAN_RUN_CANCEL = "scan_run.cancel"
+    # Ownership verification: owners add and remove domains; the worker checks
+    # them (system:ownership-check), revokes ones whose proof disappeared and
+    # expires them after 30 days.
+    OWNERSHIP_CREATE = "ownership.create"
+    OWNERSHIP_DELETE = "ownership.delete"
+    OWNERSHIP_CHECK = "ownership.check"
+    OWNERSHIP_REVOKE = "ownership.revoke"
+    OWNERSHIP_EXPIRE = "ownership.expire"
 
 
 class AuditOutcome(StrEnum):
@@ -72,3 +80,4 @@ class TargetType(StrEnum):
     VIEW = "view"
     SCAN_PROFILE = "scan_profile"
     SCAN_RUN = "scan_run"
+    OWNERSHIP = "ownership"

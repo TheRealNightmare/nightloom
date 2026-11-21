@@ -22,7 +22,7 @@ import { renderApp } from "../test/renderApp";
 import { FakeSigma, waitForSigma } from "../test/sigmaMock";
 import { PULSE_MS } from "./GraphTab";
 import { FROM_CACHE_LABEL, NO_JOBS_MESSAGE } from "./graph/JobsPanel";
-import { PERSON_SHUTTLE_REASON } from "./graph/jobText";
+import { ACTIVE_SHUTTLE_HINT, PERSON_SHUTTLE_REASON } from "./graph/jobText";
 import { NO_SHUTTLES_MESSAGE, USAGE_NOTE_LABEL, USE_RECENT_LABEL } from "./graph/RunShuttles";
 import { JOB_POLL_MS } from "./graph/useCaseJobs";
 
@@ -151,7 +151,7 @@ describe("Run a Shuttle section", () => {
     expect(usage.closest("p")?.nextElementSibling).toContainElement(terms);
   });
 
-  it("disables person-related and active Shuttles with the reason", async () => {
+  it("disables person-related Shuttles with the reason, and explains active ones", async () => {
     const person = makeShuttle({ name: "people", title: "People search", sensitivity: "person" });
     const active = makeShuttle({ name: "scan", title: "Port scan", mode: "active" });
     await openGraph({ shuttles: [person, active] });
@@ -162,8 +162,9 @@ describe("Run a Shuttle section", () => {
     expect(run).toHaveAccessibleDescription(PERSON_SHUTTLE_REASON);
     const scan = within(details()).getByRole("listitem", { name: "Port scan" });
     expect(within(scan).getByText("Active")).toBeVisible();
-    expect(within(scan).getByRole("button", { name: "Run Port scan" })).toBeDisabled();
-    expect(within(scan).getByText(/ownership verification/)).toBeVisible();
+    // The API decides from the case's verified domains.
+    expect(within(scan).getByRole("button", { name: "Run Port scan" })).toBeEnabled();
+    expect(within(scan).getByText(ACTIVE_SHUTTLE_HINT)).toBeVisible();
   });
 
   it("allows person-related Shuttles when the case does", async () => {

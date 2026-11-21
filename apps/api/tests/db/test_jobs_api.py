@@ -22,6 +22,7 @@ from nightloom_api.infra import graph as graph_infra
 from nightloom_api.infra.graph import get_graph_repository
 from nightloom_api.jobs import service
 from nightloom_api.jobs.models import Job, JobStatus
+from nightloom_api.ownership.models import OwnershipVerification
 from nightloom_core.entities import EntityType, Sensitivity
 from nightloom_core.relationships import RelationType
 from nightloom_sdk import EntityInput, Finding, Mode, Shuttle, ShuttleContext, ShuttleMeta
@@ -337,15 +338,52 @@ async def test_body_is_validated(world: World) -> None:
         assert response.status_code == 422
 
 
-async def test_active_shuttles_are_refused_and_audited(world: World, infra: Infra) -> None:
+async def test_active_shuttles_need_a_verified_target(world: World, infra: Infra) -> None:
     mark = await last_event_id(infra)
     response = await start(world.clients["owner"], world.case_id, "active-scan")
     assert response.status_code == 403
-    assert "ownership verification" in response.json()["detail"]
+    assert "ownership is verified" in response.json()["detail"]
     (event,) = await events_since(infra, mark)
     assert (event.action, event.outcome) == ("authz.denied", "denied")
-    assert event.details["reason"] == "active_shuttle"
+    assert event.details["reason"] == "target_not_verified"
     assert event.details["shuttle"] == "active-scan"
+
+
+async def test_active_shuttles_run_on_verified_targets(world: World, infra: Infra) -> None:
+    now = datetime.now(UTC)
+    async with infra.sessionmaker() as db:
+        db.add(
+            OwnershipVerification(
+                case_id=uuid.UUID(world.case_id),
+                domain="example.co.uk",
+                method="dns_txt",
+                token="t",
+                status="verified",
+                verified_at=now,
+                expires_at=now + timedelta(days=30),
+                checked_at=now,
+                addresses=["192.0.2.80"],
+            )
+        )
+        await db.commit()
+    owner = world.clients["owner"]
+    # The subdomain is covered by its verified parent domain.
+    response = await start(owner, world.case_id, "active-scan")
+    assert response.status_code == 201, response.text
+    # Not another domain.
+    await add_entity(owner, world.case_id, "domain", "example.org")
+    other = await start(owner, world.case_id, "active-scan", "domain:example.org")
+    assert other.status_code == 403
+    # Expired: refused again.
+    async with infra.sessionmaker() as db:
+        await db.execute(
+            update(OwnershipVerification).values(
+                verified_at=now - timedelta(days=31), expires_at=now - timedelta(days=1)
+            )
+        )
+        await db.commit()
+    expired = await start(owner, world.case_id, "active-scan")
+    assert expired.status_code == 403
 
 
 async def test_person_shuttles_need_a_person_case(world: World, infra: Infra) -> None:

@@ -131,7 +131,13 @@ def test_check_shuttle_guardrails() -> None:
         service.check_shuttle(
             meta(mode=Mode.ACTIVE), input_type=EntityType.DOMAIN, allow_person_entities=True
         )
-    assert (active.value.status_code, active.value.reason) == (403, "active_shuttle")
+    assert (active.value.status_code, active.value.reason) == (403, "target_not_verified")
+    service.check_shuttle(
+        meta(mode=Mode.ACTIVE),
+        input_type=EntityType.DOMAIN,
+        allow_person_entities=False,
+        target_verified=True,
+    )
     person = meta(sensitivity=Sensitivity.PERSON)
     with pytest.raises(service.GuardrailError) as gated:
         service.check_shuttle(person, input_type=EntityType.DOMAIN, allow_person_entities=False)

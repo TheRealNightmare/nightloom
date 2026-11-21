@@ -4,8 +4,8 @@ import { describeCaseError, FORBIDDEN_MESSAGE } from "../errors";
 
 export const TOO_MANY_JOBS_MESSAGE =
   "You already have the maximum number of queued or running jobs. Wait for one to finish.";
-export const ACTIVE_SHUTTLE_REASON =
-  "Active Shuttles touch the target itself and cannot run until ownership verification is available.";
+export const ACTIVE_SHUTTLE_HINT =
+  "Touches the target itself, so it runs only on domains verified in this case's settings, their subdomains and the addresses they resolve to.";
 export const PERSON_SHUTTLE_REASON =
   "This case does not allow person-related entities, so person-related Shuttles cannot run.";
 
@@ -25,7 +25,6 @@ export function shuttleBlockedReason(
   shuttle: ShuttleInfo,
   allowPersonEntities: boolean,
 ): string | null {
-  if (shuttle.mode !== "passive") return ACTIVE_SHUTTLE_REASON;
   if (shuttle.sensitivity === "person" && !allowPersonEntities) return PERSON_SHUTTLE_REASON;
   return null;
 }
