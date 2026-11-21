@@ -7,7 +7,13 @@ from pydantic import ValidationError
 
 from nightloom_core.entities import EntityType, Sensitivity
 from nightloom_core.relationships import RelationType
-from nightloom_sdk.meta import USAGE_NOTE_MAX_LENGTH, Mode, RateLimit, ShuttleMeta
+from nightloom_sdk.meta import (
+    MAX_CACHE_TTL_SECONDS,
+    USAGE_NOTE_MAX_LENGTH,
+    Mode,
+    RateLimit,
+    ShuttleMeta,
+)
 
 
 def meta(**overrides: Any) -> ShuttleMeta:
@@ -30,6 +36,7 @@ def test_valid_meta_and_defaults() -> None:
     m = meta()
     assert m.mode == Mode.PASSIVE
     assert m.timeout_seconds == 60
+    assert m.cache_ttl_seconds == 0
     assert m.required_keys == frozenset()
     assert m.source == "shuttle:example-shuttle@1.2.3"
     assert (m.default_admiralty, m.reliability, m.credibility) == ("F6", "F", 6)
@@ -182,3 +189,17 @@ def test_key_names_and_unknown_fields() -> None:
 def test_active_mode_is_declarable() -> None:
     # Declarable; the API and the worker refuse to run it.
     assert meta(mode="active").mode == Mode.ACTIVE
+
+
+@pytest.mark.parametrize("seconds", [-1, MAX_CACHE_TTL_SECONDS + 1])
+def test_cache_ttl_bounds(seconds: int) -> None:
+    with pytest.raises(ValidationError):
+        meta(cache_ttl_seconds=seconds)
+    assert meta(cache_ttl_seconds=MAX_CACHE_TTL_SECONDS).cache_ttl_seconds == MAX_CACHE_TTL_SECONDS
+    assert MAX_CACHE_TTL_SECONDS == 30 * 24 * 3600
+
+
+def test_active_shuttles_are_never_cached() -> None:
+    with pytest.raises(ValidationError, match="active Shuttle cannot be cached"):
+        meta(mode="active", cache_ttl_seconds=60)
+    assert meta(mode="active", cache_ttl_seconds=0).cache_ttl_seconds == 0

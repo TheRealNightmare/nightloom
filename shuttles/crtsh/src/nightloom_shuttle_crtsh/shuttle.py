@@ -152,6 +152,8 @@ class CrtShShuttle(Shuttle):
         # crt.sh is run on donated resources and asks for restraint.
         rate_limit=RateLimit(requests=1, period_seconds=3),
         timeout_seconds=TIMEOUT_SECONDS,
+        # A day: certificates are logged once and rarely change.
+        cache_ttl_seconds=24 * 3600,
         # crt.sh (operated by Sectigo) publishes no terms of use; its source
         # and issue tracker are at https://github.com/crtsh. See README.md.
         homepage="https://crt.sh/",

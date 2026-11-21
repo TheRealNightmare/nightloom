@@ -142,6 +142,25 @@ def test_installed_built_in_shuttle_is_discovered() -> None:
     assert shuttle.meta.network is False
 
 
+def test_built_in_shuttles_cache_lifetimes() -> None:
+    hour, day = 3600, 24 * 3600
+    expected = {
+        "registrable-domain": 0,  # no network: nothing to save
+        "dns": hour,
+        "reverse-dns": hour,
+        "crtsh": day,
+        "ripestat": day,
+        "internetdb": day,
+        "rdap": 7 * day,
+        "wayback": 7 * day,
+    }
+    registry = ShuttleRegistry.discover()
+    for name, seconds in expected.items():
+        shuttle = registry.get(name)
+        assert shuttle is not None, name
+        assert shuttle.meta.cache_ttl_seconds == seconds, name
+
+
 def test_cli_lists_installed_shuttles(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["list"]) == 0
     out = capsys.readouterr().out

@@ -154,6 +154,8 @@ class InternetDBShuttle(Shuttle):
         network=True,
         rate_limit=RateLimit(requests=1, period_seconds=1),
         timeout_seconds=TIMEOUT_SECONDS,
+        # A day: InternetDB itself refreshes about weekly.
+        cache_ttl_seconds=24 * 3600,
         homepage="https://internetdb.shodan.io/",
         terms_url="https://account.shodan.io/legal/tos",
         usage_note=USAGE_NOTE,

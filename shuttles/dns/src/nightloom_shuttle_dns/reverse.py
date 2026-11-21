@@ -176,6 +176,8 @@ class ReverseDnsShuttle(Shuttle):
         network=True,
         rate_limit=RESOLVER_RATE_LIMIT,
         timeout_seconds=300,
+        # An hour, like forward DNS.
+        cache_ttl_seconds=3600,
         homepage=RESOLVER_HOMEPAGE,
         terms_url=RESOLVER_TERMS_URL,
         default_admiralty=CONFIRMED_ADMIRALTY,

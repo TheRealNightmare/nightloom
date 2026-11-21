@@ -38,6 +38,8 @@ SEMVER_PATTERN = (
 VERSION_MAX_LENGTH = 32
 DEFAULT_TIMEOUT_SECONDS = 60
 MAX_TIMEOUT_SECONDS = 600
+# Results of a run may be reused for at most this long (see ``cache_ttl_seconds``).
+MAX_CACHE_TTL_SECONDS = 30 * 24 * 3600
 # An Admiralty rating: source reliability A-F and information credibility 1-6.
 ADMIRALTY_PATTERN = r"^[A-F][1-6]$"
 KEY_NAME_PATTERN = r"^[a-z][a-z0-9_]{0,63}$"
@@ -116,6 +118,13 @@ class ShuttleMeta(BaseModel):
       (so any person-related type makes it a ``person`` Shuttle);
     - a Shuttle that uses the network declares a ``rate_limit``.
 
+    ``cache_ttl_seconds`` is how long the results of a successful run on an
+    entity may be reused for the same entity instead of running again (0, the
+    default: never). The cache is keyed by the Shuttle's name **and version**,
+    so a new version never reuses an older one's results, and a Shuttle's
+    output must depend only on the input entity's type and value. ``active``
+    Shuttles are never cached: what they observe is the target itself, now.
+
     ``usage_note`` is one line of plain text (at most
     :data:`USAGE_NOTE_MAX_LENGTH` characters) stating conditions the operator
     must respect when using the source, such as a non-commercial licence. The
@@ -145,6 +154,7 @@ class ShuttleMeta(BaseModel):
     )
     rate_limit: RateLimit | None = None
     timeout_seconds: int = Field(default=DEFAULT_TIMEOUT_SECONDS, ge=1, le=MAX_TIMEOUT_SECONDS)
+    cache_ttl_seconds: int = Field(default=0, ge=0, le=MAX_CACHE_TTL_SECONDS)
     terms_url: HttpUrlText | None = None
     homepage: HttpUrlText | None = None
     # Conditions an operator must respect when using the source (e.g. "free for
@@ -180,6 +190,8 @@ class ShuttleMeta(BaseModel):
             )
         if self.network and self.rate_limit is None:
             raise ValueError("A Shuttle that uses the network must declare a rate_limit.")
+        if self.mode == Mode.ACTIVE and self.cache_ttl_seconds > 0:
+            raise ValueError("An active Shuttle cannot be cached: cache_ttl_seconds must be 0.")
         return self
 
     @property
@@ -201,6 +213,7 @@ class ShuttleMeta(BaseModel):
 
 __all__ = [
     "DEFAULT_TIMEOUT_SECONDS",
+    "MAX_CACHE_TTL_SECONDS",
     "MAX_TIMEOUT_SECONDS",
     "USAGE_NOTE_MAX_LENGTH",
     "Admiralty",
