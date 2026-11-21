@@ -881,7 +881,12 @@ async def test_active_shuttles_run_on_verified_domains(world: World) -> None:
 
 
 async def test_an_address_is_confirmed_by_resolving_its_domain_again(world: World) -> None:
-    active = scripted([], input_types={EntityType.IP_ADDRESS}, output_relationship_types=set())
+    active = scripted(
+        [],
+        input_types={EntityType.IP_ADDRESS},
+        output_relationship_types=set(),
+        mode=Mode.ACTIVE,
+    )
     await _verify(world, "shop.example.co.uk", ["192.0.2.80"])
     await world.add_entity(world.case_id, "ip_address", "192.0.2.80")
     still = _Addresses(("192.0.2.80",))
