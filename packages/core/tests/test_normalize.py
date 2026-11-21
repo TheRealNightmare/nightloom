@@ -508,6 +508,43 @@ def test_wallet_invalid(raw: str) -> None:
     check_invalid(n.normalize_crypto_wallet, raw)
 
 
+# --- favicons ---------------------------------------------------------------------------------
+
+FAVICONS_VALID = [
+    ("-1010568750", "-1010568750"),
+    (" 116323821 ", "116323821"),
+    ("+116323821", "116323821"),
+    ("0", "0"),
+    ("-0", "0"),
+    ("mmh3:-1010568750", "-1010568750"),
+    ("-2147483648", "-2147483648"),
+    ("2147483647", "2147483647"),
+    # The unsigned spelling of a negative hash is the same favicon.
+    ("3284398546", "-1010568750"),
+    ("4294967295", "-1"),
+]
+FAVICONS_INVALID = [
+    "",
+    "abc",
+    "12.5",
+    "0x1f",
+    "4294967296",
+    "-2147483649",
+    "12345678901",
+    "1 2",
+]
+
+
+@pytest.mark.parametrize(("raw", "expected"), FAVICONS_VALID)
+def test_favicon_valid(raw: str, expected: str) -> None:
+    check_valid(n.normalize_favicon, raw, expected)
+
+
+@pytest.mark.parametrize("raw", FAVICONS_INVALID)
+def test_favicon_invalid(raw: str) -> None:
+    check_invalid(n.normalize_favicon, raw)
+
+
 # --- free text -------------------------------------------------------------------------------
 
 
@@ -568,6 +605,7 @@ E = EntityType
         (E.DOCUMENT, "Annual Report", "Annual Report", "document:annual report"),
         (E.IMAGE, "logo.png", "logo.png", "image:logo.png"),
         (E.BREACH, "Example 2024", "Example 2024", "breach:example 2024"),
+        (E.FAVICON, "3284398546", "-1010568750", "favicon:-1010568750"),
     ],
 )
 def test_normalize_dispatch(entity_type: EntityType, raw: str, value: str, key: str) -> None:
@@ -589,6 +627,7 @@ def test_every_type_has_a_normalizer() -> None:
         E.EMAIL,
         E.PHONE,
         E.CRYPTO_WALLET,
+        E.FAVICON,
     }
     assert covered | n.TEXT_TYPES == set(EntityType)
     assert not covered & n.TEXT_TYPES

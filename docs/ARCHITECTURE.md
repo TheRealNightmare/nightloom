@@ -439,6 +439,7 @@ Each type is a Pydantic model (`nightloom_core.entities`) with a canonical `valu
 | `social_profile` | `SocialProfile` | **person** | `platform`, `profile_url` |
 | `location` | `Location` | **person** (a place next to a person is sensitive) | `latitude`, `longitude`, `country` |
 | `image` | `Image` | **person** (images can show people) | `mime_type`, `sha256`, `width`, `height` |
+| `favicon` | `Favicon` | infrastructure | `sha256`, `md5`, `mime_type`, `size_bytes` (written by the [favicon Shuttle](#website-visits)) |
 
 Properties are flat (strings, numbers, booleans, dates as ISO 8601, lists of strings or of integers), validated per type (unknown fields are refused) and stored on the node with a `prop_` prefix. A later observation overwrites the properties it carries and keeps the others.
 
@@ -458,6 +459,7 @@ Every entity has exactly one key, `<type>:<normalized>`, so the same thing found
 | Email | dot-atom local part, lower-cased; domain by the Domain rules |
 | Phone | E.164 via `phonenumbers` (`+442079460958`), valid numbers only. A number in national format needs an explicit default region (`phone_region` in the API); there is no implicit default |
 | CryptoWallet | `btc:<address>` (mainnet base58check P2PKH/P2SH or bech32/bech32m SegWit, checksums verified, bech32 lower-cased) or `eth:0x<40 hex>` (lower-cased) |
+| Favicon | the icon's MurmurHash3 as a signed 32-bit decimal number, Shodan's `http.favicon.hash` (`-1010568750`); an unsigned spelling (`3284398546`) or an `mmh3:` prefix is turned into the same value |
 | Organization, Person, Technology, Location, Username, SocialProfile, Document, Image, Breach | NFKC, trimmed, inner whitespace collapsed (the display value keeps its case); the key is case-folded (`organization:acme corp`) |
 
 `parse_key()` accepts a key only if normalizing its own value gives the key back, so `GET /entities/domain:Example.org` is `422`, not a silent miss.
@@ -480,6 +482,7 @@ Relationship types (`nightloom_core.relationships`) have an explicit allow-list 
 | `USES` | Domain, URL or Service → Technology |
 | `OWNS` | Organization → Domain, Netblock or ASN |
 | `HOSTS` | Domain → URL |
+| `HAS_FAVICON` | Domain or URL → Favicon: the site serves that icon |
 | `REGISTERED_BY` | Domain → Organization |
 | `HAS_EMAIL` | Domain → Email |
 | `ACCOUNT_OF` | Username, SocialProfile or Email → Person |
@@ -781,11 +784,13 @@ crt.sh (run by Sectigo) publishes no terms of use; see the Shuttle's [README](..
 
 Some Shuttles read a site's own **public pages**, the way a browser or a search engine does (`mode=visit`): a few ordinary `GET` requests, nothing a visitor could not do. The site can see them, so they run only where a case **owner** turned on **Allow website visits** in the case's *Settings* (`cases.allow_site_visits`, off by default, no reason asked, audited through `case.update`, migration `0013_site_visits`), or on a target a [verification](#ownership-verification) covers. Elsewhere the API refuses them (`403`, `authz.denied` with reason `site_visits_disabled`) and the worker refuses them again at run time. They may be in a [scan profile](#scan-profiles-and-runs) (planned only where the case allows visits; otherwise counted as skipped), never in an [auto-pivot](#auto-pivot), and their results are cached like a passive Shuttle's.
 
-[`shuttles/web`](../shuttles/web/) holds the first two, each reading through the guarded client (public addresses only, one request per second), following redirects only **on the same host** (a redirect elsewhere is noted, never followed) and reading at most a fixed number of bytes. Provenance is the site itself, now.
+[`shuttles/web`](../shuttles/web/) holds three, each reading through the guarded client (public addresses only, one request per second), following redirects only **on the same host** (a redirect elsewhere is noted, never followed) and reading at most a fixed number of bytes. Provenance is the site itself, now.
 
 **`site-files`** (*Site files*, input Domain, cached 24 h, A2/0.9). At most four requests: `/robots.txt`; `/.well-known/security.txt` (or `/security.txt`); and the first sitemap `robots.txt` names on the same host, or `/sitemap.xml` (a sitemap index's nested sitemaps are counted, never fetched). The domain gets `site_files_checked_at`, `robots_txt`, `robots_disallow_count`, `sitemap_url_count`, `security_txt` (a file with at least one `Contact`), `security_txt_expires` and `security_txt_contact_kinds` (`email`, `url`, `phone`: the contacts themselves are never stored). The `Disallow`/`Allow` paths without wildcards (at most 50) and the sitemap's pages become URLs the domain `HOSTS` (at most 100 in all), after the [Wayback Shuttle's filtering](#the-wayback-shuttle): the domain and names under it only, no static files, no query strings or fragments, nothing with an email address or a secret-looking path.
 
 **`web-tech`** (*Web technologies*, input Domain, cached 24 h, B2/0.8). One `GET https://<domain>/` (or `http://` when HTTPS does not answer or its certificate does not verify; a note says which), at most 1 MB read. Software is recognized by about 55 rules on response headers (`Server`, `X-Powered-By`, platform headers such as `cf-ray` or `x-vercel-id`), the *names* of cookies the site sets (never their values), the `generator` meta tag and markers in the page (`/wp-content/`, `/_next/static/`, `ng-version`, script and stylesheet names). The domain gets `web_checked_at`, `web_title`, `web_generator` and `analytics_ids` (Google Analytics `UA-`/`G-`, Tag Manager `GTM-`, Ads `AW-`, AdSense `ca-pub-`: shared IDs often link sites of the same owner); the page becomes a URL the domain `HOSTS` (`status_code`, `title`, `content_type`, without query string), and each recognized technology a Technology with `USES` from the domain and the page.
+
+**`favicon`** (*Favicon hash*, input Domain, cached 24 h, A2/0.95). At most three requests: the home page (`https://`, or `http://` as for `web-tech`; at most 512 KB read), the icon it declares if that is on the same host (`<link rel="icon">` or `shortcut icon` first, then `apple-touch-icon`; one declared icon is tried, and one on another host is noted, never fetched), and `/favicon.ico` if there is none or it cannot be read. An icon embedded as a `data:` address needs no request. An icon over 256 KB, an empty one, or a catch-all HTML page answered with `200` is not hashed. The icon becomes a **Favicon** named by its MurmurHash3 in Shodan's form: the signed 32-bit MurmurHash3 (x86, seed 0) of the file's base64 encoding with a line break every 76 characters, which is what `http.favicon.hash` on Shodan and `icon_hash` on FOFA search for ([`murmur.py`](../shuttles/web/src/nightloom_shuttle_web/murmur.py), pure Python, checked against the reference `mmh3`). It carries the file's `sha256`, `md5` (older tools and VirusTotal search by it; Censys uses the SHA-256), `mime_type` and `size_bytes`; the domain gets `favicon_checked_at` and `HAS_FAVICON` to it. Sites that serve the same icon share the node, so a copy of a site, a staging server or another site of the same owner appears next to it; the side panel of a Favicon links to the same search on Shodan, FOFA and Censys, opened in the browser only when the analyst clicks. A shared icon is a hint, not proof: popular software ships default icons that many unrelated sites keep.
 
 ### The active Shuttles
 

@@ -33,6 +33,8 @@ class RelationType(StrEnum):
     USES = "USES"
     OWNS = "OWNS"
     HOSTS = "HOSTS"
+    # The site serves this icon (its favicon).
+    HAS_FAVICON = "HAS_FAVICON"
     REGISTERED_BY = "REGISTERED_BY"
     HAS_EMAIL = "HAS_EMAIL"
     ACCOUNT_OF = "ACCOUNT_OF"
@@ -64,6 +66,7 @@ ALLOWED: dict[RelationType, frozenset[Pair]] = {
     RelationType.USES: _pairs([E.DOMAIN, E.URL, E.SERVICE], [E.TECHNOLOGY]),
     RelationType.OWNS: _pairs([E.ORGANIZATION], [E.DOMAIN, E.NETBLOCK, E.ASN]),
     RelationType.HOSTS: _pairs([E.DOMAIN], [E.URL]),
+    RelationType.HAS_FAVICON: _pairs([E.DOMAIN, E.URL], [E.FAVICON]),
     RelationType.REGISTERED_BY: _pairs([E.DOMAIN], [E.ORGANIZATION]),
     RelationType.HAS_EMAIL: _pairs([E.DOMAIN], [E.EMAIL]),
     RelationType.ACCOUNT_OF: _pairs([E.USERNAME, E.SOCIAL_PROFILE, E.EMAIL], [E.PERSON]),

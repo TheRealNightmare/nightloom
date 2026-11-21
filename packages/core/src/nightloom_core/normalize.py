@@ -491,6 +491,32 @@ def _bech32(address: str) -> bool:
     return version != 0 or len(program) in (20, 32)
 
 
+FAVICON_INVALID = (
+    "A favicon hash is a 32-bit MurmurHash3 number, such as -1010568750 "
+    "(Shodan's http.favicon.hash)."
+)
+_FAVICON = re.compile(r"[+-]?[0-9]{1,10}")
+
+
+def normalize_favicon(value: str) -> str:
+    """A favicon's MurmurHash3 as a signed 32-bit decimal number (Shodan's form).
+
+    An unsigned value (2**31 to 2**32 - 1, as some tools print it) is turned
+    into the same signed number, so both spellings name one favicon.
+    """
+    text = _token(value, "Favicon hash")
+    if text.lower().startswith("mmh3:"):
+        text = text[5:].strip()
+    if not _FAVICON.fullmatch(text):
+        raise NormalizationError(FAVICON_INVALID)
+    number = int(text)
+    if not -(2**31) <= number < 2**32:
+        raise NormalizationError(FAVICON_INVALID)
+    if number >= 2**31:
+        number -= 2**32
+    return str(number)
+
+
 def normalize_crypto_wallet(value: str) -> str:
     """A wallet address prefixed with its chain: ``btc:<address>`` or ``eth:0x<hex>``.
 
@@ -598,6 +624,8 @@ def normalize(
             canonical = normalize_phone(value, default_region=phone_region)
         case EntityType.CRYPTO_WALLET:
             canonical = normalize_crypto_wallet(value)
+        case EntityType.FAVICON:
+            canonical = normalize_favicon(value)
         case _:
             display = normalize_text(value)
             return Normalized(entity_type, display, f"{entity_type.value}:{text_key(display)}")
@@ -646,6 +674,7 @@ __all__ = [
     "normalize_crypto_wallet",
     "normalize_domain",
     "normalize_email",
+    "normalize_favicon",
     "normalize_ip",
     "normalize_netblock",
     "normalize_phone",

@@ -23,6 +23,7 @@
   --type-document: var(--muted);
   --type-image: var(--muted);
   --type-breach: var(--muted);
+  --type-favicon: var(--muted);
 
   --font-display: "Fraunces Variable", "Iowan Old Style", Georgia, serif;
   --font-sans: "Source Sans 3 Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
