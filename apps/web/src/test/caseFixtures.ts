@@ -1,6 +1,7 @@
 import type { AuditEvent, Case, CaseRole, Member } from "../api/cases";
 import type { User } from "../api/client";
 import type { ApiEntity, ApiGraph, ApiProvenance, ApiRelationship, Schema } from "../api/graph";
+import type { ScanProfile, ScanRun } from "../api/scans";
 import type { Job, ShuttleInfo } from "../api/shuttles";
 import type { EntityType, Sensitivity } from "../domain/entities";
 import { json, READY_BODY, TEST_USER, type FakeApi } from "./fakeApi";
@@ -180,6 +181,51 @@ export function makeJob(overrides: Partial<Job> = {}): Job {
   };
 }
 
+export function makeProfile(overrides: Partial<ScanProfile> = {}): ScanProfile {
+  return {
+    id: "quick-domain-recon",
+    name: "Quick domain recon",
+    description: "A domain's DNS records, its registration data and its registrable domain.",
+    shuttles: ["dns", "rdap", "registrable-domain"],
+    built_in: true,
+    input_types: ["asn", "domain", "ip_address", "netblock"],
+    missing_shuttles: [],
+    updated_at: null,
+    ...overrides,
+  };
+}
+
+export const QUICK_PROFILE = makeProfile();
+export const EXPOSURE_PROFILE = makeProfile({
+  id: "exposure-check",
+  name: "Exposure check",
+  description: "What is open on an address and which names point to it.",
+  shuttles: ["internetdb", "reverse-dns"],
+  input_types: ["ip_address", "netblock"],
+});
+
+export function makeRun(overrides: Partial<ScanRun> = {}): ScanRun {
+  return {
+    id: "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+    case_id: CASE_ID,
+    profile_id: "quick-domain-recon",
+    profile_name: "Quick domain recon",
+    requested_by: TEST_USER.id,
+    status: "running",
+    stop_reason: null,
+    entities: 2,
+    total: 6,
+    released: 5,
+    waiting: 1,
+    skipped: 0,
+    use_cache: true,
+    created_at: "2026-11-12T09:00:00Z",
+    finished_at: null,
+    ...overrides,
+    jobs: { queued: 3, running: 1, succeeded: 1, failed: 0, cancelled: 0, ...overrides.jobs },
+  };
+}
+
 export const ADMIN_USER: User = { ...TEST_USER, role: "admin" };
 export const VIEWER_USER: User = { ...TEST_USER, role: "viewer" };
 
@@ -197,6 +243,8 @@ export function serveCase(
     graph = EMPTY_GRAPH,
     jobs = [],
     shuttles = [DNS_SHUTTLE],
+    profiles = [QUICK_PROFILE, EXPOSURE_PROFILE],
+    runs = [],
   }: {
     user?: User;
     role?: CaseRole;
@@ -206,6 +254,8 @@ export function serveCase(
     graph?: ApiGraph;
     jobs?: Job[];
     shuttles?: ShuttleInfo[];
+    profiles?: ScanProfile[];
+    runs?: ScanRun[];
   } = {},
 ): void {
   const path = `/cases/${CASE_ID}`;
@@ -220,5 +270,7 @@ export function serveCase(
     .on("GET", `${path}/jobs?limit=20`, () => json({ items: jobs, next_cursor: null }))
     .on("GET", "/shuttles?input_type=domain", () => json(shuttles))
     .on("GET", "/shuttles?input_type=ip_address", () => json([]))
+    .on("GET", "/scan-profiles", () => json(profiles))
+    .on("GET", `${path}/scan-runs?limit=20`, () => json({ items: runs }))
     .on("GET", "/cases?limit=25", () => json(EMPTY_PAGE));
 }

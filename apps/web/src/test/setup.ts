@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, configure } from "@testing-library/react";
 import { afterEach } from "vitest";
 
+import { resetProfileCache } from "../api/scans";
 import { resetShuttleCache } from "../api/shuttles";
 
 // jsdom has no WebGL. sigma's rendering helpers read WebGL2's type constants
@@ -33,4 +34,5 @@ afterEach(() => {
   cleanup();
   // Each test serves its own Shuttles.
   resetShuttleCache();
+  resetProfileCache();
 });

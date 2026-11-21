@@ -325,10 +325,11 @@ async def get_job(
 # --- cancelling and finishing ----------------------------------------------------------------
 
 
-async def cancel_job(db: AsyncSession, job: Job, *, actor: Actor) -> Job:
+async def cancel_job(db: AsyncSession, job: Job, *, actor: Actor, commit: bool = True) -> Job:
     """Cancel a queued job at once, or ask the worker to stop a running one; commits.
 
-    ``job`` must have been loaded with ``lock=True``.
+    ``job`` must have been loaded with ``lock=True``. With ``commit=False`` the
+    caller commits (cancelling a scan run's jobs together).
     """
     if job.status in FINISHED_STATUSES:
         raise JobFinishedError()
@@ -347,7 +348,8 @@ async def cancel_job(db: AsyncSession, job: Job, *, actor: Actor) -> Job:
         case_id=job.case_id,
         details=job_details(job, status_before=before.value, status=job.status.value),
     )
-    await db.commit()
+    if commit:
+        await db.commit()
     return job
 
 

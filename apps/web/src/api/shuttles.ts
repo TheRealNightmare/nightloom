@@ -96,6 +96,8 @@ export interface Job {
   overdue_at: string | null;
   /** False when the user asked for a fresh run (missing from older servers: true). */
   use_cache?: boolean;
+  /** The profile run that queued this job (null or missing for a single run). */
+  run_id?: string | null;
   /** Answered from the result cache instead of running the Shuttle. */
   from_cache?: boolean;
   /** When the source was asked for the cached results; null for a live run. */
@@ -194,6 +196,13 @@ const jobsPath = (caseId: string) => `/cases/${encodeURIComponent(caseId)}/jobs`
 
 /** How many jobs the history loads per page. */
 export const JOB_PAGE_SIZE = 20;
+
+/** GET /shuttles: every installed Shuttle, by name. */
+export async function listAllShuttles(options: CallOptions = {}): Promise<ShuttleInfo[]> {
+  const body = await apiRequest("/shuttles", options);
+  if (!Array.isArray(body) || !body.every(isShuttleInfo)) throw new UnexpectedResponseError(200);
+  return body;
+}
 
 /** GET /shuttles?input_type=…: installed Shuttles that accept the type, by name. */
 export async function listShuttles(

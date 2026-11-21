@@ -46,6 +46,13 @@ export const routes: RouteObject[] = [
           { path: "users", element: <UsersPage /> },
           { path: "audit", element: <AuditPage /> },
           {
+            path: "profiles",
+            lazy: async () => ({
+              Component: (await import("../admin/ProfilesPage")).ProfilesPage,
+            }),
+            hydrateFallbackElement: <Splash />,
+          },
+          {
             path: "result-cache",
             // Rarely opened: loaded on demand, outside the main bundle.
             lazy: async () => ({

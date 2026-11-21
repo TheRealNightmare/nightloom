@@ -49,6 +49,11 @@ export const AUDIT_ACTIONS = [
   "job.cancel",
   "job.finish",
   "result_cache.clear",
+  "scan_profile.create",
+  "scan_profile.update",
+  "scan_profile.delete",
+  "scan_run.create",
+  "scan_run.cancel",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 

@@ -45,6 +45,12 @@ class AuditAction(StrEnum):
     # Clearing cached Shuttle results: an admin (all, or one Shuttle's) or a
     # case owner (that case's). Only counts and the Shuttle name are recorded.
     RESULT_CACHE_CLEAR = "result_cache.clear"
+    # Scan profiles (admins) and profile runs (editors and owners).
+    SCAN_PROFILE_CREATE = "scan_profile.create"
+    SCAN_PROFILE_UPDATE = "scan_profile.update"
+    SCAN_PROFILE_DELETE = "scan_profile.delete"
+    SCAN_RUN_CREATE = "scan_run.create"
+    SCAN_RUN_CANCEL = "scan_run.cancel"
 
 
 class AuditOutcome(StrEnum):
@@ -64,3 +70,5 @@ class TargetType(StrEnum):
     RELATIONSHIP = "relationship"
     JOB = "job"
     VIEW = "view"
+    SCAN_PROFILE = "scan_profile"
+    SCAN_RUN = "scan_run"

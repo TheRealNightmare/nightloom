@@ -45,6 +45,9 @@ export function TopBar({
               <NavLink to="/admin/audit" className="topnav__link">
                 Audit log
               </NavLink>
+              <NavLink to="/admin/profiles" className="topnav__link">
+                Profiles
+              </NavLink>
               <NavLink to="/admin/result-cache" className="topnav__link">
                 Cache
               </NavLink>

@@ -59,6 +59,7 @@ const FAILURE_REASONS: Record<string, string> = {
   last_owner: "the case must keep an owner",
   not_found: "no such user or member",
   confirm_title_mismatch: "the title did not match",
+  too_many_runs: "two runs already in progress",
 };
 
 /** "a, b and c". */
@@ -143,6 +144,16 @@ export function describeEvent(event: AuditEvent, members: readonly Member[] = []
       return "deleted a saved graph view";
     case "result_cache.clear":
       return "cleared the case's cached Shuttle results";
+    case "scan_run.create": {
+      const name = text(details["profile_name"]) ?? "a profile";
+      if (failed) return `tried to run ${name}${failureNote}`;
+      const count = typeof details["jobs"] === "number" ? details["jobs"] : null;
+      return count === null
+        ? `ran ${name}`
+        : `ran ${name} (${String(count)} job${count === 1 ? "" : "s"})`;
+    }
+    case "scan_run.cancel":
+      return "cancelled a profile run";
     case "authz.denied": {
       if (details["reason"] === "not_a_member") return "was refused access (not a member)";
       if (details["reason"] === "not_view_creator") {
