@@ -225,6 +225,7 @@ async def test_shuttles_list_metadata(world: World) -> None:
         "usage_note": None,
         "default_admiralty": "B1",
         "default_confidence": 0.95,
+        "pivots": True,
     }
     ip = await viewer.get(f"{PREFIX}/shuttles", params={"input_type": "ip_address"})
     assert ip.json()[0]["rate_limit"] == {"requests": 10, "period_seconds": 60.0}

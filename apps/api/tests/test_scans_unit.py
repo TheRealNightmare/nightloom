@@ -65,7 +65,11 @@ class Visit(_Nothing):
     meta = _meta("visit", mode=Mode.VISIT)
 
 
-REGISTRY = ShuttleRegistry([Domains, Addresses, Emails, Active, Visit])
+class FanOut(_Nothing):
+    meta = _meta("fan-out", pivots=False)
+
+
+REGISTRY = ShuttleRegistry([Domains, Addresses, Emails, Active, Visit, FanOut])
 PROFILE = Profile(
     id="p",
     name="P",
@@ -152,6 +156,18 @@ def test_plans_go_entity_by_entity_and_skip_what_cannot_run() -> None:
     allowed = plan_run(PROFILE, entities, REGISTRY, allow_person_entities=True)
     assert {"shuttle": "emails", "entity_key": "domain:example.org"} in allowed.items
     assert allowed.skipped["person_entities_disabled"] == 0
+
+
+def test_pivots_leave_out_shuttles_that_fan_out() -> None:
+    profile = Profile(
+        id="f", name="F", description="", shuttles=("domains", "fan-out"), built_in=False
+    )
+    entities = [("domain:example.org", EntityType.DOMAIN)]
+    plan = plan_run(profile, entities, REGISTRY, allow_person_entities=False)
+    assert [item["shuttle"] for item in plan.items] == ["domains", "fan-out"]
+    pivot = plan_run(profile, entities, REGISTRY, allow_person_entities=False, pivot=True)
+    assert [item["shuttle"] for item in pivot.items] == ["domains"]
+    assert pivot.skipped == {"not_in_pivots": 1}
 
 
 def test_visits_are_planned_only_where_allowed() -> None:

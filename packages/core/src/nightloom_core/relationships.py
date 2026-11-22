@@ -33,6 +33,8 @@ class RelationType(StrEnum):
     USES = "USES"
     OWNS = "OWNS"
     HOSTS = "HOSTS"
+    # The source domain's name looks like the target's (a typo or lookalike of it).
+    LOOKALIKE_OF = "LOOKALIKE_OF"
     # The site serves this icon (its favicon).
     HAS_FAVICON = "HAS_FAVICON"
     REGISTERED_BY = "REGISTERED_BY"
@@ -66,6 +68,7 @@ ALLOWED: dict[RelationType, frozenset[Pair]] = {
     RelationType.USES: _pairs([E.DOMAIN, E.URL, E.SERVICE], [E.TECHNOLOGY]),
     RelationType.OWNS: _pairs([E.ORGANIZATION], [E.DOMAIN, E.NETBLOCK, E.ASN]),
     RelationType.HOSTS: _pairs([E.DOMAIN], [E.URL]),
+    RelationType.LOOKALIKE_OF: _pairs([E.DOMAIN], [E.DOMAIN]),
     RelationType.HAS_FAVICON: _pairs([E.DOMAIN, E.URL], [E.FAVICON]),
     RelationType.REGISTERED_BY: _pairs([E.DOMAIN], [E.ORGANIZATION]),
     RelationType.HAS_EMAIL: _pairs([E.DOMAIN], [E.EMAIL]),

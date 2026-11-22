@@ -11,6 +11,7 @@ import {
   MODE_LABELS,
   recentResultsHint,
   shuttleBlockedReason,
+  NO_PIVOT_SHUTTLE_HINT,
   VISIT_SHUTTLE_HINT,
 } from "./jobText";
 
@@ -106,6 +107,7 @@ function ShuttleCard({
       )}
       {shuttle.mode === "active" && <p className="field__hint">{ACTIVE_SHUTTLE_HINT}</p>}
       {shuttle.mode === "visit" && <p className="field__hint">{VISIT_SHUTTLE_HINT}</p>}
+      {shuttle.pivots === false && <p className="field__hint">{NO_PIVOT_SHUTTLE_HINT}</p>}
       {(shuttle.terms_url ?? shuttle.homepage) && (
         <p className="shuttle-card__links">
           {shuttle.terms_url && (

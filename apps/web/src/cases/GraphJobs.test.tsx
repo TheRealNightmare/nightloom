@@ -22,7 +22,12 @@ import { renderApp } from "../test/renderApp";
 import { FakeSigma, waitForSigma } from "../test/sigmaMock";
 import { PULSE_MS } from "./GraphTab";
 import { FROM_CACHE_LABEL, NO_JOBS_MESSAGE } from "./graph/JobsPanel";
-import { ACTIVE_SHUTTLE_HINT, PERSON_SHUTTLE_REASON, VISIT_SHUTTLE_HINT } from "./graph/jobText";
+import {
+  ACTIVE_SHUTTLE_HINT,
+  NO_PIVOT_SHUTTLE_HINT,
+  PERSON_SHUTTLE_REASON,
+  VISIT_SHUTTLE_HINT,
+} from "./graph/jobText";
 import { NO_SHUTTLES_MESSAGE, USAGE_NOTE_LABEL, USE_RECENT_LABEL } from "./graph/RunShuttles";
 import { JOB_POLL_MS } from "./graph/useCaseJobs";
 
@@ -175,6 +180,15 @@ describe("Run a Shuttle section", () => {
     expect(within(card).getByText("Visits the site")).toBeVisible();
     expect(within(card).getByText(VISIT_SHUTTLE_HINT)).toBeVisible();
     expect(within(card).getByRole("button", { name: "Run Site files" })).toBeEnabled();
+  });
+
+  it("says which Shuttles never run in an auto-pivot", async () => {
+    const typos = makeShuttle({ name: "typosquats", title: "Lookalike domains", pivots: false });
+    await openGraph({ shuttles: [typos, makeShuttle()] });
+    await select(apex.key);
+    const card = await within(details()).findByRole("listitem", { name: "Lookalike domains" });
+    expect(within(card).getByText(NO_PIVOT_SHUTTLE_HINT)).toBeVisible();
+    expect(within(details()).getAllByText(NO_PIVOT_SHUTTLE_HINT)).toHaveLength(1);
   });
 
   it("allows person-related Shuttles when the case does", async () => {

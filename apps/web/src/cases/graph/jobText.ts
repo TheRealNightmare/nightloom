@@ -6,6 +6,8 @@ export const TOO_MANY_JOBS_MESSAGE =
   "You already have the maximum number of queued or running jobs. Wait for one to finish.";
 export const VISIT_SHUTTLE_HINT =
   "Visits the site's public pages like a browser, so it runs where a case owner allows website visits in this case's settings, or on verified domains.";
+export const NO_PIVOT_SHUTTLE_HINT =
+  "Never runs in an auto-pivot: it finds many loosely related names, and following each of them would multiply the work.";
 export const MODE_LABELS = {
   passive: "Passive",
   visit: "Visits the site",

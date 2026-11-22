@@ -123,7 +123,8 @@ class RunFinishedError(RunError):
 @dataclass(frozen=True)
 class Plan:
     items: list[dict[str, str]]
-    # Pairs left out, by reason ("not_accepted", "person_entities_disabled", "not_installed").
+    # Pairs left out, by reason ("not_accepted", "person_entities_disabled", "not_installed",
+    # "not_in_pivots", ...).
     skipped: Counter[str]
 
 
@@ -134,8 +135,13 @@ def plan_run(
     *,
     allow_person_entities: bool,
     allow_site_visits: bool = False,
+    pivot: bool = False,
 ) -> Plan:
-    """Every (Shuttle, entity) pair the guardrails allow, entity by entity, in profile order."""
+    """Every (Shuttle, entity) pair the guardrails allow, entity by entity, in profile order.
+
+    With ``pivot``, Shuttles that declare ``pivots=False`` are left out
+    (``not_in_pivots``).
+    """
     items: list[dict[str, str]] = []
     skipped: Counter[str] = Counter()
     for key, entity_type in entities:
@@ -143,6 +149,9 @@ def plan_run(
             shuttle = registry.get(name)
             if shuttle is None:
                 skipped["not_installed"] += 1
+                continue
+            if pivot and not shuttle.meta.pivots:
+                skipped["not_in_pivots"] += 1
                 continue
             try:
                 jobs.check_shuttle(
@@ -322,7 +331,9 @@ async def expand(db: AsyncSession, run: ScanRun, registry: ShuttleRegistry) -> i
             if run.discovered >= run.max_entities:
                 run.capped = "entities"
                 break
-            plan = plan_run(profile, [(key, entity_type)], registry, allow_person_entities=False)
+            plan = plan_run(
+                profile, [(key, entity_type)], registry, allow_person_entities=False, pivot=True
+            )
             if len(items) + len(plan.items) > run.max_jobs:
                 run.capped = "jobs"
                 break

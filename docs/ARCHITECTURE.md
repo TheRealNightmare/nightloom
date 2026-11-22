@@ -483,6 +483,7 @@ Relationship types (`nightloom_core.relationships`) have an explicit allow-list 
 | `OWNS` | Organization → Domain, Netblock or ASN |
 | `HOSTS` | Domain → URL |
 | `HAS_FAVICON` | Domain or URL → Favicon: the site serves that icon |
+| `LOOKALIKE_OF` | Domain → Domain: the source's name looks like the target's (a typo or lookalike); the kind of change is in the note |
 | `REGISTERED_BY` | Domain → Organization |
 | `HAS_EMAIL` | Domain → Email |
 | `ACCOUNT_OF` | Username, SocialProfile or Email → Person |
@@ -595,6 +596,7 @@ Every Shuttle subclasses `Shuttle` and declares a frozen `ShuttleMeta`, validate
 | `terms_url`, `homepage` | optional `http(s)` URLs |
 | `usage_note` | optional conditions of use of the source (e.g. *Free for non-commercial use.*): one line of plain text, at most 300 characters, no control characters, `<` or `>`. `GET /shuttles` returns it and the *Run Shuttle* panel shows it under the description, next to the terms link |
 | `default_admiralty`, `default_confidence` | the provenance of its findings (default `F6`, 0.5); a finding may override them |
+| `pivots` | default `true`: whether an [auto-pivot](#auto-pivot) may plan it. `false` for a Shuttle that turns one entity into many loosely related ones, such as [typosquats](#the-typosquat-shuttle): following each result with the same Shuttle would multiply the work. It still runs on its own and in scan profiles; `GET /shuttles` returns it and the *Run Shuttle* panel says so |
 
 ### Findings
 
@@ -674,6 +676,14 @@ Findings are rated **B2** (a recursive resolver's answer: usually reliable, prob
 **Sweep limits.** A netblock may hold at most 256 addresses: an IPv4 prefix of /24 or longer, an IPv6 prefix of /120 or longer. A larger one is refused before any query (`netblock_too_large`: *Reverse DNS sweeps are limited to 256 addresses; pick a /24 or smaller (for IPv6, a /120 or smaller). Nothing was queried.*). Every address is asked, network and broadcast addresses included, since PTR records often exist there too. Cancellation is checked before every query. The timeout is 300 seconds and no query starts after 240; a sweep stops adding names after 1,400 (`1,400 × 3 + 256 × 2` findings at most, under the worker's 5,000), each with a note.
 
 **Failures.** NXDOMAIN and empty answers are quiet. SERVFAIL and timeouts are counted, and every run ends with a note: *N address(es) queried, P with PTR names, C name(s) forward-confirmed, F quer(ies) failed.* The job fails with `source_unavailable` (findings so far kept) when no PTR query got an answer, or after 10 failed PTR queries in a row in a sweep. The tests use a fake resolver; one opt-in `network` test asks the real resolvers about `1.1.1.1` (`one.one.one.one`, forward-confirmed).
+
+### The typosquat Shuttle
+
+**`typosquats`** (*Lookalike domains (typosquats)*, input Domain, passive, cached 24 h, B2/0.8, `pivots: false`), the third entry point of [`shuttles/dns`](../shuttles/dns/): which lookalikes of a domain are registered. It follows the [DNS Shuttle's resolver policy](#the-dns-shuttle) unchanged (public resolvers only, the same rate limit per resolver) and never contacts the domain or the lookalikes. A subdomain is checked as its registrable domain (with a note); public suffixes and internal-only names are refused before any query.
+
+**Candidates** ([`permutations.py`](../shuttles/dns/src/nightloom_shuttle_dns/permutations.py), pure and tested on its own, in the spirit of dnstwist): omission, repetition, transposition, a neighbouring QWERTY key instead of a letter or typed next to it, a character added at the end, a hyphen added, a vowel changed, lookalike ASCII spellings (`1`/`l`, `0`/`o`, `rn`/`m`, `vv`/`w`, `cl`/`d`, …), a lookalike Cyrillic letter (as an `xn--` name), one bit flipped, and the same name under 24 other suffixes (`com`, `net`, `org`, `co`, `io`, …, `co.uk`, `bd`, `com.bd`). Every candidate is a valid, normalized, registrable domain other than the input, listed once under the first kind that makes it. The kinds take turns, other suffixes first, so the cap of **500** keeps some of every kind. An internationalized (`xn--`) name only gets other suffixes.
+
+**Registered** means an answer to an **NS** query: a registered domain is delegated to name servers, while a name that does not exist (NXDOMAIN) or has no NS records is left out; a domain on hold without name servers is missed, which the summary note says. One query per candidate, at most 8 in flight under the per-resolver rate limit; no query starts after 240 seconds (timeout 300); the run stops after 25 failed queries in a row and fails with `source_unavailable` when none got an answer. Each registered lookalike becomes a Domain with `LOOKALIKE_OF` to the domain, whose note gives the kind (`kind: transposition (two letters swapped)`); the domain gets `typosquats_checked_at`, `typosquat_candidates` and `typosquats_registered`, and the job notes *Tried N lookalike name(s): R registered, F quer(ies) failed.* Run the DNS Shuttle (or a profile) on a lookalike to see where it points and whether it receives mail. A registered lookalike is a similar name someone holds: not necessarily malicious, and possibly the owner's own defensive registration. `pivots: false` keeps it out of auto-pivots, which would otherwise check every lookalike's own lookalikes.
 
 ### The crt.sh Shuttle
 
@@ -878,7 +888,7 @@ In the web UI's *Jobs* panel, a running job's elapsed time stops at its deadline
 
 #### The result cache
 
-A passive Shuttle with a `cache_ttl_seconds` (DNS and reverse DNS 1 hour; crt.sh, RIPEstat and InternetDB 24 hours; RDAP and Wayback 7 days; registrable-domain never) does not ask its source again for the same entity while a recent result exists ([`result_cache.py`](../apps/api/src/nightloom_api/jobs/result_cache.py)).
+A passive Shuttle with a `cache_ttl_seconds` (DNS and reverse DNS 1 hour; crt.sh, RIPEstat, InternetDB and typosquats 24 hours; RDAP and Wayback 7 days; registrable-domain never) does not ask its source again for the same entity while a recent result exists ([`result_cache.py`](../apps/api/src/nightloom_api/jobs/result_cache.py)).
 
 - **What is stored.** After a live run **succeeds** (not failed, cancelled, cut by the deadline or over the findings limit), the worker stores what the Shuttle *yielded*, in order, and its notes (PostgreSQL table `result_cache`, migration `0009`), within the job's deadline and never at the cost of the job. These are the raw findings, before any check that depends on the case.
 - **Key.** SHA-256 of the scope, the Shuttle's **name and version** (a new version never reuses an older one's results), the input entity's canonical key and the run's options (none yet; normalized, so their order never matters).
@@ -907,7 +917,7 @@ The Compose stack runs the worker as the `worker` service (same image as the API
 
 A **pivot** is a [profile run](#scan-profiles-and-runs) that continues from what it finds. It is started with `pivot: true` on `POST /cases/{id}/scan-runs` (*Pivot from here* in the web UI), and only in a case whose owner turned on **Allow auto-pivot** (`cases.allow_auto_pivot`, off by default, owners only, no reason asked; audited through `case.update`). Elsewhere the request is refused (`403`, audited as a denied `scan_run.create` with reason `auto_pivot_disabled`).
 
-- **Seeds** must be infrastructure entities (domains, IP addresses, netblocks, ASNs and the like; `422` otherwise). Their jobs are planned as for any run, at depth 0, except that person-related Shuttles are never planned in a pivot, whatever the case allows.
+- **Seeds** must be infrastructure entities (domains, IP addresses, netblocks, ASNs and the like; `422` otherwise). Their jobs are planned as for any run, at depth 0, except that person-related Shuttles, Shuttles that visit the site and Shuttles with `pivots: false` (counted as skipped, `not_in_pivots`) are never planned in a pivot, whatever the case allows.
 - **Expanding**: whenever the run's jobs are released (see above: after each job, and every minute), its newly finished jobs are expanded first, under the same locks. The entities a succeeded or failed job created or updated (`stats.entities_touched`) that the run has not seen yet, and whose type is infrastructure (never person-related types or organizations), are planned with the **same profile's Shuttles** (as they were when the run started, `scan_runs.profile_shuttles`), one hop further. Jobs at depth 2 are not expanded, so a pivot reaches **at most 2 hops** from its seeds. A cancelled job adds nothing. Each job records its hop (`jobs.pivot_depth`) and whether it was expanded (`jobs.pivot_expanded`).
 - **Limits**: at most **200 planned jobs** and **500 new entities** per pivot (`max_jobs`, `max_entities`). Reaching either sets `capped` (`jobs` or `entities`) and stops the expansion; what was already planned still runs. The per-user job limit, the two-runs rule and every check of a single job (the case is open, the requester may run Shuttles, the Shuttle is passive and installed) apply as for any run. The result cache is used unless the pivot was started with `fresh`.
 - **Ends** like any run: `finished` once nothing is left to release, nothing is running and every finished job has been expanded; `cancel` stops the expansion too.

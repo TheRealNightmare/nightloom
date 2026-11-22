@@ -1,6 +1,6 @@
 # nightloom-shuttle-dns
 
-Two built-in Nightloom Shuttles that share one [resolver policy](#resolver-policy): `dns` (a domain's records) and `reverse-dns` (an address's PTR names).
+Three built-in Nightloom Shuttles that share one [resolver policy](#resolver-policy): `dns` (a domain's records), `reverse-dns` (an address's PTR names) and `typosquats` (a domain's registered lookalikes).
 
 ## DNS records (`dns`)
 
@@ -32,6 +32,15 @@ The PTR names of an IP address, or of every address in a small netblock, each ch
 - **Failures.** NXDOMAIN and empty answers are quiet. SERVFAIL and timeouts are counted. The job fails with *source unavailable* when no PTR query got an answer, or after 10 failed PTR queries in a row.
 - **Limits.** Timeout 300 s; a sweep starts no query after 240 s, and stops adding names after 1,400 (under the worker's 5,000-finding limit), each with a note. Cancellation is checked before every query. Each forward name is asked once per run.
 - **Notes.** A summary note on every run: addresses queried, with PTR names, names forward-confirmed, queries failed.
+
+## Lookalike domains (`typosquats`)
+
+Which lookalikes of a domain are registered. A subdomain is checked as its registrable domain.
+
+- **Candidates** (`permutations.py`): omission, repetition, transposition, neighbouring QWERTY keys (instead of a letter, or next to it), a character added at the end, a hyphen, a vowel changed, lookalike ASCII spellings (`1`/`l`, `rn`/`m`, …), lookalike Cyrillic letters (`xn--` names), one bit flipped, and 24 other suffixes. At most 500, the kinds taking turns so each is represented.
+- **Registered** means delegated: one NS query per candidate, at most 8 in flight under the shared rate limit. A domain on hold without name servers is not found.
+- **Findings**: each registered lookalike as a Domain with `LOOKALIKE_OF` to the domain (`kind: … (…)` in the note); `typosquats_checked_at`, `typosquat_candidates` and `typosquats_registered` on the domain. Rated **B2** (0.8), cached for a day.
+- **Never in an auto-pivot** (`pivots=False`): following each lookalike with the same Shuttle would check hundreds of names each.
 
 ## Resolver policy
 
