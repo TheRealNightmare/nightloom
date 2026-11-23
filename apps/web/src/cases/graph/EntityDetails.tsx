@@ -5,6 +5,7 @@ import { getEntity, type Schema } from "../../api/graph";
 import { Confidence, PropertiesSection, Timestamp } from "../../components/SidePanel";
 import type { EntityNode, Sensitivity } from "../../domain/entities";
 import { FaviconSearchLinks } from "./FaviconSearchLinks";
+import { ScreenshotSection } from "./ScreenshotSection";
 import { describeAdmiralty, SENSITIVITY_LABELS } from "./rules";
 
 export function SensitivityBadge({ sensitivity }: { sensitivity: Sensitivity }) {
@@ -169,6 +170,8 @@ export interface EntityDetailsProps {
   revision: number;
   canEdit: boolean;
   onDelete: (entity: EntityNode) => void;
+  /** Selects another entity of the graph (from the screenshot's "Looks like" list). */
+  onFocusEntity?: (key: string) => void;
   /** Shown after the provenance (the "Run a Shuttle" section for editors). */
   children?: ReactNode;
 }
@@ -181,6 +184,7 @@ export function EntityDetails({
   revision,
   canEdit,
   onDelete,
+  onFocusEntity,
   children,
 }: EntityDetailsProps) {
   const details = entity.details;
@@ -210,6 +214,13 @@ export function EntityDetails({
       <PropertiesSection properties={entity.properties} />
 
       <FaviconSearchLinks entity={entity} />
+
+      <ScreenshotSection
+        caseId={caseId}
+        entity={entity}
+        revision={revision}
+        {...(onFocusEntity ? { onFocusEntity } : {})}
+      />
 
       <section>
         <h3 className="panel__section">Provenance</h3>

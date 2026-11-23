@@ -246,6 +246,9 @@ export function GraphTab() {
         onDelete={(target) => {
           setDialog({ kind: "delete", entity: target });
         }}
+        onFocusEntity={(key) => {
+          setFocus({ id: key });
+        }}
       >
         {canEdit && (
           <RunProfile entities={[entity]} onRun={runProfile} allowPivot={allowAutoPivot} />

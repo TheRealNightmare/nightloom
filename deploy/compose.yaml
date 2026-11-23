@@ -247,6 +247,9 @@ services:
         condition: service_healthy
       valkey:
         condition: service_healthy
+      # Evidence (screenshots) is stored there.
+      seaweedfs:
+        condition: service_healthy
     # The same NIGHTLOOM_* variables as the API (the settings are shared).
     environment:
       NIGHTLOOM_ENV: ${NIGHTLOOM_ENV:-development}
@@ -264,6 +267,12 @@ services:
       # Public resolvers the DNS Shuttle asks (never the host's own resolver).
       # Private addresses are refused at startup; see docs/ARCHITECTURE.md.
       NIGHTLOOM_DNS_RESOLVERS: ${NIGHTLOOM_DNS_RESOLVERS:-1.1.1.1,9.9.9.9}
+      # The browser service of the screenshot Shuttle (profile `screenshots`).
+      NIGHTLOOM_BROWSER_URL: ${NIGHTLOOM_BROWSER_URL:-ws://browser:3000/}
+    # The default network, and the internal one the browser service is on.
+    networks:
+      - default
+      - browser
     # A running job may take up to 10 minutes; on shutdown, jobs that do not
     # finish in time are re-delivered and then recorded as failed (or, if the
     # worker does not come back, failed by another worker's reaper).
@@ -277,6 +286,33 @@ services:
       timeout: 15s
       retries: 3
       start_period: 30s
+
+  # The screenshot Shuttle's browser (Playwright's browser server with
+  # Chromium), only with `make up SCREENSHOTS=1` (Compose profile
+  # `screenshots`). It is on the internal `browser` network only: no internet,
+  # no other service but the worker, which answers every request a page makes
+  # through its guarded HTTP client. Read-only, no capabilities, bounded
+  # memory and processes; about 1 GB of image, so it is optional.
+  browser:
+    profiles: ["screenshots"]
+    build:
+      context: browser
+    image: nightloom-browser:dev
+    logging: *logging
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m
+      - /home/pwuser:size=256m,mode=1777
+    shm_size: 512m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 2g
+    pids_limit: 1024
+    networks:
+      - browser
 
   # Web UI: the built single-page app behind nginx, which also proxies /api/
   # to the `api` service, so the browser only ever talks to this origin.
@@ -329,6 +365,10 @@ services:
         condition: service_healthy
 
 networks:
+  # Only the worker and the browser service: no route out (internal), so the
+  # browser can reach nothing the worker does not fetch for it.
+  browser:
+    internal: true
   default:
     # A fixed subnet, so `web` can have a static address. Change it with
     # NIGHTLOOM_NETWORK_SUBNET (and NIGHTLOOM_WEB_IP) only if it clashes with a

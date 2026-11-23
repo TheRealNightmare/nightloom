@@ -64,9 +64,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from nightloom_api.auth import clock
 from nightloom_api.config import Settings, get_settings
+from nightloom_api.evidence import S3EvidenceStore
 from nightloom_api.graph.repository import GraphRepository
 from nightloom_api.infra import db as db_infra
 from nightloom_api.infra import graph as graph_infra
+from nightloom_api.infra.storage import Storage
 from nightloom_api.jobs import deadlines, result_cache
 from nightloom_api.jobs.models import Job, JobStatus
 from nightloom_api.jobs.queue import (
@@ -190,6 +192,8 @@ async def _with_config(settings: Settings, job_id: uuid.UUID, *, abandoned: bool
     engine = db_infra.create_engine(settings)
     driver = graph_infra.create_driver(settings)
     sessionmaker = db_infra.create_sessionmaker(engine)
+    # Created lazily: only a Shuttle that keeps evidence connects to the storage.
+    storage = Storage(settings)
     try:
         if abandoned:
             await finish_abandoned(sessionmaker, job_id, TIME_LIMIT_OUTCOME)
@@ -206,6 +210,7 @@ async def _with_config(settings: Settings, job_id: uuid.UUID, *, abandoned: bool
             cache_scope=result_cache.CacheScope(settings.result_cache_scope),
             cache_max_entry_bytes=settings.result_cache_max_entry_bytes,
             prover=default_prover(),
+            evidence=lambda case_id: S3EvidenceStore(storage, case_id),
         )
         status = await run_job(job_id, config)
         # A finished job frees a job slot: its scan run (if any) may queue the next.
@@ -216,6 +221,7 @@ async def _with_config(settings: Settings, job_id: uuid.UUID, *, abandoned: bool
         )
         return status.value if status is not None else None
     finally:
+        await bounded(storage.aclose(), CLOSE_SECONDS, "Closing the object storage client")
         await bounded(driver.close(), CLOSE_SECONDS, "Closing the Neo4j driver")
         await bounded(engine.dispose(), CLOSE_SECONDS, "Closing the database engine")
 

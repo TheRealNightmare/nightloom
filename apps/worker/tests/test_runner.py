@@ -59,6 +59,7 @@ from nightloom_sdk import (
     ShuttleFailedError,
     ShuttleMeta,
 )
+from nightloom_sdk.evidence import MemoryEvidenceStore
 from nightloom_sdk.http import create_http_client
 from nightloom_sdk.ratelimit import HostRateLimiter
 from nightloom_sdk.registry import ShuttleRegistry
@@ -1634,3 +1635,27 @@ async def test_notes_are_cached_and_a_broken_cache_never_fails_a_job(
     assert (await world.job(job_id)).from_cache is False
     assert "reading the result cache failed (OSError)" in caplog.text
     assert "storing the results in the cache failed: OSError" in caplog.text
+
+
+async def test_shuttles_keep_evidence_with_the_job_case(world: World) -> None:
+    stores: dict[uuid.UUID, MemoryEvidenceStore] = {}
+    names: list[str] = []
+
+    def store_for(case_id: uuid.UUID) -> MemoryEvidenceStore:
+        return stores.setdefault(case_id, MemoryEvidenceStore())
+
+    class Keeper(Shuttle):
+        meta = meta("keeper")
+
+        async def run(self, ctx: ShuttleContext, entity: EntityInput) -> AsyncIterator[Any]:
+            names.append(await ctx.save_evidence(b"\x89PNG picture", content_type="image/png"))
+            yield domain("example.co.uk")
+
+    job_id = await world.queue(Keeper)
+    assert await run_job(job_id, world.config(Keeper, evidence=store_for)) == JobStatus.SUCCEEDED
+    assert list(stores) == [world.case_id]
+    assert list(stores[world.case_id].files) == names
+
+    # Without a store the Shuttle is told so (and here, fails).
+    failed = await world.queue(Keeper)
+    assert await run_job(failed, world.config(Keeper)) == JobStatus.FAILED

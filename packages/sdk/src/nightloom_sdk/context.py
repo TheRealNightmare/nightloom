@@ -8,6 +8,14 @@ from typing import Any
 
 import httpx
 
+from nightloom_sdk.evidence import (
+    MAX_EVIDENCE_BYTES,
+    MAX_EVIDENCE_PER_RUN,
+    EvidenceError,
+    EvidenceStore,
+    EvidenceUnavailableError,
+    evidence_name,
+)
 from nightloom_sdk.http import NetworkNotDeclaredError, create_http_client
 from nightloom_sdk.meta import ShuttleMeta
 
@@ -45,6 +53,8 @@ class ShuttleContext:
     - :meth:`progress`: a short, human-readable status line.
     - :meth:`note`: a short remark kept with the job (shown to its users),
       e.g. that a result was narrowed or capped.
+    - :meth:`save_evidence`: keep a file with the case (a screenshot), named
+      by its SHA-256 (see :mod:`nightloom_sdk.evidence`).
     """
 
     def __init__(
@@ -56,6 +66,7 @@ class ShuttleContext:
         cancel_event: asyncio.Event | None = None,
         on_progress: ProgressCallback | None = None,
         logger: logging.Logger | None = None,
+        evidence: EvidenceStore | None = None,
     ) -> None:
         self.meta = meta
         self.logger: logging.LoggerAdapter[logging.Logger] = _PrefixedLogger(
@@ -67,6 +78,8 @@ class ShuttleContext:
         self._on_progress = on_progress
         self.last_progress: str | None = None
         self._notes: list[str] = []
+        self._evidence = evidence
+        self._evidence_saved: set[str] = set()
 
     @property
     def http(self) -> httpx.AsyncClient:
@@ -106,6 +119,25 @@ class ShuttleContext:
         self.logger.info("note: %s", text)
         if len(self._notes) < MAX_NOTES:
             self._notes.append(text)
+
+    async def save_evidence(self, data: bytes, *, content_type: str) -> str:
+        """Store ``data`` with the case; returns its evidence name (``<sha256>.<ext>``).
+
+        Accepts PNG and JPEG images, at most MAX_EVIDENCE_BYTES each and
+        MAX_EVIDENCE_PER_RUN different files per run. Raises
+        :class:`EvidenceUnavailableError` when the run cannot store evidence,
+        and :class:`EvidenceError` when the file is refused.
+        """
+        if self._evidence is None:
+            raise EvidenceUnavailableError("This run cannot store evidence.")
+        if not data or len(data) > MAX_EVIDENCE_BYTES:
+            raise EvidenceError("Evidence must be between 1 byte and 5 MB.")
+        name = evidence_name(data, content_type)
+        if name not in self._evidence_saved and len(self._evidence_saved) >= MAX_EVIDENCE_PER_RUN:
+            raise EvidenceError(f"A run may store at most {MAX_EVIDENCE_PER_RUN} files.")
+        await self._evidence.save(name, data, content_type)
+        self._evidence_saved.add(name)
+        return name
 
     @property
     def notes(self) -> tuple[str, ...]:

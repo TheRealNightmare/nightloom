@@ -6,6 +6,7 @@ yields :class:`EntityFinding` and :class:`RelationshipFinding` objects from
 """
 
 from nightloom_sdk.context import JobCancelledError, ShuttleContext
+from nightloom_sdk.evidence import EvidenceError, EvidenceUnavailableError
 from nightloom_sdk.findings import EntityFinding, EntityRef, Finding, RelationshipFinding
 from nightloom_sdk.meta import Mode, RateLimit, ShuttleMeta
 from nightloom_sdk.shuttle import (
@@ -22,6 +23,8 @@ __all__ = [
     "EntityFinding",
     "EntityInput",
     "EntityRef",
+    "EvidenceError",
+    "EvidenceUnavailableError",
     "FailureReason",
     "Finding",
     "InputRefusedError",

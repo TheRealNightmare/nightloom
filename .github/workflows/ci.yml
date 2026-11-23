@@ -253,6 +253,8 @@ jobs:
           docker compose -f deploy/compose.yaml --env-file .env.example config -q
           docker compose -f deploy/compose.yaml -f deploy/compose.test.yaml \
             --env-file .env.example config -q
+          docker compose -f deploy/compose.yaml --profile screenshots \
+            --env-file .env.example config -q
 
       # Production: every variant (each edge, small host) is valid, publishes
       # nothing but the edge's ports 80/443 and pulls the release images of
@@ -330,12 +332,20 @@ jobs:
           docker run --rm nightloom-api:ci celery --version
           shuttles=$(docker run --rm nightloom-api:ci python -m nightloom_sdk.registry list)
           echo "$shuttles"
-          for name in crtsh dns favicon http-headers internetdb port-check rdap registrable-domain reverse-dns ripestat site-files typosquats wayback web-tech; do
+          for name in crtsh dns favicon http-headers internetdb port-check rdap registrable-domain reverse-dns ripestat screenshot site-files typosquats wayback web-tech; do
             if ! grep -q "^$name " <<< "$shuttles"; then
               echo "::error title=Shuttles::$name is not installed in the image."
               exit 1
             fi
           done
+          # The screenshot Shuttle's Playwright driver starts in the image.
+          docker run --rm nightloom-api:ci python -c "$(printf '%s\n' \
+            'import asyncio' \
+            'from playwright.async_api import async_playwright' \
+            'async def main():' \
+            '    async with async_playwright():' \
+            '        print("Playwright driver OK")' \
+            'asyncio.run(main())')"
           # Every Shuttle's configuration is valid with the defaults...
           docker run --rm nightloom-api:ci python -m nightloom_sdk.registry check
           # ...and a private DNS resolver is refused.
@@ -465,12 +475,17 @@ jobs:
 
       # TEST_DNS=1 adds a local authoritative DNS server (CoreDNS, zone
       # nightloom-test.example) and points the worker's DNS Shuttle at it.
+      # SCREENSHOTS=1 also starts the screenshot Shuttle's browser service.
       - name: Start the stack with the test DNS server (waits until healthy)
-        run: make up TEST_DNS=1
+        run: make up TEST_DNS=1 SCREENSHOTS=1
 
       # Includes a registrable-domain job and a DNS job end to end: API ->
       # Valkey -> worker -> (test DNS) -> Neo4j, checked through GET /graph.
       - run: make test-integration TEST_DNS=1
+
+      # The browser has no route out, and the worker draws pages in it.
+      - name: Check the browser service
+        run: make check-browser TEST_DNS=1
 
       - name: Check the API through the web proxy
         run: |
@@ -498,13 +513,13 @@ jobs:
       - name: Dump stack logs
         if: failure()
         run: |
-          make ps TEST_DNS=1
-          docker compose -f deploy/compose.yaml -f deploy/compose.test.yaml --env-file .env \
-            logs --no-color --timestamps
+          make ps TEST_DNS=1 SCREENSHOTS=1
+          docker compose -f deploy/compose.yaml -f deploy/compose.test.yaml \
+            --profile screenshots --env-file .env logs --no-color --timestamps
 
       - name: Stop the stack
         if: always()
-        run: make down TEST_DNS=1
+        run: make down TEST_DNS=1 SCREENSHOTS=1
 
   # The production stack (deploy/compose.prod.yaml) with the HTTPS edge:
   # Caddy with its internal CA for nightloom.localhost on 127.0.0.1:8443

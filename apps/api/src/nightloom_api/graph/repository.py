@@ -130,6 +130,17 @@ class GraphCounts:
 
 
 @dataclass(frozen=True)
+class Screenshot:
+    """An entity with a screenshot: its perceptual hash and evidence name."""
+
+    key: str
+    type: EntityType
+    value: str
+    phash: str
+    screenshot: str | None
+
+
+@dataclass(frozen=True)
 class DeletedEntity:
     type: EntityType
     sensitivity: Sensitivity
@@ -313,6 +324,15 @@ _EXISTING_KEYS: LiteralString = """
 UNWIND $keys AS key
 MATCH (n:Entity {case_id: $case_id, key: key})
 RETURN n.key AS key
+"""
+
+_SCREENSHOTS: LiteralString = """
+MATCH (n:Entity {case_id: $case_id})
+WHERE n.prop_screenshot_phash IS NOT NULL
+RETURN n.key AS key, n.type AS type, n.value AS value,
+       n.prop_screenshot_phash AS phash, n.prop_screenshot AS screenshot
+ORDER BY n.key
+LIMIT $limit
 """
 
 _DELETE_CASE_BATCH: LiteralString = """
@@ -517,6 +537,20 @@ class GraphOperations:
         result = await self._tx.run(_EXISTING_KEYS, case_id=_case(case_id), keys=list(keys))
         return {record["key"] async for record in result}
 
+    async def screenshots(self, case_id: uuid.UUID | str, limit: int) -> list[Screenshot]:
+        """The case's entities with a screenshot's perceptual hash (at most ``limit``), by key."""
+        result = await self._tx.run(_SCREENSHOTS, case_id=_case(case_id), limit=limit)
+        return [
+            Screenshot(
+                key=record["key"],
+                type=EntityType(record["type"]),
+                value=record["value"],
+                phash=str(record["phash"]),
+                screenshot=record["screenshot"],
+            )
+            async for record in result
+        ]
+
     async def delete_case_batch(self, case_id: uuid.UUID | str, batch_size: int) -> int:
         """Delete up to ``batch_size`` of the case's nodes; returns how many were deleted."""
         result = await self._tx.run(_DELETE_CASE_BATCH, case_id=_case(case_id), batch=batch_size)
@@ -611,6 +645,10 @@ class GraphRepository:
     async def count_graph(self, case_id: uuid.UUID | str) -> GraphCounts:
         async with self.read() as ops:
             return await ops.count_graph(case_id)
+
+    async def screenshots(self, case_id: uuid.UUID | str, limit: int) -> list[Screenshot]:
+        async with self.read() as ops:
+            return await ops.screenshots(case_id, limit)
 
     async def delete_entity(self, case_id: uuid.UUID | str, key: str) -> DeletedEntity | None:
         async with self.write() as ops:

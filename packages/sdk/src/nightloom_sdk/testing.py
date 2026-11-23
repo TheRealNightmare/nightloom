@@ -22,6 +22,7 @@ import httpx
 from nightloom_core.entities import EntityType
 from nightloom_core.normalize import normalize
 from nightloom_sdk.context import ShuttleContext
+from nightloom_sdk.evidence import EvidenceStore, MemoryEvidenceStore
 from nightloom_sdk.findings import EntityFinding, Finding, RelationshipFinding
 from nightloom_sdk.http import create_http_client
 from nightloom_sdk.meta import ShuttleMeta
@@ -43,11 +44,13 @@ def fake_context(
     limiter: HostRateLimiter | None = None,
     cancelled: bool = False,
     logger: logging.Logger | None = None,
+    evidence: EvidenceStore | None = None,
 ) -> ShuttleContext:
     """A context for ``meta``; with ``transport``, its HTTP client never touches the network.
 
     Without a transport, a network Shuttle's ``ctx.http`` refuses every
-    request, so a test cannot reach the internet by accident.
+    request, so a test cannot reach the internet by accident. Evidence goes to
+    ``evidence``, by default a new :class:`MemoryEvidenceStore`.
     """
     event = asyncio.Event()
     if cancelled:
@@ -57,7 +60,14 @@ def fake_context(
         http = create_http_client(
             meta, transport=transport or httpx.MockTransport(_no_network), limiter=limiter
         )
-    return ShuttleContext(meta, keys=keys, http=http, cancel_event=event, logger=logger)
+    return ShuttleContext(
+        meta,
+        keys=keys,
+        http=http,
+        cancel_event=event,
+        logger=logger,
+        evidence=evidence if evidence is not None else MemoryEvidenceStore(),
+    )
 
 
 def _no_network(request: httpx.Request) -> httpx.Response:

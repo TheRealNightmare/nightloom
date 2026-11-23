@@ -66,7 +66,7 @@ Complete (0.2.0).
 
 - [x] Web recon Shuttles: site files (robots.txt, security.txt, sitemap) and web technologies, behind a per-case *Allow website visits* switch
 - [x] Favicon-hash pivot: the icon as a Favicon entity named by Shodan's hash, shared by the sites that serve it, with search links to Shodan, FOFA and Censys
-- [ ] Screenshot pivots
+- [x] Screenshot pivots: screenshots in a sandboxed browser with no network of its own, kept as evidence, with a perceptual-hash *Looks like* list
 - [x] Typosquat detection: up to 500 lookalikes per domain, registered ones linked with `LOOKALIKE_OF`, never in auto-pivots
 - [x] Certificate Transparency monitoring: watched domains checked hourly with crt.sh, new certificates and names as alerts on the Graph tab
 - [ ] Keyword watches for Certificate Transparency (certificates for any name containing a word)

@@ -37,6 +37,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=shuttles/rdap/pyproject.toml,target=shuttles/rdap/pyproject.toml \
     --mount=type=bind,source=shuttles/ripestat/pyproject.toml,target=shuttles/ripestat/pyproject.toml \
     --mount=type=bind,source=shuttles/registrable-domain/pyproject.toml,target=shuttles/registrable-domain/pyproject.toml \
+    --mount=type=bind,source=shuttles/screenshot/pyproject.toml,target=shuttles/screenshot/pyproject.toml \
     --mount=type=bind,source=shuttles/wayback/pyproject.toml,target=shuttles/wayback/pyproject.toml \
     --mount=type=bind,source=shuttles/web/pyproject.toml,target=shuttles/web/pyproject.toml \
     uv sync --locked --no-dev --no-install-workspace --package nightloom-worker
@@ -55,6 +56,12 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 # --- runtime: just Python and the venv ---------------------------------------
 FROM ${PYTHON_IMAGE}
+
+# libatomic1: the Node.js driver bundled with the Python `playwright` package
+# (the screenshot Shuttle's client for the browser service) needs it.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libatomic1 \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --system --gid 10001 nightloom \
     && useradd --system --uid 10001 --gid nightloom --no-create-home \

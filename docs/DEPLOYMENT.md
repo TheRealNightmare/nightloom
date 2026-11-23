@@ -198,6 +198,17 @@ docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml --env-file .en
 
 The production stack can also build the images from the checkout, for example to try a fix before it is released. Add `FROM_SOURCE=1` to every `make` command (`make up FROM_SOURCE=1`, `make backup FROM_SOURCE=1`, ...); it adds [`deploy/compose.source.yaml`](../deploy/compose.source.yaml). CI tests the production configuration this way. Go back to a release as soon as there is one.
 
+## Screenshots (optional)
+
+The screenshot Shuttle needs the **browser service**, which is off by default: it is a large image (about 1 GB, Microsoft's Playwright image with Chromium) and uses up to 2 GB of memory while drawing a page. Start the stack with it:
+
+```sh
+make up SCREENSHOTS=1        # or: docker compose ... --profile screenshots up -d
+make check-browser           # it cannot reach the internet, and the worker draws pages in it
+```
+
+It is built on the server from [`deploy/browser`](../deploy/browser/Dockerfile) (no release image is published for it). It is on an internal Compose network with the worker only and has no route out: every request a page makes is fetched by the worker through the same checks as any Shuttle. Without it, screenshot jobs fail with a note saying how to start it. Pass `SCREENSHOTS=1` to `make down`, `make ps` and `make logs` too. On an 8 GB host it fits, but leave it off unless you use screenshots.
+
 ## Small hosts and Raspberry Pi
 
 A **Raspberry Pi 4B with 8 GB** runs Nightloom for a small team, with these settings:

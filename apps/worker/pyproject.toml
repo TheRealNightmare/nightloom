@@ -18,6 +18,7 @@ dependencies = [
     "nightloom-shuttle-rdap",
     "nightloom-shuttle-ripestat",
     "nightloom-shuttle-registrable-domain",
+    "nightloom-shuttle-screenshot",
     "nightloom-shuttle-wayback",
     "nightloom-shuttle-web",
 ]
@@ -37,5 +38,6 @@ nightloom-shuttle-internetdb = { workspace = true }
 nightloom-shuttle-rdap = { workspace = true }
 nightloom-shuttle-ripestat = { workspace = true }
 nightloom-shuttle-registrable-domain = { workspace = true }
+nightloom-shuttle-screenshot = { workspace = true }
 nightloom-shuttle-wayback = { workspace = true }
 nightloom-shuttle-web = { workspace = true }
