@@ -2693,6 +2693,34 @@ select.field__input {
   font-size: 17px;
 }
 
+/* A page's screenshot in the side panel, and the pages that look like it. */
+.screenshot {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0 0 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+
+.looks-like {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.looks-like li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+
+.looks-like__item {
+  text-align: left;
+}
+
 .favicon-searches {
   display: flex;
   flex-wrap: wrap;
