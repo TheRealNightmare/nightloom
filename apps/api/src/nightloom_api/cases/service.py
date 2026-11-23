@@ -21,6 +21,7 @@ from datetime import datetime
 from sqlalchemy import ColumnElement, delete, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from nightloom_api import evidence
 from nightloom_api.audit import service as audit
 from nightloom_api.audit.actions import AuditAction, AuditOutcome, TargetType
 from nightloom_api.audit.service import Actor
@@ -44,6 +45,7 @@ from nightloom_api.cases.schemas import (
     note_missing,
 )
 from nightloom_api.graph.repository import GraphRepository
+from nightloom_api.infra.storage import Storage
 
 logger = logging.getLogger(__name__)
 
@@ -305,8 +307,9 @@ async def delete_case_dependents(
     case_id: uuid.UUID,
     *,
     actor: Actor,
+    storage: Storage | None = None,
 ) -> None:
-    """Remove a deleted case's data outside PostgreSQL: today, its Neo4j graph.
+    """Remove a deleted case's data outside PostgreSQL: its Neo4j graph and evidence files.
 
     Runs **after** the case row's deletion has committed, so a graph failure
     can never resurrect the case or leave a half-deleted one behind. It never
@@ -326,6 +329,17 @@ async def delete_case_dependents(
         outcome, details = AuditOutcome.FAILURE, {"reason": type(exc).__name__}
     else:
         outcome, details = AuditOutcome.SUCCESS, {"deleted_nodes": deleted}
+    if storage is not None:
+        try:
+            details["deleted_evidence"] = await evidence.delete_case(storage, case_id)
+        except Exception as exc:
+            logger.error(
+                "Deleting the evidence of deleted case %s failed: %s",
+                case_id,
+                type(exc).__name__,
+            )
+            outcome = AuditOutcome.FAILURE
+            details["evidence_error"] = type(exc).__name__
     await audit.record_standalone(
         make_session,
         action=AuditAction.CASE_GRAPH_DELETE,

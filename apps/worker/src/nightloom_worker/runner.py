@@ -56,7 +56,7 @@ import contextlib
 import logging
 import uuid
 from collections import Counter
-from collections.abc import AsyncIterator, Awaitable, Collection
+from collections.abc import AsyncIterator, Awaitable, Callable, Collection
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
@@ -86,6 +86,7 @@ from nightloom_core.normalize import NormalizationError, normalize, parse_key
 from nightloom_core.provenance import Observation, Reliability
 from nightloom_core.relationships import RelationshipError, validate_relationship
 from nightloom_sdk.context import JobCancelledError, ShuttleContext
+from nightloom_sdk.evidence import EvidenceStore
 from nightloom_sdk.findings import EntityFinding, RelationshipFinding
 from nightloom_sdk.meta import Mode, ShuttleMeta
 from nightloom_sdk.registry import ShuttleRegistry
@@ -144,6 +145,9 @@ class RunnerConfig:
     # Resolves a verified domain again before an active Shuttle runs on one of
     # its addresses; without one, such runs are refused.
     prover: AddressResolver | None = None
+    # Where a case's evidence (screenshots) is stored; without one, Shuttles
+    # that keep evidence get EvidenceUnavailableError.
+    evidence: Callable[[uuid.UUID], EvidenceStore] | None = None
 
 
 @dataclass
@@ -747,7 +751,8 @@ class JobRun:
         """Run until ``deadline`` (a time of the running loop's clock)."""
         loop = asyncio.get_running_loop()
         began = loop.time()
-        ctx = ShuttleContext(self.meta, cancel_event=self.cancel_event)
+        evidence = self.config.evidence(self.case_id) if self.config.evidence else None
+        ctx = ShuttleContext(self.meta, cancel_event=self.cancel_event, evidence=evidence)
         watcher = asyncio.create_task(self.watch_cancel())
         try:
             async with asyncio.timeout_at(deadline):
