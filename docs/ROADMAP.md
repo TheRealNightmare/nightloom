@@ -62,16 +62,18 @@ Complete (0.2.0).
 - [x] First active Shuttles on verified targets: web server headers and TLS, and a gentle TCP check of 20 common ports
 - [x] Release v0.2 ([0.2.0](../CHANGELOG.md#020---2026-11-21))
 
-## Next: M3 — Web recon and monitoring
+## M3 — Web recon and monitoring
+
+Complete (0.3.0).
 
 - [x] Web recon Shuttles: site files (robots.txt, security.txt, sitemap) and web technologies, behind a per-case *Allow website visits* switch
 - [x] Favicon-hash pivot: the icon as a Favicon entity named by Shodan's hash, shared by the sites that serve it, with search links to Shodan, FOFA and Censys
 - [x] Screenshot pivots: screenshots in a sandboxed browser with no network of its own, kept as evidence, with a perceptual-hash *Looks like* list
 - [x] Typosquat detection: up to 500 lookalikes per domain, registered ones linked with `LOOKALIKE_OF`, never in auto-pivots
 - [x] Certificate Transparency monitoring: watched domains checked hourly with crt.sh, new certificates and names as alerts on the Graph tab
-- [ ] Keyword watches for Certificate Transparency (certificates for any name containing a word)
+- [x] Release v0.3 ([0.3.0](../CHANGELOG.md#030---2026-11-23))
 
-## M4 — Organizations, people, leaks, code intel
+## Next: M4 — Organizations, people, leaks, code intel
 
 - [ ] Organization Shuttles
 - [ ] Person-related Shuttles with guardrails (gated, never in auto-pivot)
@@ -82,7 +84,8 @@ Complete (0.2.0).
 
 - [ ] Timeline view
 - [ ] Change diffs
-- [ ] Scheduled monitoring
+- [ ] Scheduled monitoring (beyond the hourly Certificate Transparency watches of 0.3.0)
+- [ ] Keyword watches for Certificate Transparency (certificates for any name containing a word)
 - [ ] Linked map and timeline views
 
 ## M6 — AI analyst
@@ -93,7 +96,7 @@ Complete (0.2.0).
 
 ## M7 — Evidence and interoperability
 
-- [ ] Evidence capture with hashes
+- [ ] Evidence capture with hashes (0.3.0 keeps screenshots as evidence named by their SHA-256; still to come: other files, chain of custody, export)
 - [ ] Patterns (playbooks)
 - [ ] Import/export: STIX 2.1, GraphML, MISP, PDF
 - [ ] Integrations

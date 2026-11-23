@@ -8,16 +8,47 @@ How releases are cut is described in [docs/RELEASING.md](docs/RELEASING.md).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-23
+
+Web reconnaissance and monitoring. Shuttles may now visit a site the way a browser does where the case allows it, and four new ones read its public files, recognize its software, hash its favicon and take its screenshot, kept with the case as evidence. Lookalike domains are found by generating typosquats, and case owners can watch domains in Certificate Transparency logs and get alerts when new certificates appear.
+
 ### Added
+
+#### Website visits and web Shuttles
 
 - Website visits: a new Shuttle mode, `visit`, for Shuttles that read a site's own public pages like a browser. They run where a case owner turns on **Allow website visits** in the case's *Settings* (`allow_site_visits`, off by default; migration `0013_site_visits`), or on verified domains; elsewhere they get `403` with `site_visits_disabled`. They may be in scan profiles (planned only where the case allows visits) but never in auto-pivots.
 - Two Shuttles that visit the site (`shuttles/web`): **Site files** (`site-files`) reads robots.txt, security.txt and the sitemap, adds the paths and pages they list as URLs and records whether a security.txt exists, its expiry and its kinds of contact; **Web technologies** (`web-tech`) recognizes the software behind the home page (server, CMS, frameworks, analytics) and records its title and embedded analytics IDs. New Domain properties for both.
 - Favicon hash: a new entity type, **Favicon**, named by the icon's MurmurHash3 in Shodan's form (`http.favicon.hash`; an unsigned spelling is accepted too), with `sha256`, `md5`, `mime_type` and `size_bytes`, and a new relationship, `HAS_FAVICON` (Domain or URL → Favicon). The **Favicon hash** Shuttle (`favicon`, visits the site, at most three requests) finds and hashes a domain's icon, so sites that serve the same icon meet on one node. A Favicon's side panel links to the same search on Shodan, FOFA and Censys.
-- Typosquat detection: the **Lookalike domains (typosquats)** Shuttle (`typosquats`, in `shuttles/dns`, passive) makes up to 500 lookalikes of a domain (typos, neighbouring keys, lookalike ASCII and Cyrillic characters, other suffixes) and asks public resolvers which are registered. Registered ones become Domains linked by the new `LOOKALIKE_OF` relationship, with the kind of change in the note; the domain gets `typosquats_checked_at`, `typosquat_candidates` and `typosquats_registered`.
-- Certificate Transparency monitoring: case owners watch Domains of the graph (*Settings → Certificate monitoring*, at most 20 per case). The worker's sweep runs a crt.sh job for each every hour, in the owner's name and without the result cache; the first check is the baseline, and later new certificates and names become alerts on the Graph tab (*Show in graph*, *Mark seen* for editors and owners). New tables `ct_watches` and `ct_alerts` (migration `0014_ct_monitoring`), endpoints `/cases/{id}/ct-watches` and `/cases/{id}/ct-alerts`, audit actions `ct_watch.create`, `ct_watch.delete`, `ct_alert.create` and `ct_alert.acknowledge`. Jobs record the entities they created in `stats.entities_new`.
 - Screenshots: the **Screenshot** Shuttle (`screenshot`, Domain or URL, visits the site, never cached) draws the page in a new optional **browser service** (`make up SCREENSHOTS=1`, Compose profile `screenshots`: Playwright's browser server on an internal-only network; every request the page makes is answered by the worker through the guarded HTTP client) and keeps the picture with the case, with a perceptual hash (`screenshot_phash`) and the page's title on its URL. The side panel shows the screenshot and the case's pages that look alike (`GET /cases/{id}/screenshots/similar`). `make check-browser` checks the service's isolation; CI runs it.
 - Evidence: Shuttles keep files with the case (`ctx.save_evidence`, PNG or JPEG, at most 5 MB) in the object storage, named by their SHA-256; members read them at `GET /cases/{id}/evidence/{name}`, and deleting a case deletes them (`case.graph_delete` reports `deleted_evidence`).
+
+#### Lookalikes and monitoring
+
+- Typosquat detection: the **Lookalike domains (typosquats)** Shuttle (`typosquats`, in `shuttles/dns`, passive) makes up to 500 lookalikes of a domain (typos, neighbouring keys, lookalike ASCII and Cyrillic characters, other suffixes) and asks public resolvers which are registered. Registered ones become Domains linked by the new `LOOKALIKE_OF` relationship, with the kind of change in the note; the domain gets `typosquats_checked_at`, `typosquat_candidates` and `typosquats_registered`.
+- Certificate Transparency monitoring: case owners watch Domains of the graph (*Settings → Certificate monitoring*, at most 20 per case). The worker's sweep runs a crt.sh job for each every hour, in the owner's name and without the result cache; the first check is the baseline, and later new certificates and names become alerts on the Graph tab (*Show in graph*, *Mark seen* for editors and owners). New tables `ct_watches` and `ct_alerts` (migration `0014_ct_monitoring`), endpoints `/cases/{id}/ct-watches` and `/cases/{id}/ct-alerts`, audit actions `ct_watch.create`, `ct_watch.delete`, `ct_alert.create` and `ct_alert.acknowledge`.
+
+#### Shuttle SDK
+
 - Shuttles can declare `pivots: false` to stay out of auto-pivots (skipped as `not_in_pivots`); `GET /shuttles` returns it and the *Run Shuttle* panel says so. `typosquats` is the first.
+
+### Changed
+
+- Jobs record the keys of the entities they created in `stats.entities_new` (what certificate alerts point to).
+- The worker now depends on the object storage (it saves evidence there), and the API and worker image includes `libatomic1` for Playwright's driver.
+- Deleting a case also deletes its evidence; the `case.graph_delete` audit entry reports `deleted_evidence` when there was any.
+
+### Upgrading from 0.2.0
+
+- The `migrate` service applies migrations `0013` and `0014` on `make up`; nothing else is needed. Back up first, as always ([Upgrades](docs/DEPLOYMENT.md#upgrades)).
+- Website visits are off in every existing case until an owner turns on **Allow website visits** in its *Settings*; verified domains may be visited without it.
+- Screenshots need the optional browser service: start the stack with `make up SCREENSHOTS=1` (about 1 GB more of images). Without it, Screenshot jobs fail as *source unavailable* with a note saying why, and nothing else changes. `NIGHTLOOM_BROWSER_URL` points the worker at it (the default fits the Compose stack).
+
+### Known limitations
+
+- Certificate monitoring watches the exact domains chosen (and their subdomains in crt.sh's answer), not keywords or brands, and checks at most hourly; crt.sh being slow or down delays the alerts.
+- Screenshots are of the page as first drawn (no scrolling, sign-in or clicks), and "pages that look alike" compares the pictures of one case only.
+- Lookalike domains are found by DNS alone (a registered domain is one with name servers): a lookalike registered but kept on hold without name servers is missed.
+- Single-node deployment only (one host running the whole Compose stack).
 
 ## [0.2.0] - 2026-11-21
 
@@ -157,6 +188,7 @@ First release: self-hosted, passive collection of public infrastructure data int
 - Single-node deployment only (one host running the whole Compose stack).
 - Backups stop Neo4j briefly, because Neo4j Community Edition can only be dumped while stopped.
 
-[Unreleased]: https://github.com/TheRealNightmare/nightloom/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/TheRealNightmare/nightloom/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/TheRealNightmare/nightloom/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/TheRealNightmare/nightloom/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/TheRealNightmare/nightloom/releases/tag/v0.1.0

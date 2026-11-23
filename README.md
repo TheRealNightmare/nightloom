@@ -10,7 +10,7 @@
 
 Nightloom is an open-source, self-hosted OSINT tool that collects **public** information and maps it as an interactive investigation graph. Start from a domain, IP address, organization or other entity, let Nightloom pivot through public data sources, and explore how everything connects — with provenance, evidence and an audit trail for every finding.
 
-> **Status: 0.2.0.** Cases, the investigation graph, ten Shuttles (eight passive, two active on verified targets), scan profiles, auto-pivot, a result cache, ownership verification, user management, the audit log and production deployment work today; the other [planned features](#planned-features) do not exist yet. See the [changelog](CHANGELOG.md) and the [roadmap](docs/ROADMAP.md).
+> **Status: 0.3.0.** Cases, the investigation graph, fifteen Shuttles (nine passive, four that visit a site where the case allows it, two active on verified targets), screenshots kept as evidence, Certificate Transparency monitoring, scan profiles, auto-pivot, a result cache, ownership verification, user management, the audit log and production deployment work today; the other [planned features](#planned-features) do not exist yet. See the [changelog](CHANGELOG.md) and the [roadmap](docs/ROADMAP.md).
 
 ## The interface
 
