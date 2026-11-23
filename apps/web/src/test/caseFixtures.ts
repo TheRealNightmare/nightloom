@@ -1,6 +1,7 @@
 import type { AuditEvent, Case, CaseRole, Member } from "../api/cases";
 import type { User } from "../api/client";
 import type { ApiEntity, ApiGraph, ApiProvenance, ApiRelationship, Schema } from "../api/graph";
+import type { CtAlert, CtWatch } from "../api/monitoring";
 import type { Verification } from "../api/ownership";
 import type { ScanProfile, ScanRun } from "../api/scans";
 import type { Job, ShuttleInfo } from "../api/shuttles";
@@ -266,6 +267,37 @@ export const VIEWER_USER: User = { ...TEST_USER, role: "viewer" };
 export const EMPTY_PAGE = { items: [], next_cursor: null };
 
 /** Registers a signed-in `user` and one case where they have `role`. */
+export function makeCtWatch(overrides: Partial<CtWatch> = {}): CtWatch {
+  return {
+    id: "w-1",
+    domain: "example.org",
+    created_at: "2026-11-20T10:00:00Z",
+    checking: false,
+    checked_at: "2026-11-23T05:00:00Z",
+    next_check_at: "2026-11-23T06:00:00Z",
+    baseline_at: "2026-11-20T10:01:00Z",
+    last_job_id: "job-ct-1",
+    problem: null,
+    problem_message: null,
+    ...overrides,
+  };
+}
+
+export function makeCtAlert(overrides: Partial<CtAlert> = {}): CtAlert {
+  return {
+    id: "a-1",
+    domain: "example.org",
+    created_at: "2026-11-23T05:01:00Z",
+    job_id: "job-ct-2",
+    certificates: 1,
+    names: ["shop.example.org"],
+    names_total: 1,
+    keys: ["domain:shop.example.org", `certificate:${"c".repeat(64)}`],
+    acknowledged_at: null,
+    ...overrides,
+  };
+}
+
 export function serveCase(
   api: FakeApi,
   {
@@ -280,6 +312,8 @@ export function serveCase(
     profiles = [QUICK_PROFILE, EXPOSURE_PROFILE],
     runs = [],
     verifications = [],
+    ctWatches = [],
+    ctAlerts = [],
   }: {
     user?: User;
     role?: CaseRole;
@@ -292,6 +326,8 @@ export function serveCase(
     profiles?: ScanProfile[];
     runs?: ScanRun[];
     verifications?: Verification[];
+    ctWatches?: CtWatch[];
+    ctAlerts?: CtAlert[];
   } = {},
 ): void {
   const path = `/cases/${CASE_ID}`;
@@ -309,5 +345,12 @@ export function serveCase(
     .on("GET", "/scan-profiles", () => json(profiles))
     .on("GET", `${path}/scan-runs?limit=20`, () => json({ items: runs }))
     .on("GET", `${path}/verifications`, () => json({ items: verifications }))
+    .on("GET", `${path}/ct-watches`, () => json({ items: ctWatches }))
+    .on("GET", `${path}/ct-alerts?unseen=true`, () =>
+      json({
+        items: ctAlerts.filter((alert) => alert.acknowledged_at === null),
+        unseen: ctAlerts.filter((alert) => alert.acknowledged_at === null).length,
+      }),
+    )
     .on("GET", "/cases?limit=25", () => json(EMPTY_PAGE));
 }

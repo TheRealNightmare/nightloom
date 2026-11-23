@@ -59,6 +59,10 @@ export const AUDIT_ACTIONS = [
   "ownership.check",
   "ownership.revoke",
   "ownership.expire",
+  "ct_watch.create",
+  "ct_watch.delete",
+  "ct_alert.create",
+  "ct_alert.acknowledge",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 

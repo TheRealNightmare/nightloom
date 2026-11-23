@@ -25,6 +25,7 @@ import {
 } from "./CaseFields";
 import { useCase } from "./caseContext";
 import { VerifiedDomains } from "./VerifiedDomains";
+import { CertificateWatches } from "./CertificateWatches";
 import { ChangeReasonDialog } from "./ChangeReasonDialog";
 import { describeCaseError } from "./errors";
 import { Forbidden } from "./Feedback";
@@ -98,7 +99,8 @@ function settingsChanges(original: Case, values: SettingsValues): CaseUpdate {
   return changes;
 }
 
-/** Owner-only: purpose, legal basis, person entities, auto-pivot, site visits, retention, status, deletion. */
+/** Owner-only: purpose, legal basis, person entities, auto-pivot, site visits, retention, status,
+ * verified domains, certificate monitoring, deletion. */
 export function SettingsTab() {
   const { case: current, setCase } = useCase();
   if (!can(current.my_role, "manage")) return <Forbidden />;
@@ -107,6 +109,7 @@ export function SettingsTab() {
       <SettingsForm key={current.updated_at} value={current} onSaved={setCase} />
       <StatusActions value={current} onChanged={setCase} />
       <VerifiedDomains value={current} />
+      <CertificateWatches value={current} />
       <CachedResults value={current} />
       <DangerZone value={current} />
     </div>

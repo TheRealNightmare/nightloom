@@ -177,6 +177,19 @@ describe("describeAuditEvent", () => {
       "let the verification of example.org expire",
     ],
     [
+      ev("ct_watch.create", { domain: "example.org" }),
+      "started watching example.org for new certificates",
+    ],
+    [
+      ev("ct_watch.delete", { domain: "example.org" }),
+      "stopped watching example.org for new certificates",
+    ],
+    [
+      ev("ct_alert.create", { domain: "example.org", certificates: 2, names: 1 }),
+      "found 2 new certificates and 1 new name for example.org",
+    ],
+    [ev("ct_alert.acknowledge", { alerts: 3 }), "marked 3 certificate alerts seen"],
+    [
       ev("result_cache.clear", { shuttle: "all", deleted: 2 }, { case_id: "c-1" }),
       "cleared the case's cached Shuttle results",
     ],
