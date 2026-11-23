@@ -57,6 +57,12 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # --- runtime: just Python and the venv ---------------------------------------
 FROM ${PYTHON_IMAGE}
 
+# libatomic1: the Node.js driver bundled with the Python `playwright` package
+# (the screenshot Shuttle's client for the browser service) needs it.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libatomic1 \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --system --gid 10001 nightloom \
     && useradd --system --uid 10001 --gid nightloom --no-create-home \
        --home-dir /nonexistent --shell /usr/sbin/nologin nightloom

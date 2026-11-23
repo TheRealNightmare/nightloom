@@ -338,6 +338,14 @@ jobs:
               exit 1
             fi
           done
+          # The screenshot Shuttle's Playwright driver starts in the image.
+          docker run --rm nightloom-api:ci python -c "$(printf '%s\n' \
+            'import asyncio' \
+            'from playwright.async_api import async_playwright' \
+            'async def main():' \
+            '    async with async_playwright():' \
+            '        print("Playwright driver OK")' \
+            'asyncio.run(main())')"
           # Every Shuttle's configuration is valid with the defaults...
           docker run --rm nightloom-api:ci python -m nightloom_sdk.registry check
           # ...and a private DNS resolver is refused.
