@@ -159,6 +159,8 @@ def test_built_in_shuttles_cache_lifetimes() -> None:
         "web-tech": day,
         "favicon": day,
         "typosquats": day,
+        # Evidence belongs to one case: never reused.
+        "screenshot": 0,
     }
     registry = ShuttleRegistry.discover()
     for name, seconds in expected.items():

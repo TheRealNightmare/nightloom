@@ -7,6 +7,10 @@ ENV_FILE := $(if $(wildcard .env),.env,.env.example)
 # the worker's DNS Shuttle asks instead of the public resolvers (CI uses it so
 # DNS jobs never touch the internet). Pass it to up, test-integration and down.
 #
+# SCREENSHOTS=1 starts the optional `browser` service (Compose profile
+# `screenshots`) that the screenshot Shuttle draws pages in; about 1 GB of
+# image. Pass it to up, down, ps and logs; `make check-browser` checks it.
+#
 # Production (docs/DEPLOYMENT.md): when the env file says
 # NIGHTLOOM_ENV=production (`make secrets` writes that), every target also
 # uses deploy/compose.prod.yaml, and deploy/compose.small.yaml when it says
@@ -27,7 +31,8 @@ COMPOSE_FILES := -f deploy/compose.yaml \
 	$(if $(filter 1,$(PROD)),$(if $(FROM_SOURCE),-f deploy/compose.source.yaml)) \
 	$(if $(EDGE_TEST),-f deploy/compose.edge-test.yaml) \
 	$(if $(TEST_DNS),-f deploy/compose.test.yaml)
-COMPOSE := docker compose $(COMPOSE_FILES) --env-file $(ENV_FILE)
+COMPOSE_PROFILES_ARGS := $(if $(SCREENSHOTS),--profile screenshots)
+COMPOSE := docker compose $(COMPOSE_FILES) $(COMPOSE_PROFILES_ARGS) --env-file $(ENV_FILE)
 # 1 when the stack runs the published images (production, not FROM_SOURCE).
 PUBLISHED_IMAGES := $(if $(filter 1,$(PROD)),$(if $(FROM_SOURCE),0,1),0)
 SERVICE ?=
@@ -114,6 +119,9 @@ test-core-compat: ## Run the packages/core tests on every Python in CORE_COMPAT_
 test-integration: ## Run integration tests against the running stack (needs `make up`; TEST_DNS=1 adds the DNS job test)
 	@$(STACK_ENV) $(if $(TEST_DNS),NIGHTLOOM_TEST_DNS=1) uv run pytest -m integration --no-cov
 
+check-browser: ## Check the screenshot browser service in the running stack (needs `make up SCREENSHOTS=1`): isolated, and the worker draws pages in it
+	deploy/tests/check-browser.sh docker compose $(COMPOSE_FILES) --profile screenshots --env-file $(ENV_FILE)
+
 test-network: ## Run the opt-in tests that use the real internet (public DNS resolvers, crt.sh, RDAP servers, RIPEstat, InternetDB, Wayback Machine)
 	uv run pytest -m network --no-cov
 
@@ -147,12 +155,12 @@ shuttles: ## List the installed Shuttles (the registry CLI)
 # command line (make up ENV_FILE=.env.staging).
 UP_ENV_FILE := $(if $(filter command line,$(origin ENV_FILE)),$(ENV_FILE),.env)
 
-up: ## Start the stack (creates .env from .env.example if missing; production with a production .env)
+up: ## Start the stack (creates .env from .env.example if missing; production with a production .env; SCREENSHOTS=1 adds the browser service)
 	@if [ ! -f $(UP_ENV_FILE) ]; then \
 		cp .env.example $(UP_ENV_FILE); \
 		echo "Created $(UP_ENV_FILE) from .env.example. Change the change-me-... passwords in it."; \
 	fi
-	docker compose $(COMPOSE_FILES) --env-file $(UP_ENV_FILE) up -d --build --wait
+	docker compose $(COMPOSE_FILES) $(COMPOSE_PROFILES_ARGS) --env-file $(UP_ENV_FILE) up -d --build --wait
 
 deps-up: ## Start only PostgreSQL, Valkey and Neo4j (enough for `make test`)
 	$(COMPOSE) up -d --wait postgres valkey neo4j

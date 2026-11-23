@@ -1,0 +1,26 @@
+[project]
+name = "nightloom-shuttle-screenshot"
+version = "0.2.0"
+description = "Built-in Nightloom Shuttle that screenshots a site's page in a sandboxed browser with no network of its own (every request goes through the guarded HTTP client), and adds a perceptual hash so pages that look alike can be found."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+dependencies = [
+    "httpx>=0.28.1",
+    "nightloom-core",
+    "nightloom-sdk",
+    "pillow>=12.0",
+    # Must match the browser service's Playwright (deploy/browser/Dockerfile) in major.minor.
+    "playwright>=1.65.1,<1.66",
+]
+
+[project.entry-points."nightloom.shuttles"]
+screenshot = "nightloom_shuttle_screenshot:ScreenshotShuttle"
+
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+nightloom-core = { workspace = true }
+nightloom-sdk = { workspace = true }
