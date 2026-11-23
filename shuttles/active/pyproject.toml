@@ -1,6 +1,6 @@
 [project]
 name = "nightloom-shuttle-active"
-version = "0.2.0"
+version = "0.3.0"
 description = "Built-in active Nightloom Shuttles: a site's HTTP headers and TLS certificate, and a small TCP port check. They touch the target, so they only run on targets a case has verified."
 readme = "README.md"
 requires-python = ">=3.12"

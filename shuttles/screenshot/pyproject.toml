@@ -1,6 +1,6 @@
 [project]
 name = "nightloom-shuttle-screenshot"
-version = "0.2.0"
+version = "0.3.0"
 description = "Built-in Nightloom Shuttle that screenshots a site's page in a sandboxed browser with no network of its own (every request goes through the guarded HTTP client), and adds a perceptual hash so pages that look alike can be found."
 readme = "README.md"
 requires-python = ">=3.12"

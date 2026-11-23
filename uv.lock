@@ -2064,7 +2064,7 @@ wheels = [
 
 [[package]]
 name = "nightloom-api"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "apps/api" }
 dependencies = [
     { name = "aioboto3" },
@@ -2105,7 +2105,7 @@ requires-dist = [
 
 [[package]]
 name = "nightloom-core"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "packages/core" }
 dependencies = [
     { name = "idna" },
@@ -2124,7 +2124,7 @@ requires-dist = [
 
 [[package]]
 name = "nightloom-sdk"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "packages/sdk" }
 dependencies = [
     { name = "httpcore" },
@@ -2143,7 +2143,7 @@ requires-dist = [
 
 [[package]]
 name = "nightloom-shuttle-active"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "shuttles/active" }
 dependencies = [
     { name = "cryptography" },
@@ -2162,7 +2162,7 @@ requires-dist = [
 
 [[package]]
 name = "nightloom-shuttle-crtsh"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "shuttles/crtsh" }
 dependencies = [
     { name = "cryptography" },
@@ -2183,7 +2183,7 @@ requires-dist = [
 
 [[package]]
 name = "nightloom-shuttle-dns"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "shuttles/dns" }
 dependencies = [
     { name = "dnspython" },
@@ -2200,7 +2200,7 @@ requires-dist = [
 
 [[package]]
 name = "nightloom-shuttle-internetdb"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "shuttles/internetdb" }
 dependencies = [
     { name = "httpx" },
@@ -2219,7 +2219,7 @@ requires-dist = [
 
 [[package]]
 name = "nightloom-shuttle-rdap"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "shuttles/rdap" }
 dependencies = [
     { name = "httpx" },
@@ -2236,7 +2236,7 @@ requires-dist = [
 
 [[package]]
 name = "nightloom-shuttle-registrable-domain"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "shuttles/registrable-domain" }
 dependencies = [
     { name = "nightloom-core" },
@@ -2251,7 +2251,7 @@ requires-dist = [
 
 [[package]]
 name = "nightloom-shuttle-ripestat"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "shuttles/ripestat" }
 dependencies = [
     { name = "httpx" },
@@ -2270,7 +2270,7 @@ requires-dist = [
 
 [[package]]
 name = "nightloom-shuttle-screenshot"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "shuttles/screenshot" }
 dependencies = [
     { name = "httpx" },
@@ -2291,7 +2291,7 @@ requires-dist = [
 
 [[package]]
 name = "nightloom-shuttle-wayback"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "shuttles/wayback" }
 dependencies = [
     { name = "httpx" },
@@ -2308,7 +2308,7 @@ requires-dist = [
 
 [[package]]
 name = "nightloom-shuttle-web"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "shuttles/web" }
 dependencies = [
     { name = "httpx" },
@@ -2327,7 +2327,7 @@ requires-dist = [
 
 [[package]]
 name = "nightloom-worker"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "apps/worker" }
 dependencies = [
     { name = "celery", extra = ["redis"] },

@@ -10,7 +10,7 @@
 
 Nightloom is an open-source, self-hosted OSINT tool that collects **public** information and maps it as an interactive investigation graph. Start from a domain, IP address, organization or other entity, let Nightloom pivot through public data sources, and explore how everything connects — with provenance, evidence and an audit trail for every finding.
 
-> **Status: 0.2.0.** Cases, the investigation graph, ten Shuttles (eight passive, two active on verified targets), scan profiles, auto-pivot, a result cache, ownership verification, user management, the audit log and production deployment work today; the other [planned features](#planned-features) do not exist yet. See the [changelog](CHANGELOG.md) and the [roadmap](docs/ROADMAP.md).
+> **Status: 0.3.0.** Cases, the investigation graph, fifteen Shuttles (nine passive, four that visit a site where the case allows it, two active on verified targets), screenshots kept as evidence, Certificate Transparency monitoring, scan profiles, auto-pivot, a result cache, ownership verification, user management, the audit log and production deployment work today; the other [planned features](#planned-features) do not exist yet. See the [changelog](CHANGELOG.md) and the [roadmap](docs/ROADMAP.md).
 
 ## The interface
 
@@ -34,13 +34,15 @@ All data in these pictures is fictional (`example.org`, documentation IP ranges 
 | Saved views | Jobs, with a profile run |
 | ![The Verified domains section of a case's settings in the light theme: example.org verified until December 16 with the DNS TXT record to publish shown below it, and example.net not found because the file was missing.](docs/images/verified-domains-light.png) | ![The admin Scan profiles page in the dark theme: the four built-in profiles and an admin's Parent domains profile, each with its Shuttles.](docs/images/profiles-dark.png) |
 | Verified domains (light) | Scan profiles (dark) |
+| ![A certificate alert above the graph in the dark theme: example.org has two new certificates and three new names, staging.example.org, vpn.example.org and the lookalike examp1e.org, with Show in graph and Mark seen.](docs/images/certificate-alerts-dark.png) | ![A login page selected in the light theme: the side panel shows its screenshot and, under Looks like, the copy of the page on the lookalike examp1e.org.](docs/images/screenshot-light.png) |
+| Certificate monitoring alert (dark) | Screenshot and pages that look alike (light) |
 
 ## Quick deploy
 
 Each release publishes multi-architecture images (`linux/amd64`, `linux/arm64`) to GitHub Container Registry, `ghcr.io/therealnightmare/nightloom-backend` and `ghcr.io/therealnightmare/nightloom-web`, so a server only downloads them. On a Linux server with Docker and a DNS name pointing at it:
 
 ```sh
-git clone --branch v0.2.0 https://github.com/TheRealNightmare/nightloom.git && cd nightloom
+git clone --branch v0.3.0 https://github.com/TheRealNightmare/nightloom.git && cd nightloom
 make secrets ARGS="--domain nightloom.example.org --acme-email you@example.org"
 make deploy-pull && make up
 make create-admin email=you@example.org name="Your Name"
