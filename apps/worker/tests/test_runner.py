@@ -281,6 +281,7 @@ async def test_registrable_domain_job_end_to_end_through_the_api(
         "findings_rejected": 0,
         "rejected_reasons": {},
         "entities_touched": ["domain:example.co.uk"],
+        "entities_new": ["domain:example.co.uk"],
         "notes": [],
     }
     nodes, edges = await world.graph()
@@ -300,6 +301,7 @@ async def test_registrable_domain_job_end_to_end_through_the_api(
     assert event.details["stats"]["entities_created"] == 1
     # Entity keys never reach the audit log; counts do.
     assert "entities_touched" not in event.details["stats"]
+    assert "entities_new" not in event.details["stats"]
     assert "example.co.uk" not in str(event.details["stats"])
     assert event.details["shuttle"] == "registrable-domain"
 
@@ -314,6 +316,9 @@ async def test_registrable_domain_job_end_to_end_through_the_api(
     await run_job(again, world.config(RegistrableDomain))
     stats = (await world.job(again)).stats
     assert (stats["entities_updated"], stats["relationships_updated"]) == (1, 1)
+    # Only what a job created counts as new (CT monitoring alerts on it).
+    assert stats["entities_touched"] == ["domain:example.co.uk"]
+    assert stats["entities_new"] == []
 
 
 async def test_finding_overrides_and_defaults(world: World) -> None:
