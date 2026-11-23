@@ -86,6 +86,10 @@ def _matching(pattern: str, *, upper: bool = False) -> AfterValidator:
 
 CountryCode = Annotated[str, Field(max_length=10), _matching(r"[A-Z]{2}", upper=True)]
 Sha256Hex = Annotated[str, Field(max_length=100), _matching(r"[0-9a-f]{64}")]
+# A file kept with the case (see nightloom_sdk.evidence): its SHA-256 and extension.
+EvidenceName = Annotated[str, Field(max_length=100), _matching(r"[0-9a-f]{64}\.(png|jpg)")]
+# A 64-bit perceptual hash (dHash), as 16 lowercase hexadecimal digits.
+PerceptualHash = Annotated[str, Field(max_length=100), _matching(r"[0-9a-f]{16}")]
 Md5Hex = Annotated[str, Field(max_length=100), _matching(r"[0-9a-f]{32}")]
 MimeType = Annotated[
     str,
@@ -404,6 +408,13 @@ class URLProperties(Properties):
     values, of the query parameters the archived addresses had; at most 30,
     each at most 64 characters). The URL itself never carries a query string
     from the archive: values can hold tokens or personal data.
+
+    From the screenshot Shuttle (it visits the site): ``screenshot`` (the
+    evidence name of the PNG, ``<sha256>.png``, read through the case's
+    evidence endpoint), ``screenshot_at``, ``screenshot_width`` and
+    ``screenshot_height`` (pixels), and ``screenshot_phash``, a 64-bit
+    perceptual hash (dHash) as 16 hexadecimal digits: pages that look alike
+    have hashes a few bits apart.
     """
 
     status_code: int | None = Field(default=None, ge=100, le=599)
@@ -425,6 +436,11 @@ class URLProperties(Properties):
     query_params: (
         Annotated[list[QueryParamName], Field(max_length=ARCHIVE_MAX_QUERY_PARAMS)] | None
     ) = None
+    screenshot: EvidenceName | None = None
+    screenshot_at: AwareDatetime | None = None
+    screenshot_width: int | None = Field(default=None, ge=1, le=10_000)
+    screenshot_height: int | None = Field(default=None, ge=1, le=10_000)
+    screenshot_phash: PerceptualHash | None = None
 
 
 class ServiceProperties(Properties):
