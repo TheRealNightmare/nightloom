@@ -1,3 +1,4 @@
+import { newThings } from "./certificateText";
 import type { AuditEvent, CaseRole, CaseStatus, LegalBasis, Member } from "../api/cases";
 
 export const ETHICS_DOC_URL = "https://github.com/TheRealNightmare/nightloom/blob/main/ETHICS.md";
@@ -169,6 +170,21 @@ export function describeEvent(event: AuditEvent, members: readonly Member[] = []
       return `revoked ${text(details["domain"]) ?? "a domain"}: its proof is gone`;
     case "ownership.expire":
       return `let the verification of ${text(details["domain"]) ?? "a domain"} expire`;
+    case "ct_watch.create":
+      return `started watching ${text(details["domain"]) ?? "a domain"} for new certificates`;
+    case "ct_watch.delete":
+      return `stopped watching ${text(details["domain"]) ?? "a domain"} for new certificates`;
+    case "ct_alert.create": {
+      const domain = text(details["domain"]) ?? "a domain";
+      const certificates =
+        typeof details["certificates"] === "number" ? details["certificates"] : 0;
+      const names = typeof details["names"] === "number" ? details["names"] : 0;
+      return `found ${newThings(certificates, names)} for ${domain}`;
+    }
+    case "ct_alert.acknowledge": {
+      const count = typeof details["alerts"] === "number" ? details["alerts"] : 1;
+      return `marked ${String(count)} certificate alert${count === 1 ? "" : "s"} seen`;
+    }
     case "authz.denied": {
       if (details["reason"] === "not_a_member") return "was refused access (not a member)";
       if (details["reason"] === "not_view_creator") {

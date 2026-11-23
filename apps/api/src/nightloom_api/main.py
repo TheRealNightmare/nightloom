@@ -29,6 +29,7 @@ from nightloom_api.routers import (
     health,
     jobs,
     layouts,
+    monitoring,
     ownership,
     readiness,
     result_cache,
@@ -99,6 +100,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(scans.profiles_router, prefix=resolved.api_prefix)
     app.include_router(scans.runs_router, prefix=resolved.api_prefix)
     app.include_router(ownership.router, prefix=resolved.api_prefix)
+    app.include_router(monitoring.watches_router, prefix=resolved.api_prefix)
+    app.include_router(monitoring.alerts_router, prefix=resolved.api_prefix)
     return app
 
 

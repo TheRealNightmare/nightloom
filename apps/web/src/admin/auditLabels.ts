@@ -50,6 +50,10 @@ export const ACTION_LABELS: Record<AuditAction, string> = {
   "ownership.check": "Domain checked",
   "ownership.revoke": "Domain verification revoked",
   "ownership.expire": "Domain verification expired",
+  "ct_watch.create": "Certificate watch added",
+  "ct_watch.delete": "Certificate watch removed",
+  "ct_alert.create": "New certificates found",
+  "ct_alert.acknowledge": "Certificate alerts marked seen",
 };
 
 /** `reason` codes of failed sign-ins and admin actions. */
@@ -196,6 +200,10 @@ export function describeAuditEvent(event: AuditEvent, users: readonly User[] = [
     case "ownership.check":
     case "ownership.revoke":
     case "ownership.expire":
+    case "ct_watch.create":
+    case "ct_watch.delete":
+    case "ct_alert.create":
+    case "ct_alert.acknowledge":
       return describeEvent(event);
     case "result_cache.clear": {
       if (event.case_id !== null) return describeEvent(event);

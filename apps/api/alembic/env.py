@@ -16,6 +16,7 @@ import nightloom_api.cases.models
 import nightloom_api.jobs.models
 import nightloom_api.jobs.result_cache
 import nightloom_api.layouts.models
+import nightloom_api.monitoring.models
 import nightloom_api.ownership.models
 import nightloom_api.scans.models
 import nightloom_api.views.models  # noqa: F401

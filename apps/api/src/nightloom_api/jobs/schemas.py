@@ -104,6 +104,9 @@ class JobStats(BaseModel):
     # Keys of the entities the job created or updated (at most 200), so a
     # client can highlight them. Never copied into the audit log.
     entities_touched: list[str] = Field(default_factory=list)
+    # Of those, the ones the job created (at most 200): what CT monitoring
+    # alerts on. Never copied into the audit log.
+    entities_new: list[str] = Field(default_factory=list)
     # Short remarks from the Shuttle (at most 10), e.g. that a result was
     # capped. Never copied into the audit log.
     notes: list[str] = Field(default_factory=list)

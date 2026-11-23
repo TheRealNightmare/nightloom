@@ -52,6 +52,7 @@ def empty_stats() -> dict[str, Any]:
         "findings_rejected": 0,
         "rejected_reasons": {},
         "entities_touched": [],
+        "entities_new": [],
         "notes": [],
     }
 

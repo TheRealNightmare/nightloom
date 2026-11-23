@@ -68,7 +68,8 @@ Complete (0.2.0).
 - [x] Favicon-hash pivot: the icon as a Favicon entity named by Shodan's hash, shared by the sites that serve it, with search links to Shodan, FOFA and Censys
 - [ ] Screenshot pivots
 - [x] Typosquat detection: up to 500 lookalikes per domain, registered ones linked with `LOOKALIKE_OF`, never in auto-pivots
-- [ ] Certificate Transparency monitoring
+- [x] Certificate Transparency monitoring: watched domains checked hourly with crt.sh, new certificates and names as alerts on the Graph tab
+- [ ] Keyword watches for Certificate Transparency (certificates for any name containing a word)
 
 ## M4 — Organizations, people, leaks, code intel
 

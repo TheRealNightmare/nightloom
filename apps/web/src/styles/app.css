@@ -904,6 +904,55 @@ select.field__input {
   color: var(--ok);
 }
 
+/* Certificate Transparency alerts over the graph. */
+.ct-alerts {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--brass);
+  border-radius: var(--radius-control);
+}
+
+.ct-alerts__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ct-alerts__title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.ct-alerts__list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ct-alert {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 16px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+}
+
+.ct-alert__text {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.ct-alert__names {
+  display: block;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
 .warning,
 .login__notice,
 .temp-password__warning {

@@ -59,6 +59,13 @@ class AuditAction(StrEnum):
     OWNERSHIP_CHECK = "ownership.check"
     OWNERSHIP_REVOKE = "ownership.revoke"
     OWNERSHIP_EXPIRE = "ownership.expire"
+    # Certificate Transparency monitoring: owners add and remove watched
+    # domains; the worker (system:ct-monitor) queues their hourly crt.sh jobs
+    # (job.create) and records alerts; editors and owners mark alerts seen.
+    CT_WATCH_CREATE = "ct_watch.create"
+    CT_WATCH_DELETE = "ct_watch.delete"
+    CT_ALERT_CREATE = "ct_alert.create"
+    CT_ALERT_ACKNOWLEDGE = "ct_alert.acknowledge"
 
 
 class AuditOutcome(StrEnum):
@@ -81,3 +88,5 @@ class TargetType(StrEnum):
     SCAN_PROFILE = "scan_profile"
     SCAN_RUN = "scan_run"
     OWNERSHIP = "ownership"
+    CT_WATCH = "ct_watch"
+    CT_ALERT = "ct_alert"

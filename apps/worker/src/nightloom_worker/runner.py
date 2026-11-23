@@ -154,6 +154,8 @@ class Stats:
     relationships_updated: int = 0
     rejected: Counter[str] = field(default_factory=Counter)
     touched: dict[str, None] = field(default_factory=dict)
+    # Of those, the ones the job created (CT monitoring alerts on them).
+    created: dict[str, None] = field(default_factory=dict)
     # The Shuttle's own remarks (ShuttleContext.note), shown with the job.
     notes: list[str] = field(default_factory=list)
 
@@ -161,6 +163,12 @@ class Stats:
         """Remember an entity the job created or updated (the first MAX_TOUCHED_KEYS)."""
         if len(self.touched) < MAX_TOUCHED_KEYS:
             self.touched[key] = None
+
+    def touch_new(self, key: str) -> None:
+        """Remember an entity the job created (the first MAX_TOUCHED_KEYS)."""
+        self.touch(key)
+        if len(self.created) < MAX_TOUCHED_KEYS:
+            self.created[key] = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -172,6 +180,7 @@ class Stats:
             "findings_rejected": sum(self.rejected.values()),
             "rejected_reasons": dict(sorted(self.rejected.items())),
             "entities_touched": list(self.touched),
+            "entities_new": list(self.created),
             "notes": list(self.notes),
         }
 
@@ -489,9 +498,10 @@ class JobRun:
             record = await self.config.graph.upsert_entity(self.case_id, entity, observation)
         if record.created:
             self.stats.entities_created += 1
+            self.stats.touch_new(entity.key)
         else:
             self.stats.entities_updated += 1
-        self.stats.touch(entity.key)
+            self.stats.touch(entity.key)
 
     async def store_relationship(self, finding: RelationshipFinding) -> None:
         if finding.type not in self.meta.output_relationship_types:

@@ -23,6 +23,7 @@ import { DeleteEntityDialog } from "./graph/DeleteEntityDialog";
 import { EntityDetails } from "./graph/EntityDetails";
 import { ExportDialog } from "./graph/ExportDialog";
 import { FORMAT_LABELS } from "./graph/exportText";
+import { CertificateAlerts } from "./graph/CertificateAlerts";
 import { JobsPanel, RunningJobChip } from "./graph/JobsPanel";
 import {
   toEntityNode,
@@ -403,6 +404,13 @@ export function GraphTab() {
           {notice}
         </p>
       )}
+      <CertificateAlerts
+        caseId={caseId}
+        canAcknowledge={canCancel}
+        onShow={(keys) => {
+          setPulse(new Set(keys));
+        }}
+      />
       {jobsOpen && (
         <div id="case-jobs">
           <JobsPanel

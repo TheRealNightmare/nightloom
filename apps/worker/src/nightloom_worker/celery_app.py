@@ -36,6 +36,10 @@ The reaper's thread also runs the **ownership sweep** every interval
 a day, and owners' checks that never reported, are queued for checking by
 the ``check_ownership`` task; see :mod:`nightloom_worker.ownership`).
 
+The reaper's thread also runs the **CT monitoring sweep** every interval
+(finished checks of watched domains become alerts; due ones get a crt.sh job,
+hourly; see :mod:`nightloom_api.monitoring.service`), under its own lock.
+
 The reaper's thread also purges the **result cache** every
 :data:`PURGE_INTERVAL_SECONDS` (expired entries, then least recently used
 ones beyond ``NIGHTLOOM_RESULT_CACHE_MAX_BYTES``), under its own lock.
@@ -72,6 +76,7 @@ from nightloom_api.jobs.queue import (
     create_celery,
 )
 from nightloom_api.logging import configure_logging
+from nightloom_api.monitoring import service as monitoring
 from nightloom_api.ownership import service as ownership
 from nightloom_api.scans import service as scans
 from nightloom_sdk.meta import MAX_TIMEOUT_SECONDS
@@ -109,6 +114,9 @@ PURGE_LOCK_SECONDS = 50
 # The ownership sweep, from the reaper's thread every interval, one worker at a time.
 OWNERSHIP_LOCK = "nightloom:worker:ownership-sweep"
 OWNERSHIP_LOCK_SECONDS = 50
+# The CT monitoring sweep, from the reaper's thread every interval, one worker at a time.
+MONITOR_LOCK = "nightloom:worker:ct-monitor"
+MONITOR_LOCK_SECONDS = 50
 # Releasing a scan run's next jobs after a job, and from the reaper's thread.
 RELEASE_SECONDS = 20.0
 # Which worker runs a job: the node name, until the job ends or the longest
@@ -467,6 +475,41 @@ async def sweep_ownership(settings: Settings) -> int | None:
         await bounded(client.aclose(), CLOSE_SECONDS, "Closing the Valkey client")
 
 
+async def sweep_monitoring(settings: Settings) -> tuple[int, int] | None:
+    """Turn finished CT checks into alerts and queue due ones, unless another worker sweeps.
+
+    Returns (alerts recorded, checks queued), or None when another worker holds the lock.
+    """
+    client = Redis.from_url(
+        settings.valkey_url.get_secret_value(),
+        socket_connect_timeout=RECORD_STATEMENT_SECONDS,
+        socket_timeout=RECORD_STATEMENT_SECONDS,
+    )
+    engine = db_infra.create_engine(settings, statement_timeout_seconds=RECORD_STATEMENT_SECONDS)
+    queue = CeleryJobQueue(settings)
+    try:
+        lock = client.lock(MONITOR_LOCK, timeout=MONITOR_LOCK_SECONDS, blocking=False)
+        if not await lock.acquire():
+            return None
+        try:
+            return await monitoring.sweep(
+                db_infra.create_sessionmaker(engine),
+                queue,
+                clock.utcnow(),
+                registry=default_registry(),
+                limit=settings.max_active_jobs_per_user,
+            )
+        finally:
+            try:
+                await lock.release()
+            except LockError:  # expired meanwhile: another worker may hold it now
+                logger.warning("The CT monitoring lock expired before the sweep finished.")
+    finally:
+        queue.close()
+        await bounded(engine.dispose(), CLOSE_SECONDS, "Closing the database engine")
+        await bounded(client.aclose(), CLOSE_SECONDS, "Closing the Valkey client")
+
+
 async def reap_own(settings: Settings, hostname: str) -> int:
     """Fail the jobs this worker's previous run (same node name) left running. Returns how many.
 
@@ -527,6 +570,9 @@ class Reaper(threading.Thread):
         monotonic: Callable[[], float] = time.monotonic,
         release: Callable[[Settings], Coroutine[Any, Any, int]] = release_all_runs,
         sweep: Callable[[Settings], Coroutine[Any, Any, int | None]] = sweep_ownership,
+        monitor: Callable[
+            [Settings], Coroutine[Any, Any, tuple[int, int] | None]
+        ] = sweep_monitoring,
     ) -> None:
         super().__init__(name="nightloom-reaper", daemon=True)
         self.settings = settings
@@ -540,6 +586,7 @@ class Reaper(threading.Thread):
         self._last_purge: float | None = None
         self._release = release
         self._sweep = sweep
+        self._monitor = monitor
         self.stopped = threading.Event()
 
     def reap_previous_run(self) -> int | None:
@@ -606,12 +653,26 @@ class Reaper(threading.Thread):
             logger.info("Queued %d ownership check(s).", queued)
         return queued
 
+    def monitor(self) -> tuple[int, int] | None:
+        """Record alerts for finished CT checks and queue the checks that are due."""
+        try:
+            result = run_bounded(
+                asyncio.wait_for(self._monitor(self.settings), MONITOR_LOCK_SECONDS)
+            )
+        except Exception as error:  # the reaper keeps going
+            logger.warning("The CT monitoring sweep failed: %s.", type(error).__name__)
+            return None
+        if result is not None and any(result):
+            logger.info("CT monitoring: %d alert(s), %d check(s) queued.", *result)
+        return result
+
     def run(self) -> None:
         self.reap_previous_run()
         while not self.stopped.is_set():
             self.reap()
             self.release()
             self.sweep()
+            self.monitor()
             self.purge()
             self.stopped.wait(self.interval)
 

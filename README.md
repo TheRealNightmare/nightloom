@@ -97,6 +97,8 @@ Where a case owner has turned on **Allow auto-pivot** in the case's *Settings*, 
 
 Passive Shuttles only ask third parties. **Active** Shuttles touch the target itself, so they run only on what a case has proven it controls. A case owner adds a domain in *Settings → Verified domains*, publishes the proof Nightloom gives (a DNS TXT record at `_nightloom-challenge.<domain>`, or a file at `https://<domain>/.well-known/nightloom-verification.txt`) and clicks *Check now*. A verified domain covers its subdomains and the addresses it resolves to for 30 days; Nightloom checks the proof again every day and revokes the verification if it disappears. See [Ownership verification](docs/ARCHITECTURE.md#ownership-verification).
 
+**Certificate monitoring.** In *Settings → Certificate monitoring* a case owner watches domains of the graph. Every hour Nightloom runs a crt.sh job for each (in that owner's name, without the cache); new certificates and names are added to the graph and shown as an alert on the Graph tab, where *Show in graph* highlights them and editors and owners mark them seen. The first check only records what exists. See [Certificate Transparency monitoring](docs/ARCHITECTURE.md#certificate-transparency-monitoring).
+
 On a verified domain, **Run Web server headers and TLS** records which security headers the site sends, its server software, TLS version and certificate; on one of its addresses, **Run Common open ports** tries 20 common TCP ports, four at a time, and adds the open ones as Services. Neither sends more than a browser opening the site would, or more than a connect-and-close. See [The active Shuttles](docs/ARCHITECTURE.md#the-active-shuttles).
 
 ### Saved views

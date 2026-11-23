@@ -214,6 +214,10 @@ async def _no_sweep(settings: Settings) -> int | None:
     return 0
 
 
+async def _no_monitor(settings: Settings) -> tuple[int, int] | None:
+    return (0, 0)
+
+
 def test_reaper_runs_now_and_then_every_interval(caplog: pytest.LogCaptureFixture) -> None:
     fake = _FakeReap(3, OSError("down"), None)
     reaper = celery_app.Reaper(
@@ -223,6 +227,7 @@ def test_reaper_runs_now_and_then_every_interval(caplog: pytest.LogCaptureFixtur
         purge=_no_purge,
         release=_no_release,
         sweep=_no_sweep,
+        monitor=_no_monitor,
     )
     reaper.start()
     try:
@@ -406,6 +411,24 @@ def test_reaper_sweeps_ownership(caplog: pytest.LogCaptureFixture) -> None:
     assert reaper.sweep() is None
     assert "The ownership sweep failed: OSError." in caplog.text
     assert reaper.sweep() is None  # another worker held the lock
+
+
+def test_reaper_monitor_logs_and_survives_errors(caplog: pytest.LogCaptureFixture) -> None:
+    results: list[tuple[int, int] | Exception | None] = [(1, 2), OSError("down"), None]
+
+    async def monitor(settings: Settings) -> tuple[int, int] | None:
+        result = results.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    caplog.set_level(logging.INFO, logger="nightloom_worker.celery_app")
+    reaper = celery_app.Reaper(Settings(env="test"), monitor=monitor)
+    assert reaper.monitor() == (1, 2)
+    assert "CT monitoring: 1 alert(s), 2 check(s) queued." in caplog.text
+    assert reaper.monitor() is None
+    assert "The CT monitoring sweep failed: OSError." in caplog.text
+    assert reaper.monitor() is None  # another worker held the lock
 
 
 class _SentQueue:

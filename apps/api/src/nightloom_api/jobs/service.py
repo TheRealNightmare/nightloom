@@ -48,7 +48,7 @@ _USER_JOBS_LOCK_CLASS = 0x6E6A  # "nj"
 # Stats that stay out of the audit log: entity keys (which can be personal
 # data) and the Shuttle's free-text notes are never recorded there, only
 # counts and reason codes.
-_UNAUDITED_STATS = frozenset({"entities_touched", "notes"})
+_UNAUDITED_STATS = frozenset({"entities_touched", "entities_new", "notes"})
 
 # Fixed, user-safe messages: the only text ever stored in jobs.error.
 ERROR_VISIT = (
@@ -241,8 +241,9 @@ async def create_job(
     actor: Actor,
     limit: int,
     use_cache: bool = True,
+    commit: bool = True,
 ) -> Job:
-    """Insert a queued job and its ``job.create`` event, and commit.
+    """Insert a queued job and its ``job.create`` event, and commit (unless ``commit=False``).
 
     ``use_cache=False`` (a fresh run) makes the worker run the Shuttle even
     when recent results are cached; the run still refreshes the cache.
@@ -280,7 +281,8 @@ async def create_job(
             **({} if use_cache else {"fresh": True}),
         ),
     )
-    await db.commit()
+    if commit:
+        await db.commit()
     return job
 
 
