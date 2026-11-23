@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 from alembic import command
+from botocore.exceptions import ClientError
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
@@ -29,6 +30,7 @@ from nightloom_api.graph.repository import GraphRepository
 from nightloom_api.graph.schema import apply_schema
 from nightloom_api.infra import Infra, graph
 from nightloom_api.infra.errors import describe_error
+from nightloom_api.infra.storage import get_storage
 from nightloom_api.jobs.queue import get_job_queue
 from nightloom_api.main import create_app
 from support import (
@@ -67,6 +69,60 @@ class RecordingJobQueue:
 
     def close(self) -> None:
         pass
+
+
+class _Body:
+    def __init__(self, data: bytes) -> None:
+        self.data = data
+
+    async def __aenter__(self) -> "_Body":
+        return self
+
+    async def __aexit__(self, *_: object) -> None:
+        return None
+
+    async def read(self) -> bytes:
+        return self.data
+
+
+class MemoryS3:
+    """The S3 calls Nightloom makes (evidence), on a dict; ``fail`` makes reads fail."""
+
+    def __init__(self) -> None:
+        self.objects: dict[str, tuple[bytes, str]] = {}
+        self.fail = False
+
+    async def put_object(self, *, Bucket: str, Key: str, Body: bytes, ContentType: str) -> None:  # noqa: N803
+        self.objects[Key] = (Body, ContentType)
+
+    async def get_object(self, *, Bucket: str, Key: str) -> dict[str, Any]:  # noqa: N803
+        if self.fail:
+            raise ClientError({"Error": {"Code": "InternalError"}}, "GetObject")
+        if Key not in self.objects:
+            raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
+        return {"Body": _Body(self.objects[Key][0])}
+
+    async def list_objects_v2(self, **kwargs: Any) -> dict[str, Any]:
+        keys = sorted(key for key in self.objects if key.startswith(kwargs["Prefix"]))
+        page = keys[: kwargs["MaxKeys"]]
+        return {"Contents": [{"Key": key} for key in page], "IsTruncated": len(keys) > len(page)}
+
+    async def delete_objects(self, *, Bucket: str, Delete: dict[str, Any]) -> dict[str, Any]:  # noqa: N803
+        for item in Delete["Objects"]:
+            self.objects.pop(item["Key"], None)
+        return {}
+
+
+class MemoryStorage:
+    """Stands in for the object storage in the API tests (no S3 server is needed)."""
+
+    bucket = "nightloom-evidence"
+
+    def __init__(self) -> None:
+        self.s3 = MemoryS3()
+
+    async def client(self) -> MemoryS3:
+        return self.s3
 
 
 # --- Database-backed tests (marker `db`) --------------------------------------
@@ -204,6 +260,10 @@ async def db_app(db_settings: Settings) -> AsyncIterator[FastAPI]:
     queue = RecordingJobQueue()
     app.state.test_job_queue = queue
     app.dependency_overrides[get_job_queue] = lambda: queue
+    # Nor do they need an S3 server: evidence goes to memory.
+    storage = MemoryStorage()
+    app.state.test_storage = storage
+    app.dependency_overrides[get_storage] = lambda: storage
     async with app.router.lifespan_context(app):
         await _reset_state(app.state.infra)
         yield app

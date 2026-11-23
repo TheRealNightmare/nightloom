@@ -331,7 +331,9 @@ async def delete_case_dependents(
         outcome, details = AuditOutcome.SUCCESS, {"deleted_nodes": deleted}
     if storage is not None:
         try:
-            details["deleted_evidence"] = await evidence.delete_case(storage, case_id)
+            removed = await evidence.delete_case(storage, case_id)
+            if removed:
+                details["deleted_evidence"] = removed
         except Exception as exc:
             logger.error(
                 "Deleting the evidence of deleted case %s failed: %s",

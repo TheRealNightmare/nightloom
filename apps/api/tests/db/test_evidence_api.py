@@ -1,23 +1,23 @@
 """Evidence files and look-alike screenshots against PostgreSQL, with stand-in graph and S3.
 
-The object storage is a dict behind the few S3 calls Nightloom makes, and
-the graph a stand-in that knows each entity's properties, so these run
+The object storage is the API tests' in-memory one (db_fixtures.MemoryStorage),
+and the graph a stand-in that knows each entity's properties, so these run
 without SeaweedFS or Neo4j.
 """
 
 import hashlib
 import uuid
 from collections.abc import Callable, Coroutine
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from botocore.exceptions import ClientError
 from fastapi import FastAPI
 from httpx import AsyncClient
 from sqlalchemy import select
 
+from db_fixtures import MemoryStorage
 from nightloom_api import evidence
 from nightloom_api.audit.models import AuditEvent
 from nightloom_api.auth.models import Role, User
@@ -41,58 +41,6 @@ CASE: dict[str, Any] = {
 }
 PNG = b"\x89PNG\r\n\x1a\nfake screenshot"
 NAME = f"{hashlib.sha256(PNG).hexdigest()}.png"
-
-
-class _Body:
-    def __init__(self, data: bytes) -> None:
-        self.data = data
-
-    async def __aenter__(self) -> "_Body":
-        return self
-
-    async def __aexit__(self, *_: object) -> None:
-        return None
-
-    async def read(self) -> bytes:
-        return self.data
-
-
-@dataclass
-class FakeS3:
-    """The S3 calls evidence.py makes, on a dict."""
-
-    objects: dict[str, tuple[bytes, str]] = field(default_factory=dict)
-    fail: bool = False
-
-    async def put_object(self, *, Bucket: str, Key: str, Body: bytes, ContentType: str) -> None:  # noqa: N803
-        self.objects[Key] = (Body, ContentType)
-
-    async def get_object(self, *, Bucket: str, Key: str) -> dict[str, Any]:  # noqa: N803
-        if self.fail:
-            raise ClientError({"Error": {"Code": "InternalError"}}, "GetObject")
-        if Key not in self.objects:
-            raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
-        return {"Body": _Body(self.objects[Key][0])}
-
-    async def list_objects_v2(self, **kwargs: Any) -> dict[str, Any]:
-        keys = sorted(key for key in self.objects if key.startswith(kwargs["Prefix"]))
-        page = keys[: kwargs["MaxKeys"]]
-        return {"Contents": [{"Key": key} for key in page], "IsTruncated": len(keys) > len(page)}
-
-    async def delete_objects(self, *, Bucket: str, Delete: dict[str, Any]) -> dict[str, Any]:  # noqa: N803
-        for item in Delete["Objects"]:
-            self.objects.pop(item["Key"], None)
-        return {}
-
-
-class FakeStorage:
-    bucket = "nightloom-evidence"
-
-    def __init__(self) -> None:
-        self.s3 = FakeS3()
-
-    async def client(self) -> FakeS3:
-        return self.s3
 
 
 class FakeGraph:
@@ -136,7 +84,7 @@ class World:
     case_id: uuid.UUID
     clients: dict[str, AsyncClient]
     graph: FakeGraph
-    storage: FakeStorage
+    storage: MemoryStorage
 
     @property
     def case_url(self) -> str:
@@ -147,7 +95,7 @@ class World:
 async def world(
     db_app: FastAPI, infra: Infra, make_user: UserFactory, new_client: ClientFactory
 ) -> World:
-    graph, storage = FakeGraph(), FakeStorage()
+    graph, storage = FakeGraph(), MemoryStorage()
     db_app.dependency_overrides[get_graph_repository] = lambda: graph
     db_app.dependency_overrides[get_storage] = lambda: storage
     users = {
@@ -174,7 +122,7 @@ async def world(
 
 
 async def test_the_store_writes_under_the_case() -> None:
-    storage = FakeStorage()
+    storage = MemoryStorage()
     case_id = uuid.uuid4()
     store = evidence.S3EvidenceStore(storage, case_id)  # type: ignore[arg-type]
     await store.save(NAME, PNG, "image/png")
@@ -286,7 +234,7 @@ async def test_deleting_the_case_deletes_its_evidence(world: World) -> None:
 
 
 async def test_deleting_pages_through_many_files() -> None:
-    storage = FakeStorage()
+    storage = MemoryStorage()
     case_id = uuid.uuid4()
     for n in range(evidence.DELETE_BATCH + 5):
         storage.s3.objects[f"cases/{case_id}/evidence/{n:064x}.png"] = (b"x", "image/png")
