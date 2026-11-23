@@ -70,6 +70,9 @@ const ENTITIES = [
   ["domain", "example.net", "2026-01-14", 1000, -250],
   ["domain", "cdn.example.net", "2026-03-02", 960, -40],
   ["ip_address", "203.0.113.43", "2026-03-02", 1060, -520],
+  // A lookalike of example.org with a copy of its login page (typosquats, screenshots).
+  ["domain", "examp1e.org", "2026-11-03", -900, 260],
+  ["url", "https://examp1e.org/login", "2026-11-03", -780, 70],
 ];
 
 /** [type, source value, target value]. */
@@ -103,7 +106,73 @@ const RELATIONSHIPS = [
   ["RESOLVES_TO", "cdn.example.net", "203.0.113.43"],
   ["WITHIN", "203.0.113.43", "203.0.113.0/24"],
   ["ALIAS_OF", "cdn.example.net", "shop.example.com"],
+  ["LOOKALIKE_OF", "examp1e.org", "example.org"],
+  ["HOSTS", "examp1e.org", "https://examp1e.org/login"],
 ];
+
+/** The login page and its copy on the lookalike: [URL, brand shown on the page]. */
+const SCREENSHOTS = [
+  ["https://www.example.org/login", "Example"],
+  ["https://examp1e.org/login", "Examp1e"],
+];
+const SCREENSHOT_AT = "2026-11-17T16:20:00+00:00";
+
+/** A certificate alert for the watched example.org: new names seen in CT logs. */
+const CT_ALERT = {
+  names: ["staging.example.org", "vpn.example.org", "examp1e.org"],
+  certificates: 2,
+  created: "2026-11-18T09:05:00Z",
+};
+
+/** A fake sign-in page, as a site would draw it in the browser service. */
+function loginPage(brand) {
+  return `<!doctype html><html><head><style>
+    body { margin: 0; font: 16px system-ui, sans-serif; background: #eef2f7; color: #1d2733; }
+    header { background: #1f4e8c; color: #fff; padding: 18px 40px; font-size: 26px; font-weight: 700; }
+    main { width: 380px; margin: 90px auto; background: #fff; padding: 36px; border-radius: 10px;
+           box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12); }
+    h1 { margin: 0 0 24px; font-size: 24px; }
+    label { display: block; margin: 14px 0 6px; font-size: 14px; color: #4a5868; }
+    input { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #c4ccd6;
+            border-radius: 6px; font-size: 15px; }
+    button { margin-top: 24px; width: 100%; padding: 12px; border: 0; border-radius: 6px;
+             background: #1f4e8c; color: #fff; font-size: 16px; }
+    footer { text-align: center; color: #7a8694; font-size: 13px; }
+  </style></head><body>
+    <header>${brand}</header>
+    <main><h1>Sign in to your account</h1>
+      <label>Email</label><input value="">
+      <label>Password</label><input type="password" value="">
+      <button>Sign in</button></main>
+    <footer>© 2026 ${brand} Ltd · Privacy · Help</footer>
+  </body></html>`;
+}
+
+/** Stores the pictures as the demo case's evidence (in the api container) and hashes them. */
+const STORE_EVIDENCE = `
+import asyncio, base64, json, sys, uuid
+from nightloom_api.config import get_settings
+from nightloom_api.evidence import S3EvidenceStore
+from nightloom_api.infra.storage import Storage
+from nightloom_sdk.evidence import evidence_name
+from nightloom_shuttle_screenshot.picture import read_picture
+
+async def main():
+    data = json.load(sys.stdin)
+    storage = Storage(get_settings())
+    store = S3EvidenceStore(storage, uuid.UUID(data["case"]))
+    found = []
+    for picture in data["pictures"]:
+        png = base64.b64decode(picture)
+        name = evidence_name(png, "image/png")
+        await store.save(name, png, "image/png")
+        read = read_picture(png)
+        found.append({"name": name, "phash": read.phash, "width": read.width, "height": read.height})
+    await storage.aclose()
+    print(json.dumps(found))
+
+asyncio.run(main())
+`;
 
 const CASES = [
   {
@@ -387,6 +456,39 @@ try {
     ].join("\n"),
   );
 
+  // Screenshots of the login page and its copy, kept as evidence like the Shuttle does.
+  const pictures = [];
+  for (const [, brand] of SCREENSHOTS) {
+    const drawing = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    await drawing.setContent(loginPage(brand));
+    pictures.push((await drawing.screenshot({ type: "png" })).toString("base64"));
+    await drawing.close();
+  }
+  const code = Buffer.from(STORE_EVIDENCE).toString("base64");
+  const stored = JSON.parse(
+    run(
+      `${compose} exec -T api python -c "import base64; exec(base64.b64decode('${code}'))"`,
+      JSON.stringify({ case: demoId, pictures }),
+    )
+      .trim()
+      .split("\n")
+      .at(-1),
+  );
+  cypher(
+    SCREENSHOTS.map(([url], index) => {
+      const item = stored[index];
+      return (
+        `MATCH (n:Entity {case_id: ${cypherText(demoId)}, key: ${cypherText(keys.get(url))}}) ` +
+        `SET n.prop_screenshot = ${cypherText(item.name)}, ` +
+        `n.prop_screenshot_phash = ${cypherText(item.phash)}, ` +
+        `n.prop_screenshot_width = ${String(item.width)}, ` +
+        `n.prop_screenshot_height = ${String(item.height)}, ` +
+        `n.prop_screenshot_at = ${cypherText(SCREENSHOT_AT)}, ` +
+        `n.prop_title = 'Sign in';`
+      );
+    }).join("\n"),
+  );
+
   // 4. The screens, on a fixed clock.
   const open = async (theme, url) => {
     const page = await newPage(browser, theme, storageState);
@@ -459,6 +561,44 @@ try {
   await profiles.getByText(PROFILE.name).first().waitFor();
   await shot(profiles, "profiles-dark.png");
   await profiles.context().close();
+
+  // A page's screenshot and the case's pages that look like it.
+  const looks = await open("light", `/cases/${demoId}/graph`);
+  await graphReady(looks);
+  await looks.getByRole("combobox", { name: "Search entities" }).fill("www.example.org/login");
+  await looks.getByRole("option", { name: /^https:\/\/www\.example\.org\/login/ }).click();
+  const details = looks.getByRole("complementary", { name: "Details" });
+  const screenshotSection = details.getByRole("region", { name: "Screenshot" });
+  await screenshotSection.getByRole("img").waitFor();
+  await screenshotSection.getByRole("list", { name: "Pages that look alike" }).waitFor();
+  await screenshotSection.evaluate((element) => {
+    element.scrollIntoView({ block: "start" });
+  });
+  await shot(looks, "screenshot-light.png");
+  await looks.context().close();
+
+  // Certificate monitoring: example.org is watched, and its last check found new names.
+  // (Added last: the alert shows above the graph in every capture after this.)
+  sql(
+    [
+      `INSERT INTO ct_watches (id, case_id, domain, created_by, created_at, next_check_at, ` +
+        `checked_at, baseline_at) SELECT gen_random_uuid(), ${sqlText(demoId)}, 'example.org', ` +
+        `id, '2026-11-10T08:00:00Z', now() + interval '1 hour', '2026-11-18T09:05:00Z', ` +
+        `'2026-11-10T08:01:00Z' FROM users WHERE email = ${sqlText(email)};`,
+      `INSERT INTO ct_alerts (id, case_id, watch_id, domain, created_at, certificates, names, ` +
+        `names_total, keys) SELECT gen_random_uuid(), ${sqlText(demoId)}, id, 'example.org', ` +
+        `${sqlText(CT_ALERT.created)}, ${String(CT_ALERT.certificates)}, ` +
+        `${sqlText(JSON.stringify(CT_ALERT.names))}::jsonb, ${String(CT_ALERT.names.length)}, ` +
+        `${sqlText(JSON.stringify([keys.get("examp1e.org")]))}::jsonb ` +
+        `FROM ct_watches WHERE case_id = ${sqlText(demoId)};`,
+    ].join("\n"),
+  );
+  const alerts = await open("dark", `/cases/${demoId}/graph`);
+  await graphReady(alerts);
+  await alerts.getByRole("region", { name: "New certificates" }).waitFor();
+  await showGraph(alerts);
+  await shot(alerts, "certificate-alerts-dark.png");
+  await alerts.context().close();
 } finally {
   await browser.close();
 }
