@@ -75,12 +75,21 @@ Complete (0.3.0).
 
 ## Next: M4 — Organizations, people, leaks, code intel
 
+Person-related Shuttles are opt-in per case (`allow_person_entities`), declare `sensitivity: person` and never run in an auto-pivot. Breach and code Shuttles keep metadata and locations, never passwords, credentials or secret values, and never test them.
+
 - [ ] Organization Shuttles
   - [x] 4.1 Legal entity records and corporate parents from GLEIF (`gleif`; `SUBSIDIARY_OF`)
-  - [ ] 4.2 Wikidata: an organization's official website, country and parent, and the organizations a domain is the official website of
-- [ ] Person-related Shuttles with guardrails (gated, never in auto-pivot)
+  - [x] 4.2 Organization facts from Wikidata (`wikidata`): official websites, country, LEI, industry, parents and subsidiaries; the organizations behind a domain
 - [ ] Breach/leak metadata Shuttles
+  - [ ] 4.3 Breaches of a site (Have I Been Pwned's public breach list, no key: name, date, data types, account count), and the breaches an email address appears in (the operator's own HIBP key; person-gated). Never passwords, paste contents or credentials
 - [ ] Code-intelligence Shuttles
+  - [ ] 4.4 Repositories: an organization's public GitHub repositories and their languages, topics and homepages (new Repository type; optional GitHub token for higher rate limits)
+  - [ ] 4.5 Commit authors: the usernames and email addresses in a public repository's recent history (person-gated)
+  - [ ] 4.6 Exposed secrets: likely secrets in a public repository's recent history, recorded by kind, file and commit link only: never the value, never tested
+- [ ] Person-related Shuttles with guardrails (gated, never in auto-pivot)
+  - [ ] 4.7 Public profiles: a GitHub user's public profile (name, company, blog, repositories) and an email address's public Gravatar profile and linked accounts; no photos, no location
+  - [ ] 4.8 Username presence: whether a username exists on a curated list of platforms with public profile pages, as low-rated leads (the same name is not proof of the same person)
+- [ ] 4.9 Release v0.4
 
 ## M5 — Time
 

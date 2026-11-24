@@ -13,7 +13,9 @@ How releases are cut is described in [docs/RELEASING.md](docs/RELEASING.md).
 - Legal entity records: the **Legal entity record (GLEIF)** Shuttle (`gleif`, in the new `shuttles/gleif` package, passive) looks up an organization's Legal Entity Identifier at GLEIF (free, no API key, CC0 data) by its exact legal name, an LEI given as its name, or its `lei` property. It adds the LEI, legal name, jurisdiction, legal form, business register number, entity and LEI status and country to the organization, and the parent companies and direct subsidiaries (at most 50) reported to GLEIF. A name that matches several companies adds nothing; the job note lists their LEIs. It never keeps a sole proprietor's (a person's) record or any street address, and never runs in an auto-pivot.
 - Relationship type `SUBSIDIARY_OF` (Organization → Organization: the source is owned by the target; the note says direct or ultimate parent).
 - Organization properties `lei`, `legal_name`, `jurisdiction`, `legal_form`, `registered_as`, `entity_status`, `lei_status` and `gleif_checked_at`.
-- The side panel links an organization with an `lei` to its record on GLEIF's search site.
+- Organization facts: the **Organization facts (Wikidata)** Shuttle (`wikidata`, in the new `shuttles/wikidata` package, passive) reads Wikidata (free, no key, CC0). For an organization, found by its exact English name or alias, an item ID as its name, or its `wikidata_id` or `lei` property: its official websites as Domains it `OWNS`, its country, LEI and industry, and its parent organizations and subsidiaries with `SUBSIDIARY_OF`. For a domain: the organizations whose official website it is. An ambiguous name adds nothing (the note lists the item IDs), items that are people are never kept, and it never runs in an auto-pivot.
+- Organization properties `wikidata_id` and `wikidata_checked_at`.
+- The side panel's *Public records* links an organization to its LEI record on GLEIF's search site and to its Wikidata item.
 
 ## [0.3.0] - 2026-11-23
 
