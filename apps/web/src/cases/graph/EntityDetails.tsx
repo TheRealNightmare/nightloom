@@ -5,6 +5,7 @@ import { getEntity, type Schema } from "../../api/graph";
 import { Confidence, PropertiesSection, Timestamp } from "../../components/SidePanel";
 import type { EntityNode, Sensitivity } from "../../domain/entities";
 import { FaviconSearchLinks } from "./FaviconSearchLinks";
+import { LeiRecordLink } from "./LeiRecordLink";
 import { ScreenshotSection } from "./ScreenshotSection";
 import { describeAdmiralty, SENSITIVITY_LABELS } from "./rules";
 
@@ -214,6 +215,8 @@ export function EntityDetails({
       <PropertiesSection properties={entity.properties} />
 
       <FaviconSearchLinks entity={entity} />
+
+      <LeiRecordLink entity={entity} />
 
       <ScreenshotSection
         caseId={caseId}

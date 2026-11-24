@@ -267,6 +267,54 @@ def test_exposure_properties_of_ip_addresses() -> None:
     assert build_entity(EntityType.IP_ADDRESS, "192.0.2.10", full).stored_properties()
 
 
+def test_lei_properties_of_organizations() -> None:
+    org = build_entity(
+        EntityType.ORGANIZATION,
+        "Example Holdings",
+        {
+            "lei": " 5493001kjtiigc8y1r12 ",
+            "legal_name": "EXAMPLE HOLDINGS LIMITED",
+            "jurisdiction": "gb",
+            "legal_form": "H0PO",
+            "registered_as": "01234567",
+            "entity_status": "active",
+            "lei_status": "ISSUED",
+            "country": "GB",
+            "gleif_checked_at": "2026-11-24T06:00:00Z",
+        },
+    )
+    assert org.stored_properties() == {
+        "lei": "5493001KJTIIGC8Y1R12",
+        "legal_name": "EXAMPLE HOLDINGS LIMITED",
+        "jurisdiction": "GB",
+        "legal_form": "H0PO",
+        "registered_as": "01234567",
+        "entity_status": "ACTIVE",
+        "lei_status": "ISSUED",
+        "country": "GB",
+        "gleif_checked_at": "2026-11-24T06:00:00Z",
+    }
+    us_state = build_entity(EntityType.ORGANIZATION, "Example Inc.", {"jurisdiction": "US-DE"})
+    assert us_state.stored_properties() == {"jurisdiction": "US-DE"}
+
+
+@pytest.mark.parametrize(
+    "properties",
+    [
+        {"lei": "5493001KJTIIGC8Y1R1"},  # 19 characters
+        {"lei": "5493001KJTIIGC8Y1RAB"},  # check digits are digits
+        {"jurisdiction": "Delaware"},
+        {"jurisdiction": "US-"},
+        {"entity_status": "active!"},
+        {"lei_status": ""},
+        {"gleif_checked_at": "2026-11-24T06:00:00"},  # naive
+    ],
+)
+def test_invalid_lei_properties(properties: dict[str, Any]) -> None:
+    with pytest.raises(ValidationError):
+        build_entity(EntityType.ORGANIZATION, "Example Holdings", properties)
+
+
 def test_reverse_dns_property_of_ip_addresses() -> None:
     ip = build_entity(
         EntityType.IP_ADDRESS,

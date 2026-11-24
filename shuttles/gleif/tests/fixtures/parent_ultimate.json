@@ -1,0 +1,119 @@
+{
+  "meta": {
+    "goldenCopy": {
+      "publishDate": "2026-11-24T08:00:00Z"
+    }
+  },
+  "data": {
+    "type": "lei-records",
+    "id": "5493000EXULTM0000521",
+    "attributes": {
+      "lei": "5493000EXULTM0000521",
+      "entity": {
+        "legalName": {
+          "name": "Example Group AG",
+          "language": "en"
+        },
+        "otherNames": [],
+        "transliteratedOtherNames": [],
+        "legalAddress": {
+          "language": "en",
+          "addressLines": [
+            "Beispielstraße 1"
+          ],
+          "addressNumber": null,
+          "addressNumberWithinBuilding": null,
+          "mailRouting": null,
+          "city": "Exampleton",
+          "region": null,
+          "country": "DE",
+          "postalCode": "EX1 2MP"
+        },
+        "headquartersAddress": {
+          "language": "en",
+          "addressLines": [
+            "Beispielstraße 1"
+          ],
+          "city": "Exampleton",
+          "region": null,
+          "country": "DE",
+          "postalCode": "EX1 2MP"
+        },
+        "registeredAt": {
+          "id": "RA000585",
+          "other": null
+        },
+        "registeredAs": "HRB 12345",
+        "jurisdiction": "DE",
+        "category": "GENERAL",
+        "legalForm": {
+          "id": "8888",
+          "other": "Aktiengesellschaft"
+        },
+        "associatedEntity": {
+          "lei": null,
+          "name": null
+        },
+        "status": "ACTIVE",
+        "expiration": {
+          "date": null,
+          "reason": null
+        },
+        "successorEntity": {
+          "lei": null,
+          "name": null
+        },
+        "successorEntities": [],
+        "creationDate": "2004-05-06T00:00:00Z",
+        "subCategory": null,
+        "otherAddresses": [],
+        "eventGroups": []
+      },
+      "registration": {
+        "initialRegistrationDate": "2014-02-03T09:00:00Z",
+        "lastUpdateDate": "2026-09-01T08:00:00Z",
+        "status": "ISSUED",
+        "nextRenewalDate": "2027-02-03T09:00:00Z",
+        "managingLou": "5493001KJTIIGC8Y1R12",
+        "corroborationLevel": "FULLY_CORROBORATED",
+        "validatedAt": {
+          "id": "RA000585",
+          "other": null
+        },
+        "validatedAs": "HRB 12345"
+      },
+      "bic": null,
+      "mic": null,
+      "ocid": null,
+      "spglobal": [],
+      "conformityFlag": "CONFORMING"
+    },
+    "relationships": {
+      "managing-lou": {
+        "links": {
+          "related": "https://api.gleif.org/api/v1/lei-records/5493000EXULTM0000521/managing-lou"
+        }
+      },
+      "direct-parent": {
+        "links": {
+          "relationship-record": "https://api.gleif.org/api/v1/lei-records/5493000EXULTM0000521/direct-parent-relationship",
+          "lei-record": "https://api.gleif.org/api/v1/lei-records/5493000EXULTM0000521/direct-parent"
+        }
+      },
+      "ultimate-parent": {
+        "links": {
+          "relationship-record": "https://api.gleif.org/api/v1/lei-records/5493000EXULTM0000521/ultimate-parent-relationship",
+          "lei-record": "https://api.gleif.org/api/v1/lei-records/5493000EXULTM0000521/ultimate-parent"
+        }
+      },
+      "direct-children": {
+        "links": {
+          "related": "https://api.gleif.org/api/v1/lei-records/5493000EXULTM0000521/direct-children"
+        }
+      }
+    },
+    "links": {
+      "self": "https://api.gleif.org/api/v1/lei-records/5493000EXULTM0000521"
+    }
+  }
+}

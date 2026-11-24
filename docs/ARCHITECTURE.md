@@ -29,7 +29,7 @@ flowchart LR
 | `apps/worker` | Celery worker that runs Shuttle jobs (see [Jobs](#jobs-and-the-worker)) and releases (and expands) profile runs |
 | `packages/core` | Shared entity model (`nightloom-core`): entity types, canonical keys, relationship allow-list, provenance |
 | `packages/sdk` | Shuttle SDK (`nightloom-sdk`): the [Shuttle contract](#shuttle-contract), the guarded HTTP client, the registry, test helpers |
-| `shuttles/` | Built-in Shuttles, one package each: `registrable-domain` (no network), [`dns`](#the-dns-shuttle) and [`reverse-dns`](#the-reverse-dns-shuttle) (one package), [`crtsh`](#the-crtsh-shuttle), [`rdap`](#the-rdap-shuttle), [`ripestat`](#the-ripestat-shuttle), [`internetdb`](#the-internetdb-shuttle) and [`wayback`](#the-wayback-shuttle) |
+| `shuttles/` | Built-in Shuttles, one package each: `registrable-domain` (no network), [`dns`](#the-dns-shuttle) and [`reverse-dns`](#the-reverse-dns-shuttle) (one package), [`crtsh`](#the-crtsh-shuttle), [`rdap`](#the-rdap-shuttle), [`ripestat`](#the-ripestat-shuttle), [`internetdb`](#the-internetdb-shuttle), [`gleif`](#the-gleif-shuttle) and [`wayback`](#the-wayback-shuttle) |
 | PostgreSQL | Users, cases, jobs, audit log, encrypted API keys |
 | Neo4j | Entities and relationships |
 | Valkey (Redis-compatible) | Celery broker, rate-limit counters, result cache |
@@ -431,7 +431,7 @@ Each type is a Pydantic model (`nightloom_core.entities`) with a canonical `valu
 | `url` | `URL` | infrastructure | `status_code`, `title`, `content_type`; archive data, written by the [Wayback Shuttle](#the-wayback-shuttle): `first_captured`, `last_captured`, `capture_count`, `last_status`, `mimetype`, `archive_url` (only `https://web.archive.org/web/…`), `query_params` (parameter names only, at most 30 of at most 64 characters) |
 | `service` | `Service` | infrastructure | `product`, `version`, `banner` |
 | `technology` | `Technology` | infrastructure | `version`, `category` |
-| `organization` | `Organization` | organization | `country`, `industry` |
+| `organization` | `Organization` | organization | `country` (of the legal address), `industry`; its LEI record, written by the [GLEIF Shuttle](#the-gleif-shuttle): `lei`, `legal_name`, `jurisdiction` (ISO 3166-1 or 3166-2, such as `US-DE`), `legal_form`, `registered_as`, `entity_status`, `lei_status`, `gleif_checked_at` |
 | `crypto_wallet` | `CryptoWallet` | organization | |
 | `document` | `Document` | organization | `title`, `mime_type`, `sha256` |
 | `breach` | `Breach` | organization | `breach_date`, `record_count`, `data_classes` (metadata only, never leaked records) |
@@ -484,6 +484,7 @@ Relationship types (`nightloom_core.relationships`) have an explicit allow-list 
 | `RUNS_ON` | Service → IPAddress |
 | `USES` | Domain, URL or Service → Technology |
 | `OWNS` | Organization → Domain, Netblock or ASN |
+| `SUBSIDIARY_OF` | Organization → Organization: the source is owned by the target (its parent company), as reported in the source's LEI record; the note says `direct parent`, `ultimate parent` or both |
 | `HOSTS` | Domain → URL |
 | `HAS_FAVICON` | Domain or URL → Favicon: the site serves that icon |
 | `LOOKALIKE_OF` | Domain → Domain: the source's name looks like the target's (a typo or lookalike); the kind of change is in the note |
@@ -771,6 +772,24 @@ crt.sh (run by Sectigo) publishes no terms of use; see the Shuttle's [README](..
 
 **Usage conditions.** InternetDB is free for non-commercial use; building a paid product on its data needs a Shodan license. The Shuttle states this in its metadata's `usage_note`, which `GET /shuttles` returns and the *Run Shuttle* panel shows under the Shuttle's description with an info icon, next to the link to [Shodan's terms](https://account.shodan.io/legal/tos). The mechanism is generic: any Shuttle whose source sets conditions (non-commercial only, attribution, a quota) declares them the same way, so the operator sees them before every run instead of in a README. Nightloom cannot check how its output is used; the note informs, it does not enforce. The tests use a fake InternetDB with fictional records for documentation addresses only; one opt-in `network` test asks the real InternetDB about `1.1.1.1`.
 
+### The GLEIF Shuttle
+
+[`shuttles/gleif`](../shuttles/gleif/) (`gleif`, *Legal entity record (GLEIF)*, input Organization, passive, organization, cached 24 h, A2/0.9, `pivots: false`) reads the [GLEIF API](https://www.gleif.org/en/lei-data/gleif-api): every Legal Entity Identifier (ISO 17442) with its reference data and the parent companies the entity reports, free under CC0 and without a key. Its only host is `api.gleif.org`.
+
+**Finding one record.** A name is not an identity: "Example Trading Ltd" can be several unrelated companies. The Shuttle therefore adds data only when it finds exactly one record, in this order: the organization's `lei` property (an invalid one is ignored with a note); the organization's name if it *is* an LEI (the organization is then added under its legal name, and the LEI-named entity keeps only `lei`); otherwise GLEIF's records with that legal name, of which only those whose legal or other name equals the input, ignoring case and spacing, count. None is a note suggesting the full registered name; several are a note listing their LEIs and jurisdictions (at most five) and nothing is added. An LEI is checked (20 letters and digits, ISO 7064 MOD 97-10 check digits) before it goes into a URL.
+
+| Found | Becomes |
+| --- | --- |
+| the record | properties on the organization: `lei`, `legal_name`, `jurisdiction`, `legal_form` (the ISO 20275 ELF code, or the form as text when the code is "other"), `registered_as` (the business register number), `entity_status`, `lei_status`, `country` (of the legal address) and `gleif_checked_at` |
+| the direct and ultimate parents | Organizations with `SUBSIDIARY_OF` from the organization (B2/0.8; note `direct parent`, `ultimate parent` or `direct and ultimate parent`) |
+| the direct subsidiaries | Organizations with `SUBSIDIARY_OF` to the organization (B2/0.8), at most 50 (a note says when GLEIF lists more) |
+
+**People.** An LEI can belong to a *sole proprietor*, a natural person in business on their own account (GLEIF's `category`). Such a record is never kept or listed: as the match, the job ends with a note and nothing else; among name matches, parents or subsidiaries, it is removed and counted in a note. Of an address, only the legal address's country is kept, never a street, city or postal code; the tests scan every finding and note for the fixtures' addresses and the sole proprietor's name.
+
+**Rating.** The record is registered by the entity and validated by its LEI issuer: **A2** (0.9). Parent relationships are reported by the entity with varying corroboration, and some entities report an exception instead of a parent, so they are **B2** (0.8) and a missing parent is not proof that there is none. A parent or subsidiary with the same name as the organization is skipped rather than linked to itself.
+
+**HTTP.** At most five requests a run (the record or a name search, two parents, the subsidiaries), one a second (GLEIF allows 60 a minute). A 404 means "no record"; 429, 5xx and network errors are handled like the [InternetDB Shuttle](#the-internetdb-shuttle); a lookup by LEI answering with another LEI is `source_invalid_response`. Timeout 60 seconds; no request starts after 45. The tests use a fake GLEIF with fictional records; one opt-in `network` test looks up Apple Inc.'s LEI. The side panel links an organization with an `lei` to its record on [search.gleif.org](https://search.gleif.org/).
+
 ### The Wayback Shuttle
 
 [`shuttles/wayback`](../shuttles/wayback/) (`wayback`, passive, infrastructure, `network=True`) lists what the Internet Archive's [Wayback Machine](https://web.archive.org) has captured under a domain, from its [CDX server](https://github.com/internetarchive/wayback/blob/master/wayback-cdx-server/README.md) (no API key). Old pages, forgotten subdomains and retired endpoints often survive only there.
@@ -905,7 +924,7 @@ In the web UI's *Jobs* panel, a running job's elapsed time stops at its deadline
 
 #### The result cache
 
-A passive Shuttle with a `cache_ttl_seconds` (DNS and reverse DNS 1 hour; crt.sh, RIPEstat, InternetDB and typosquats 24 hours; RDAP and Wayback 7 days; registrable-domain never) does not ask its source again for the same entity while a recent result exists ([`result_cache.py`](../apps/api/src/nightloom_api/jobs/result_cache.py)).
+A passive Shuttle with a `cache_ttl_seconds` (DNS and reverse DNS 1 hour; crt.sh, RIPEstat, InternetDB, typosquats and GLEIF 24 hours; RDAP and Wayback 7 days; registrable-domain never) does not ask its source again for the same entity while a recent result exists ([`result_cache.py`](../apps/api/src/nightloom_api/jobs/result_cache.py)).
 
 - **What is stored.** After a live run **succeeds** (not failed, cancelled, cut by the deadline or over the findings limit), the worker stores what the Shuttle *yielded*, in order, and its notes (PostgreSQL table `result_cache`, migration `0009`), within the job's deadline and never at the cost of the job. These are the raw findings, before any check that depends on the case.
 - **Key.** SHA-256 of the scope, the Shuttle's **name and version** (a new version never reuses an older one's results), the input entity's canonical key and the run's options (none yet; normalized, so their order never matters).
