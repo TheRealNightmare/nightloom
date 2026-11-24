@@ -97,6 +97,8 @@ Lei = Annotated[str, Field(max_length=100), _matching(r"[A-Z0-9]{18}[0-9]{2}", u
 Jurisdiction = Annotated[
     str, Field(max_length=100), _matching(r"[A-Z]{2}(-[A-Z0-9]{1,3})?", upper=True)
 ]
+# A Wikidata item ID, such as Q95.
+WikidataId = Annotated[str, Field(max_length=100), _matching(r"Q[1-9][0-9]{0,11}", upper=True)]
 # A status word from a registry, such as ACTIVE or LAPSED.
 StatusCode = Annotated[str, Field(max_length=100), _matching(r"[A-Z][A-Z_]{0,39}", upper=True)]
 MimeType = Annotated[
@@ -472,7 +474,9 @@ class OrganizationProperties(Properties):
     text), ``registered_as`` (its number in the business register),
     ``entity_status`` (``ACTIVE`` or ``INACTIVE``), ``lei_status`` (the
     LEI's registration: ``ISSUED``, ``LAPSED``, ``RETIRED``...) and
-    ``gleif_checked_at`` (when GLEIF was asked).
+    ``gleif_checked_at`` (when GLEIF was asked). ``wikidata_id`` is its
+    Wikidata item, written with ``wikidata_checked_at`` by the Wikidata
+    Shuttle.
     """
 
     country: CountryCode | None = None
@@ -485,6 +489,8 @@ class OrganizationProperties(Properties):
     entity_status: StatusCode | None = None
     lei_status: StatusCode | None = None
     gleif_checked_at: AwareDatetime | None = None
+    wikidata_id: WikidataId | None = None
+    wikidata_checked_at: AwareDatetime | None = None
 
 
 class UsernameProperties(Properties):

@@ -296,6 +296,15 @@ def test_lei_properties_of_organizations() -> None:
     }
     us_state = build_entity(EntityType.ORGANIZATION, "Example Inc.", {"jurisdiction": "US-DE"})
     assert us_state.stored_properties() == {"jurisdiction": "US-DE"}
+    item = build_entity(
+        EntityType.ORGANIZATION,
+        "Example Inc.",
+        {"wikidata_id": "q95", "wikidata_checked_at": "2026-11-24T06:00:00Z"},
+    )
+    assert item.stored_properties() == {
+        "wikidata_id": "Q95",
+        "wikidata_checked_at": "2026-11-24T06:00:00Z",
+    }
 
 
 @pytest.mark.parametrize(
@@ -308,6 +317,9 @@ def test_lei_properties_of_organizations() -> None:
         {"entity_status": "active!"},
         {"lei_status": ""},
         {"gleif_checked_at": "2026-11-24T06:00:00"},  # naive
+        {"wikidata_id": "Q0"},
+        {"wikidata_id": "P31"},  # a property, not an item
+        {"wikidata_id": "https://www.wikidata.org/wiki/Q95"},
     ],
 )
 def test_invalid_lei_properties(properties: dict[str, Any]) -> None:
