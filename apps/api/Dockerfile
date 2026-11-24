@@ -41,6 +41,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=shuttles/screenshot/pyproject.toml,target=shuttles/screenshot/pyproject.toml \
     --mount=type=bind,source=shuttles/wayback/pyproject.toml,target=shuttles/wayback/pyproject.toml \
     --mount=type=bind,source=shuttles/web/pyproject.toml,target=shuttles/web/pyproject.toml \
+    --mount=type=bind,source=shuttles/wikidata/pyproject.toml,target=shuttles/wikidata/pyproject.toml \
     uv sync --locked --no-dev --no-install-workspace --package nightloom-worker
 
 # Then the workspace packages, installed non-editable so the venv is

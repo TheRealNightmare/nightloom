@@ -160,6 +160,7 @@ def test_built_in_shuttles_cache_lifetimes() -> None:
         "favicon": day,
         "typosquats": day,
         "gleif": day,
+        "wikidata": 7 * day,
         # Evidence belongs to one case: never reused.
         "screenshot": 0,
     }

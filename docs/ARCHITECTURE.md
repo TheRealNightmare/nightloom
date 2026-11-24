@@ -29,7 +29,7 @@ flowchart LR
 | `apps/worker` | Celery worker that runs Shuttle jobs (see [Jobs](#jobs-and-the-worker)) and releases (and expands) profile runs |
 | `packages/core` | Shared entity model (`nightloom-core`): entity types, canonical keys, relationship allow-list, provenance |
 | `packages/sdk` | Shuttle SDK (`nightloom-sdk`): the [Shuttle contract](#shuttle-contract), the guarded HTTP client, the registry, test helpers |
-| `shuttles/` | Built-in Shuttles, one package each: `registrable-domain` (no network), [`dns`](#the-dns-shuttle) and [`reverse-dns`](#the-reverse-dns-shuttle) (one package), [`crtsh`](#the-crtsh-shuttle), [`rdap`](#the-rdap-shuttle), [`ripestat`](#the-ripestat-shuttle), [`internetdb`](#the-internetdb-shuttle), [`gleif`](#the-gleif-shuttle) and [`wayback`](#the-wayback-shuttle) |
+| `shuttles/` | Built-in Shuttles, one package each: `registrable-domain` (no network), [`dns`](#the-dns-shuttle) and [`reverse-dns`](#the-reverse-dns-shuttle) (one package), [`crtsh`](#the-crtsh-shuttle), [`rdap`](#the-rdap-shuttle), [`ripestat`](#the-ripestat-shuttle), [`internetdb`](#the-internetdb-shuttle), [`gleif`](#the-gleif-shuttle), [`wikidata`](#the-wikidata-shuttle) and [`wayback`](#the-wayback-shuttle) |
 | PostgreSQL | Users, cases, jobs, audit log, encrypted API keys |
 | Neo4j | Entities and relationships |
 | Valkey (Redis-compatible) | Celery broker, rate-limit counters, result cache |
@@ -431,7 +431,7 @@ Each type is a Pydantic model (`nightloom_core.entities`) with a canonical `valu
 | `url` | `URL` | infrastructure | `status_code`, `title`, `content_type`; archive data, written by the [Wayback Shuttle](#the-wayback-shuttle): `first_captured`, `last_captured`, `capture_count`, `last_status`, `mimetype`, `archive_url` (only `https://web.archive.org/web/…`), `query_params` (parameter names only, at most 30 of at most 64 characters) |
 | `service` | `Service` | infrastructure | `product`, `version`, `banner` |
 | `technology` | `Technology` | infrastructure | `version`, `category` |
-| `organization` | `Organization` | organization | `country` (of the legal address), `industry`; its LEI record, written by the [GLEIF Shuttle](#the-gleif-shuttle): `lei`, `legal_name`, `jurisdiction` (ISO 3166-1 or 3166-2, such as `US-DE`), `legal_form`, `registered_as`, `entity_status`, `lei_status`, `gleif_checked_at` |
+| `organization` | `Organization` | organization | `country` (of the legal address), `industry`; its LEI record, written by the [GLEIF Shuttle](#the-gleif-shuttle): `lei`, `legal_name`, `jurisdiction` (ISO 3166-1 or 3166-2, such as `US-DE`), `legal_form`, `registered_as`, `entity_status`, `lei_status`, `gleif_checked_at`; `wikidata_id` and `wikidata_checked_at`, written by the [Wikidata Shuttle](#the-wikidata-shuttle) |
 | `crypto_wallet` | `CryptoWallet` | organization | |
 | `document` | `Document` | organization | `title`, `mime_type`, `sha256` |
 | `breach` | `Breach` | organization | `breach_date`, `record_count`, `data_classes` (metadata only, never leaked records) |
@@ -788,7 +788,22 @@ crt.sh (run by Sectigo) publishes no terms of use; see the Shuttle's [README](..
 
 **Rating.** The record is registered by the entity and validated by its LEI issuer: **A2** (0.9). Parent relationships are reported by the entity with varying corroboration, and some entities report an exception instead of a parent, so they are **B2** (0.8) and a missing parent is not proof that there is none. A parent or subsidiary with the same name as the organization is skipped rather than linked to itself.
 
-**HTTP.** At most five requests a run (the record or a name search, two parents, the subsidiaries), one a second (GLEIF allows 60 a minute). A 404 means "no record"; 429, 5xx and network errors are handled like the [InternetDB Shuttle](#the-internetdb-shuttle); a lookup by LEI answering with another LEI is `source_invalid_response`. Timeout 60 seconds; no request starts after 45. The tests use a fake GLEIF with fictional records; one opt-in `network` test looks up Apple Inc.'s LEI. The side panel links an organization with an `lei` to its record on [search.gleif.org](https://search.gleif.org/).
+**HTTP.** At most five requests a run (the record or a name search, two parents, the subsidiaries), one a second (GLEIF allows 60 a minute). A 404 means "no record"; 429, 5xx and network errors are handled like the [InternetDB Shuttle](#the-internetdb-shuttle); a lookup by LEI answering with another LEI is `source_invalid_response`. Timeout 60 seconds; no request starts after 45. The tests use a fake GLEIF with fictional records; one opt-in `network` test looks up Apple Inc.'s LEI. The side panel's *Public records* links an organization with an `lei` to its record on [search.gleif.org](https://search.gleif.org/).
+
+### The Wikidata Shuttle
+
+[`shuttles/wikidata`](../shuttles/wikidata/) (`wikidata`, *Organization facts (Wikidata)*, inputs Organization and Domain, passive, organization, cached 7 days, C2/0.7, `pivots: false`) asks the [Wikidata Query Service](https://query.wikidata.org/) (CC0 data, no key) with fixed SPARQL templates ([`queries.py`](../shuttles/wikidata/src/nightloom_shuttle_wikidata/queries.py)). Only a checked item ID, a checked LEI, a normalized host name and an escaped string literal are ever put into a query; its only host is `query.wikidata.org`.
+
+**Finding one item.** As with GLEIF, data is added only for exactly one item, found by the `wikidata_id` property; the name if it is an item ID (the organization is then added under its English label, the ID-named entity keeping `wikidata_id`); the `lei` property (P1278); or an English label or alias equal to the name among items that are organizations (instance of a subclass of Q43229). None is a note; several are a note listing their item IDs (at most five) and nothing is added.
+
+| Input | Found | Becomes |
+| --- | --- | --- |
+| Organization | the item | properties `wikidata_id`, `country` (only when the item has exactly one), `lei` (exactly one, valid check digits), `industry` (up to three, alphabetical) and `wikidata_checked_at` |
+| Organization | official websites (P856) | each registrable domain as a Domain with `OWNS` from the organization (note *official website, per Wikidata*), at most 20 |
+| Organization | parent organizations and subsidiaries (P749, P355, read from either side) | Organizations with `wikidata_id` and `SUBSIDIARY_OF` (note *parent organization, per Wikidata*); at most 10 parents and 50 subsidiaries |
+| Domain | organizations whose official website is the domain's home page (`http`/`https`, with and without `www.` and a trailing slash) | Organizations with `wikidata_id` and `OWNS` to the domain, at most 10 |
+
+**People.** Wikidata describes people as well, with official websites and employers. Every query that returns items to keep excludes items that are an instance of *human* (Q5); an item ID that turns out to be a person, or no organization at all, adds nothing and says so in a note. **Rating:** anyone can edit Wikidata and no authority checks it, though organizations' items are usually well sourced: **C2** (0.7). **HTTP:** at most four queries a run, one a second; 429 and 5xx (the service answers 500 when a query times out) are handled like the other Shuttles. Timeout 120 seconds; no request starts after 100. The side panel's *Public records* links an organization with a `wikidata_id` to its item.
 
 ### The Wayback Shuttle
 
@@ -924,7 +939,7 @@ In the web UI's *Jobs* panel, a running job's elapsed time stops at its deadline
 
 #### The result cache
 
-A passive Shuttle with a `cache_ttl_seconds` (DNS and reverse DNS 1 hour; crt.sh, RIPEstat, InternetDB, typosquats and GLEIF 24 hours; RDAP and Wayback 7 days; registrable-domain never) does not ask its source again for the same entity while a recent result exists ([`result_cache.py`](../apps/api/src/nightloom_api/jobs/result_cache.py)).
+A passive Shuttle with a `cache_ttl_seconds` (DNS and reverse DNS 1 hour; crt.sh, RIPEstat, InternetDB, typosquats and GLEIF 24 hours; RDAP, Wayback and Wikidata 7 days; registrable-domain never) does not ask its source again for the same entity while a recent result exists ([`result_cache.py`](../apps/api/src/nightloom_api/jobs/result_cache.py)).
 
 - **What is stored.** After a live run **succeeds** (not failed, cancelled, cut by the deadline or over the findings limit), the worker stores what the Shuttle *yielded*, in order, and its notes (PostgreSQL table `result_cache`, migration `0009`), within the job's deadline and never at the cost of the job. These are the raw findings, before any check that depends on the case.
 - **Key.** SHA-256 of the scope, the Shuttle's **name and version** (a new version never reuses an older one's results), the input entity's canonical key and the run's options (none yet; normalized, so their order never matters).

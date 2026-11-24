@@ -67,6 +67,7 @@ known-first-party = [
     "nightloom_shuttle_screenshot",
     "nightloom_shuttle_wayback",
     "nightloom_shuttle_web",
+    "nightloom_shuttle_wikidata",
     "nightloom_worker",
 ]
 
@@ -111,6 +112,8 @@ files = [
     "shuttles/wayback/tests",
     "shuttles/web/src",
     "shuttles/web/tests",
+    "shuttles/wikidata/src",
+    "shuttles/wikidata/tests",
     "scripts/check-versions.py",
     "scripts/bump-version.py",
     "scripts/changelog-section.py",
@@ -137,6 +140,7 @@ mypy_path = [
     "shuttles/screenshot/src",
     "shuttles/wayback/src",
     "shuttles/web/src",
+    "shuttles/wikidata/src",
 ]
 
 # aioboto3 ships no type information. Only its Session factory is used; the S3
@@ -199,6 +203,7 @@ addopts = [
     "--cov=nightloom_shuttle_screenshot",
     "--cov=nightloom_shuttle_wayback",
     "--cov=nightloom_shuttle_web",
+    "--cov=nightloom_shuttle_wikidata",
     "--cov-report=term-missing",
     "--cov-fail-under=90",
 ]
