@@ -91,6 +91,14 @@ EvidenceName = Annotated[str, Field(max_length=100), _matching(r"[0-9a-f]{64}\.(
 # A 64-bit perceptual hash (dHash), as 16 lowercase hexadecimal digits.
 PerceptualHash = Annotated[str, Field(max_length=100), _matching(r"[0-9a-f]{16}")]
 Md5Hex = Annotated[str, Field(max_length=100), _matching(r"[0-9a-f]{32}")]
+# A Legal Entity Identifier (ISO 17442): 18 letters or digits and two check digits.
+Lei = Annotated[str, Field(max_length=100), _matching(r"[A-Z0-9]{18}[0-9]{2}", upper=True)]
+# Where an entity is legally registered: an ISO 3166-1 country, or a 3166-2 subdivision.
+Jurisdiction = Annotated[
+    str, Field(max_length=100), _matching(r"[A-Z]{2}(-[A-Z0-9]{1,3})?", upper=True)
+]
+# A status word from a registry, such as ACTIVE or LAPSED.
+StatusCode = Annotated[str, Field(max_length=100), _matching(r"[A-Z][A-Z_]{0,39}", upper=True)]
 MimeType = Annotated[
     str,
     Field(max_length=127),
@@ -455,8 +463,28 @@ class TechnologyProperties(Properties):
 
 
 class OrganizationProperties(Properties):
+    """What is known about an organization.
+
+    ``country`` is where its legal address is. The rest describe its Legal
+    Entity Identifier record, written by the GLEIF Shuttle: ``lei``,
+    ``legal_name`` (as registered), ``jurisdiction`` (where it is
+    incorporated), ``legal_form`` (an ISO 20275 ELF code, or the form as
+    text), ``registered_as`` (its number in the business register),
+    ``entity_status`` (``ACTIVE`` or ``INACTIVE``), ``lei_status`` (the
+    LEI's registration: ``ISSUED``, ``LAPSED``, ``RETIRED``...) and
+    ``gleif_checked_at`` (when GLEIF was asked).
+    """
+
     country: CountryCode | None = None
     industry: ShortText | None = None
+    lei: Lei | None = None
+    legal_name: ShortText | None = None
+    jurisdiction: Jurisdiction | None = None
+    legal_form: ShortText | None = None
+    registered_as: ShortText | None = None
+    entity_status: StatusCode | None = None
+    lei_status: StatusCode | None = None
+    gleif_checked_at: AwareDatetime | None = None
 
 
 class UsernameProperties(Properties):

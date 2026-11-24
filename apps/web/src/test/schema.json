@@ -239,6 +239,11 @@
       ]
     },
     {
+      "type": "SUBSIDIARY_OF",
+      "note_required": false,
+      "pairs": [["organization", "organization"]]
+    },
+    {
       "type": "HOSTS",
       "note_required": false,
       "pairs": [["domain", "url"]]
