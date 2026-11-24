@@ -76,6 +76,8 @@ Complete (0.3.0).
 ## Next: M4 — Organizations, people, leaks, code intel
 
 - [ ] Organization Shuttles
+  - [x] 4.1 Legal entity records and corporate parents from GLEIF (`gleif`; `SUBSIDIARY_OF`)
+  - [ ] 4.2 Wikidata: an organization's official website, country and parent, and the organizations a domain is the official website of
 - [ ] Person-related Shuttles with guardrails (gated, never in auto-pivot)
 - [ ] Breach/leak metadata Shuttles
 - [ ] Code-intelligence Shuttles
