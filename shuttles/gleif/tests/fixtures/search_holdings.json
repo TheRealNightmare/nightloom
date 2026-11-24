@@ -1,0 +1,250 @@
+{
+  "meta": {
+    "goldenCopy": {
+      "publishDate": "2026-11-24T08:00:00Z"
+    },
+    "pagination": {
+      "currentPage": 1,
+      "perPage": 10,
+      "from": 1,
+      "to": 2,
+      "total": 2,
+      "lastPage": 1
+    }
+  },
+  "links": {
+    "first": "https://api.gleif.org/api/v1/lei-records/"
+  },
+  "data": [
+    {
+      "type": "lei-records",
+      "id": "5493000EXHOLD0000105",
+      "attributes": {
+        "lei": "5493000EXHOLD0000105",
+        "entity": {
+          "legalName": {
+            "name": "EXAMPLE HOLDINGS LIMITED",
+            "language": "en"
+          },
+          "otherNames": [
+            {
+              "name": "Example Holdings",
+              "language": "en",
+              "type": "TRADING_OR_OPERATING_NAME"
+            }
+          ],
+          "transliteratedOtherNames": [],
+          "legalAddress": {
+            "language": "en",
+            "addressLines": [
+              "1 Example Street"
+            ],
+            "addressNumber": null,
+            "addressNumberWithinBuilding": null,
+            "mailRouting": null,
+            "city": "Exampleton",
+            "region": null,
+            "country": "GB",
+            "postalCode": "EX1 2MP"
+          },
+          "headquartersAddress": {
+            "language": "en",
+            "addressLines": [
+              "1 Example Street"
+            ],
+            "city": "Exampleton",
+            "region": null,
+            "country": "GB",
+            "postalCode": "EX1 2MP"
+          },
+          "registeredAt": {
+            "id": "RA000585",
+            "other": null
+          },
+          "registeredAs": "01234567",
+          "jurisdiction": "GB",
+          "category": "GENERAL",
+          "legalForm": {
+            "id": "H0PO",
+            "other": null
+          },
+          "associatedEntity": {
+            "lei": null,
+            "name": null
+          },
+          "status": "ACTIVE",
+          "expiration": {
+            "date": null,
+            "reason": null
+          },
+          "successorEntity": {
+            "lei": null,
+            "name": null
+          },
+          "successorEntities": [],
+          "creationDate": "2004-05-06T00:00:00Z",
+          "subCategory": null,
+          "otherAddresses": [],
+          "eventGroups": []
+        },
+        "registration": {
+          "initialRegistrationDate": "2014-02-03T09:00:00Z",
+          "lastUpdateDate": "2026-09-01T08:00:00Z",
+          "status": "ISSUED",
+          "nextRenewalDate": "2027-02-03T09:00:00Z",
+          "managingLou": "5493001KJTIIGC8Y1R12",
+          "corroborationLevel": "FULLY_CORROBORATED",
+          "validatedAt": {
+            "id": "RA000585",
+            "other": null
+          },
+          "validatedAs": "01234567"
+        },
+        "bic": null,
+        "mic": null,
+        "ocid": null,
+        "spglobal": [],
+        "conformityFlag": "CONFORMING"
+      },
+      "relationships": {
+        "managing-lou": {
+          "links": {
+            "related": "https://api.gleif.org/api/v1/lei-records/5493000EXHOLD0000105/managing-lou"
+          }
+        },
+        "direct-parent": {
+          "links": {
+            "relationship-record": "https://api.gleif.org/api/v1/lei-records/5493000EXHOLD0000105/direct-parent-relationship",
+            "lei-record": "https://api.gleif.org/api/v1/lei-records/5493000EXHOLD0000105/direct-parent"
+          }
+        },
+        "ultimate-parent": {
+          "links": {
+            "relationship-record": "https://api.gleif.org/api/v1/lei-records/5493000EXHOLD0000105/ultimate-parent-relationship",
+            "lei-record": "https://api.gleif.org/api/v1/lei-records/5493000EXHOLD0000105/ultimate-parent"
+          }
+        },
+        "direct-children": {
+          "links": {
+            "related": "https://api.gleif.org/api/v1/lei-records/5493000EXHOLD0000105/direct-children"
+          }
+        }
+      },
+      "links": {
+        "self": "https://api.gleif.org/api/v1/lei-records/5493000EXHOLD0000105"
+      }
+    },
+    {
+      "type": "lei-records",
+      "id": "5493000EXMIXD0000816",
+      "attributes": {
+        "lei": "5493000EXMIXD0000816",
+        "entity": {
+          "legalName": {
+            "name": "EXAMPLE HOLDINGS GROUP PLC",
+            "language": "en"
+          },
+          "otherNames": [],
+          "transliteratedOtherNames": [],
+          "legalAddress": {
+            "language": "en",
+            "addressLines": [
+              "1 Example Street"
+            ],
+            "addressNumber": null,
+            "addressNumberWithinBuilding": null,
+            "mailRouting": null,
+            "city": "Exampleton",
+            "region": null,
+            "country": "GB",
+            "postalCode": "EX1 2MP"
+          },
+          "headquartersAddress": {
+            "language": "en",
+            "addressLines": [
+              "1 Example Street"
+            ],
+            "city": "Exampleton",
+            "region": null,
+            "country": "GB",
+            "postalCode": "EX1 2MP"
+          },
+          "registeredAt": {
+            "id": "RA000585",
+            "other": null
+          },
+          "registeredAs": "07654321",
+          "jurisdiction": "GB",
+          "category": "GENERAL",
+          "legalForm": {
+            "id": "H0PO",
+            "other": null
+          },
+          "associatedEntity": {
+            "lei": null,
+            "name": null
+          },
+          "status": "ACTIVE",
+          "expiration": {
+            "date": null,
+            "reason": null
+          },
+          "successorEntity": {
+            "lei": null,
+            "name": null
+          },
+          "successorEntities": [],
+          "creationDate": "2004-05-06T00:00:00Z",
+          "subCategory": null,
+          "otherAddresses": [],
+          "eventGroups": []
+        },
+        "registration": {
+          "initialRegistrationDate": "2014-02-03T09:00:00Z",
+          "lastUpdateDate": "2026-09-01T08:00:00Z",
+          "status": "ISSUED",
+          "nextRenewalDate": "2027-02-03T09:00:00Z",
+          "managingLou": "5493001KJTIIGC8Y1R12",
+          "corroborationLevel": "FULLY_CORROBORATED",
+          "validatedAt": {
+            "id": "RA000585",
+            "other": null
+          },
+          "validatedAs": "07654321"
+        },
+        "bic": null,
+        "mic": null,
+        "ocid": null,
+        "spglobal": [],
+        "conformityFlag": "CONFORMING"
+      },
+      "relationships": {
+        "managing-lou": {
+          "links": {
+            "related": "https://api.gleif.org/api/v1/lei-records/5493000EXMIXD0000816/managing-lou"
+          }
+        },
+        "direct-parent": {
+          "links": {
+            "relationship-record": "https://api.gleif.org/api/v1/lei-records/5493000EXMIXD0000816/direct-parent-relationship",
+            "lei-record": "https://api.gleif.org/api/v1/lei-records/5493000EXMIXD0000816/direct-parent"
+          }
+        },
+        "ultimate-parent": {
+          "links": {
+            "relationship-record": "https://api.gleif.org/api/v1/lei-records/5493000EXMIXD0000816/ultimate-parent-relationship",
+            "lei-record": "https://api.gleif.org/api/v1/lei-records/5493000EXMIXD0000816/ultimate-parent"
+          }
+        },
+        "direct-children": {
+          "links": {
+            "related": "https://api.gleif.org/api/v1/lei-records/5493000EXMIXD0000816/direct-children"
+          }
+        }
+      },
+      "links": {
+        "self": "https://api.gleif.org/api/v1/lei-records/5493000EXMIXD0000816"
+      }
+    }
+  ]
+}
