@@ -1,0 +1,23 @@
+[project]
+name = "nightloom-shuttle-github"
+version = "0.3.0"
+description = "Built-in Nightloom Shuttles for public code on GitHub: an organization's repositories."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+dependencies = [
+    "httpx>=0.28.1",
+    "nightloom-core",
+    "nightloom-sdk",
+]
+
+[project.entry-points."nightloom.shuttles"]
+github-repos = "nightloom_shuttle_github:GithubRepositoriesShuttle"
+
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+nightloom-core = { workspace = true }
+nightloom-sdk = { workspace = true }

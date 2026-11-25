@@ -163,6 +163,7 @@ def test_built_in_shuttles_cache_lifetimes() -> None:
         "wikidata": 7 * day,
         "hibp-breaches": day,
         "hibp-account": day,
+        "github-repos": day,
         # Evidence belongs to one case: never reused.
         "screenshot": 0,
     }

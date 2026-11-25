@@ -271,6 +271,8 @@ services:
       NIGHTLOOM_BROWSER_URL: ${NIGHTLOOM_BROWSER_URL:-ws://browser:3000/}
       # The operator's Have I Been Pwned API key (only the hibp-account Shuttle needs it).
       NIGHTLOOM_HIBP_API_KEY: ${NIGHTLOOM_HIBP_API_KEY:-}
+      # An optional GitHub token for the GitHub Shuttles (60 requests an hour without).
+      NIGHTLOOM_GITHUB_TOKEN: ${NIGHTLOOM_GITHUB_TOKEN:-}
     # The default network, and the internal one the browser service is on.
     networks:
       - default
