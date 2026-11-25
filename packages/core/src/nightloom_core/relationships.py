@@ -42,6 +42,10 @@ class RelationType(StrEnum):
     HAS_FAVICON = "HAS_FAVICON"
     REGISTERED_BY = "REGISTERED_BY"
     HAS_EMAIL = "HAS_EMAIL"
+    # The source breach was of the target's site (its accounts leaked).
+    BREACH_OF = "BREACH_OF"
+    # The source address is among the accounts in the target breach.
+    EXPOSED_IN = "EXPOSED_IN"
     ACCOUNT_OF = "ACCOUNT_OF"
     MENTIONS = "MENTIONS"
     RELATED_TO = "RELATED_TO"
@@ -76,6 +80,8 @@ ALLOWED: dict[RelationType, frozenset[Pair]] = {
     RelationType.HAS_FAVICON: _pairs([E.DOMAIN, E.URL], [E.FAVICON]),
     RelationType.REGISTERED_BY: _pairs([E.DOMAIN], [E.ORGANIZATION]),
     RelationType.HAS_EMAIL: _pairs([E.DOMAIN], [E.EMAIL]),
+    RelationType.BREACH_OF: _pairs([E.BREACH], [E.DOMAIN]),
+    RelationType.EXPOSED_IN: _pairs([E.EMAIL], [E.BREACH]),
     RelationType.ACCOUNT_OF: _pairs([E.USERNAME, E.SOCIAL_PROFILE, E.EMAIL], [E.PERSON]),
     RelationType.MENTIONS: _pairs([E.DOCUMENT], EntityType),
     RelationType.RELATED_TO: _pairs(EntityType, EntityType),

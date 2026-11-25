@@ -327,6 +327,32 @@ def test_invalid_lei_properties(properties: dict[str, Any]) -> None:
         build_entity(EntityType.ORGANIZATION, "Example Holdings", properties)
 
 
+def test_breach_properties() -> None:
+    breach = build_entity(
+        EntityType.BREACH,
+        "ExampleShop",
+        {
+            "title": "Example Shop",
+            "breach_date": "2024-03-01",
+            "added_at": "2024-05-02T10:00:00Z",
+            "record_count": 1200,
+            "data_classes": ["Email addresses", "Passwords"],
+            "verified": True,
+            "fabricated": False,
+            "spam_list": False,
+            "malware": False,
+        },
+    )
+    stored = breach.stored_properties()
+    assert stored["title"] == "Example Shop"
+    assert stored["verified"] is True and stored["fabricated"] is False
+    assert stored["data_classes"] == ["Email addresses", "Passwords"]
+    with pytest.raises(ValidationError):
+        build_entity(EntityType.BREACH, "ExampleShop", {"added_at": "2024-05-02T10:00:00"})
+    with pytest.raises(ValidationError):
+        build_entity(EntityType.BREACH, "ExampleShop", {"record_count": -1})
+
+
 def test_reverse_dns_property_of_ip_addresses() -> None:
     ip = build_entity(
         EntityType.IP_ADDRESS,
