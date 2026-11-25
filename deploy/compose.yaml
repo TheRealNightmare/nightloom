@@ -69,7 +69,7 @@ services:
       start_period: 30s
 
   valkey:
-    image: valkey/valkey:9.0.7-alpine
+    image: valkey/valkey:9.2.0-alpine
     restart: unless-stopped
     # The password is interpolated by Compose so the image's entrypoint still
     # drops root privileges before starting the server.
@@ -347,7 +347,7 @@ services:
   # `up` (profile `tools`); run it with `docker compose ... run --rm s3-tools`.
   # The remote is called `store`, e.g. `s3-tools lsf store:nightloom-evidence`.
   s3-tools:
-    image: rclone/rclone:1.75.2
+    image: rclone/rclone:1.76.0
     profiles: [tools]
     restart: "no"
     environment:
