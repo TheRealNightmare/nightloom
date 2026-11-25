@@ -80,8 +80,8 @@ Person-related Shuttles are opt-in per case (`allow_person_entities`), declare `
 - [ ] Organization Shuttles
   - [x] 4.1 Legal entity records and corporate parents from GLEIF (`gleif`; `SUBSIDIARY_OF`)
   - [x] 4.2 Organization facts from Wikidata (`wikidata`): official websites, country, LEI, industry, parents and subsidiaries; the organizations behind a domain
-- [ ] Breach/leak metadata Shuttles
-  - [ ] 4.3 Breaches of a site (Have I Been Pwned's public breach list, no key: name, date, data types, account count), and the breaches an email address appears in (the operator's own HIBP key; person-gated). Never passwords, paste contents or credentials
+- [x] Breach/leak metadata Shuttles
+  - [x] 4.3 Breaches of a site (Have I Been Pwned's public breach list, no key: name, date, data types, account count), and the breaches an email address appears in (the operator's own HIBP key; person-gated). Never passwords, paste contents or credentials
 - [ ] Code-intelligence Shuttles
   - [ ] 4.4 Repositories: an organization's public GitHub repositories and their languages, topics and homepages (new Repository type; optional GitHub token for higher rate limits)
   - [ ] 4.5 Commit authors: the usernames and email addresses in a public repository's recent history (person-gated)
