@@ -16,6 +16,7 @@ members = [
     "nightloom-shuttle-crtsh",
     "nightloom-shuttle-dns",
     "nightloom-shuttle-gleif",
+    "nightloom-shuttle-hibp",
     "nightloom-shuttle-internetdb",
     "nightloom-shuttle-rdap",
     "nightloom-shuttle-registrable-domain",
@@ -2218,6 +2219,23 @@ requires-dist = [
 ]
 
 [[package]]
+name = "nightloom-shuttle-hibp"
+version = "0.3.0"
+source = { editable = "shuttles/hibp" }
+dependencies = [
+    { name = "httpx" },
+    { name = "nightloom-core" },
+    { name = "nightloom-sdk" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "nightloom-core", editable = "packages/core" },
+    { name = "nightloom-sdk", editable = "packages/sdk" },
+]
+
+[[package]]
 name = "nightloom-shuttle-internetdb"
 version = "0.3.0"
 source = { editable = "shuttles/internetdb" }
@@ -2374,6 +2392,7 @@ dependencies = [
     { name = "nightloom-shuttle-crtsh" },
     { name = "nightloom-shuttle-dns" },
     { name = "nightloom-shuttle-gleif" },
+    { name = "nightloom-shuttle-hibp" },
     { name = "nightloom-shuttle-internetdb" },
     { name = "nightloom-shuttle-rdap" },
     { name = "nightloom-shuttle-registrable-domain" },
@@ -2394,6 +2413,7 @@ requires-dist = [
     { name = "nightloom-shuttle-crtsh", editable = "shuttles/crtsh" },
     { name = "nightloom-shuttle-dns", editable = "shuttles/dns" },
     { name = "nightloom-shuttle-gleif", editable = "shuttles/gleif" },
+    { name = "nightloom-shuttle-hibp", editable = "shuttles/hibp" },
     { name = "nightloom-shuttle-internetdb", editable = "shuttles/internetdb" },
     { name = "nightloom-shuttle-rdap", editable = "shuttles/rdap" },
     { name = "nightloom-shuttle-registrable-domain", editable = "shuttles/registrable-domain" },
