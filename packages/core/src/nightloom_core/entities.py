@@ -50,6 +50,7 @@ class EntityType(StrEnum):
     IMAGE = "image"
     BREACH = "breach"
     FAVICON = "favicon"
+    REPOSITORY = "repository"
 
 
 class Sensitivity(StrEnum):
@@ -99,6 +100,10 @@ Jurisdiction = Annotated[
 ]
 # A Wikidata item ID, such as Q95.
 WikidataId = Annotated[str, Field(max_length=100), _matching(r"Q[1-9][0-9]{0,11}", upper=True)]
+# A GitHub account name: letters, digits and single hyphens, at most 39 characters.
+GithubLogin = Annotated[
+    str, Field(max_length=100), _matching(r"[a-z0-9](?:-?[a-z0-9]){0,38}", upper=False)
+]
 # A status word from a registry, such as ACTIVE or LAPSED.
 StatusCode = Annotated[str, Field(max_length=100), _matching(r"[A-Z][A-Z_]{0,39}", upper=True)]
 MimeType = Annotated[
@@ -476,7 +481,8 @@ class OrganizationProperties(Properties):
     LEI's registration: ``ISSUED``, ``LAPSED``, ``RETIRED``...) and
     ``gleif_checked_at`` (when GLEIF was asked). ``wikidata_id`` is its
     Wikidata item, written with ``wikidata_checked_at`` by the Wikidata
-    Shuttle.
+    Shuttle. ``github_login`` is its GitHub organization account, written
+    with ``github_checked_at`` by the GitHub repositories Shuttle.
     """
 
     country: CountryCode | None = None
@@ -491,6 +497,8 @@ class OrganizationProperties(Properties):
     gleif_checked_at: AwareDatetime | None = None
     wikidata_id: WikidataId | None = None
     wikidata_checked_at: AwareDatetime | None = None
+    github_login: GithubLogin | None = None
+    github_checked_at: AwareDatetime | None = None
 
 
 class UsernameProperties(Properties):
@@ -521,6 +529,31 @@ class ImageProperties(Properties):
     sha256: Sha256Hex | None = None
     width: int | None = Field(default=None, ge=1, le=100_000)
     height: int | None = Field(default=None, ge=1, le=100_000)
+
+
+class RepositoryProperties(Properties):
+    """A public source code repository, as its code forge describes it.
+
+    Written by the GitHub Shuttles: ``description`` (cut to 200 characters),
+    the main ``language``, ``topics``, ``license`` (an SPDX ID), ``stars``,
+    ``forks``, whether it is a ``fork`` or ``archived``, its ``homepage``,
+    ``default_branch``, when it was ``created_at`` and last ``pushed_at``,
+    and ``github_checked_at``.
+    """
+
+    description: ShortText | None = None
+    language: ShortText | None = None
+    topics: list[ShortText] | None = Field(default=None, max_length=20)
+    license: ShortText | None = None
+    stars: int | None = Field(default=None, ge=0)
+    forks: int | None = Field(default=None, ge=0)
+    fork: bool | None = None
+    archived: bool | None = None
+    homepage: UrlText | None = None
+    default_branch: ShortText | None = None
+    created_at: AwareDatetime | None = None
+    pushed_at: AwareDatetime | None = None
+    github_checked_at: AwareDatetime | None = None
 
 
 class FaviconProperties(Properties):
@@ -848,6 +881,25 @@ class Favicon(EntityBase):
     properties_model = FaviconProperties
 
 
+class Repository(EntityBase):
+    """A public source code repository on a code forge.
+
+    The value is ``<forge host>/<owner>/<name>`` in lower case (``github.com/
+    example-org/widgets``); GitHub, GitLab, Codeberg and Bitbucket addresses
+    are accepted in their usual forms (web or clone URLs, ``owner/name`` for
+    GitHub). Owner and name are case-insensitive on these forges.
+    """
+
+    type: Literal[EntityType.REPOSITORY] = EntityType.REPOSITORY
+    entity_type = EntityType.REPOSITORY
+    label = "Repository"
+    sensitivity = Sensitivity.ORGANIZATION
+    display_name = "Repository"
+    hint = "A public repository, such as github.com/example-org/widgets."
+    example = "github.com/example-org/widgets"
+    properties_model = RepositoryProperties
+
+
 ENTITY_MODELS: dict[EntityType, type[EntityBase]] = {
     model.entity_type: model
     for model in (
@@ -871,6 +923,7 @@ ENTITY_MODELS: dict[EntityType, type[EntityBase]] = {
         Image,
         Breach,
         Favicon,
+        Repository,
     )
 }
 
@@ -894,7 +947,8 @@ AnyEntity = Annotated[
     | Document
     | Image
     | Breach
-    | Favicon,
+    | Favicon
+    | Repository,
     Field(discriminator="type"),
 ]
 
@@ -948,6 +1002,7 @@ __all__ = [
     "EntityBase",
     "EntityType",
     "Favicon",
+    "GithubLogin",
     "IPAddress",
     "Image",
     "Location",
@@ -956,6 +1011,8 @@ __all__ = [
     "Person",
     "Phone",
     "Properties",
+    "Repository",
+    "RepositoryProperties",
     "Sensitivity",
     "Service",
     "SocialProfile",

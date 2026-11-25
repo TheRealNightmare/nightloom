@@ -30,6 +30,7 @@ export const ENTITY_TYPES = [
   "image",
   "breach",
   "favicon",
+  "repository",
 ] as const;
 
 export type EntityType = (typeof ENTITY_TYPES)[number];
@@ -87,6 +88,7 @@ export const ENTITY_TYPE_INFO: Readonly<Record<EntityType, EntityTypeInfo>> = {
   image: { label: "Image", plural: "Images", color: colorOf("image") },
   breach: { label: "Breach", plural: "Breaches", color: colorOf("breach") },
   favicon: { label: "Favicon", plural: "Favicons", color: colorOf("favicon") },
+  repository: { label: "Repository", plural: "Repositories", color: colorOf("repository") },
 };
 
 /** Provenance carried by every node and edge (see docs/ARCHITECTURE.md#provenance). */

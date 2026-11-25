@@ -517,6 +517,53 @@ def normalize_favicon(value: str) -> str:
     return str(number)
 
 
+# --- repositories ------------------------------------------------------------------------
+
+# The code forges a Repository can be on (owner/name paths with these hosts).
+REPOSITORY_HOSTS = frozenset({"github.com", "gitlab.com", "codeberg.org", "bitbucket.org"})
+REPOSITORY_INVALID = (
+    "A repository is a public repository's address, such as github.com/example-org/widgets "
+    "(GitHub, GitLab, Codeberg or Bitbucket)."
+)
+_REPOSITORY_OWNER = re.compile(r"[a-z0-9](?:[a-z0-9._-]{0,98}[a-z0-9_])?")
+_REPOSITORY_NAME = re.compile(r"[a-z0-9._-]{1,100}")
+_SCP_REMOTE = re.compile(r"git@([^:/]+):(.+)")
+
+
+def normalize_repository(value: str) -> str:
+    """A repository as ``<host>/<owner>/<name>`` in lower case.
+
+    Accepts ``github.com/owner/name``, web addresses (``https://github.com/
+    owner/name/tree/main``: anything after the name is dropped), clone
+    addresses (``https://.../name.git``, ``git@github.com:owner/name.git``)
+    and ``owner/name``, which means GitHub.
+    """
+    text = _token(value, "Repository").lower()
+    scp = _SCP_REMOTE.fullmatch(text)
+    if scp is not None:
+        text = f"{scp.group(1)}/{scp.group(2)}"
+    for prefix in ("https://", "http://", "ssh://git@", "git://"):
+        if text.startswith(prefix):
+            text = text[len(prefix) :]
+            break
+    text = text.split("?", 1)[0].split("#", 1)[0]
+    parts = [part for part in text.split("/") if part]
+    if parts and parts[0].startswith("www."):
+        parts[0] = parts[0][4:]
+    if len(parts) == 2 and parts[0] not in REPOSITORY_HOSTS:
+        parts = ["github.com", *parts]
+    if len(parts) < 3 or parts[0] not in REPOSITORY_HOSTS:
+        raise NormalizationError(REPOSITORY_INVALID)
+    host, owner, name = parts[0], parts[1], parts[2].removesuffix(".git")
+    if (
+        not _REPOSITORY_OWNER.fullmatch(owner)
+        or not _REPOSITORY_NAME.fullmatch(name)
+        or name in (".", "..")
+    ):
+        raise NormalizationError(REPOSITORY_INVALID)
+    return f"{host}/{owner}/{name}"
+
+
 def normalize_crypto_wallet(value: str) -> str:
     """A wallet address prefixed with its chain: ``btc:<address>`` or ``eth:0x<hex>``.
 
@@ -626,6 +673,8 @@ def normalize(
             canonical = normalize_crypto_wallet(value)
         case EntityType.FAVICON:
             canonical = normalize_favicon(value)
+        case EntityType.REPOSITORY:
+            canonical = normalize_repository(value)
         case _:
             display = normalize_text(value)
             return Normalized(entity_type, display, f"{entity_type.value}:{text_key(display)}")
