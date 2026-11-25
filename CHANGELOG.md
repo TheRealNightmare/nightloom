@@ -16,6 +16,8 @@ How releases are cut is described in [docs/RELEASING.md](docs/RELEASING.md).
 - Organization facts: the **Organization facts (Wikidata)** Shuttle (`wikidata`, in the new `shuttles/wikidata` package, passive) reads Wikidata (free, no key, CC0). For an organization, found by its exact English name or alias, an item ID as its name, or its `wikidata_id` or `lei` property: its official websites as Domains it `OWNS`, its country, LEI and industry, and its parent organizations and subsidiaries with `SUBSIDIARY_OF`. For a domain: the organizations whose official website it is. An ambiguous name adds nothing (the note lists the item IDs), items that are people are never kept, and it never runs in an auto-pivot.
 - Organization properties `wikidata_id` and `wikidata_checked_at`.
 - The side panel's *Public records* links an organization to its LEI record on GLEIF's search site and to its Wikidata item.
+- Breaches: the new `shuttles/hibp` package, breach metadata from Have I Been Pwned (CC BY 4.0), never passwords or leaked records. **Breaches of a site** (`hibp-breaches`, Domain, no key) lists a site's breaches from HIBP's public list; **Breaches of an email address** (`hibp-account`, Email, person-related) lists the breaches an address is in, with the operator's paid HIBP key in `NIGHTLOOM_HIBP_API_KEY`, and leaves out sensitive breaches. Neither runs in an auto-pivot.
+- Relationship types `BREACH_OF` (Breach → Domain) and `EXPOSED_IN` (Email → Breach); Breach properties `title`, `added_at`, `verified`, `fabricated`, `spam_list` and `malware`.
 
 ## [0.3.0] - 2026-11-23
 

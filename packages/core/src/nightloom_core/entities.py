@@ -533,9 +533,24 @@ class FaviconProperties(Properties):
 
 
 class BreachProperties(Properties):
+    """What is known about a published breach: never the leaked records themselves.
+
+    ``breach_date`` is when it happened, ``record_count`` how many accounts it
+    held and ``data_classes`` what kinds of data leaked ("Email addresses",
+    "Passwords"...). The Have I Been Pwned Shuttles add its ``title``, when
+    HIBP ``added_at`` it, and whether HIBP ``verified`` it or found it
+    ``fabricated``, a ``spam_list`` or ``malware`` data.
+    """
+
     breach_date: date | None = None
     record_count: int | None = Field(default=None, ge=0)
     data_classes: list[ShortText] | None = Field(default=None, max_length=50)
+    title: ShortText | None = None
+    added_at: AwareDatetime | None = None
+    verified: bool | None = None
+    fabricated: bool | None = None
+    spam_list: bool | None = None
+    malware: bool | None = None
 
 
 # --- entities ----------------------------------------------------------------------------

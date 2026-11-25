@@ -211,6 +211,17 @@ make check-browser           # it cannot reach the internet, and the worker draw
 
 It is built on the server from [`deploy/browser`](../deploy/browser/Dockerfile) (no release image is published for it). It is on an internal Compose network with the worker only and has no route out: every request a page makes is fetched by the worker through the same checks as any Shuttle. Without it, screenshot jobs fail with a note saying how to start it. Pass `SCREENSHOTS=1` to `make down`, `make ps` and `make logs` too. On an 8 GB host it fits, but leave it off unless you use screenshots.
 
+## Breaches of an email address (optional)
+
+The *Breaches of an email address* Shuttle (`hibp-account`) asks [Have I Been Pwned](https://haveibeenpwned.com/) which published breaches an address is in. HIBP serves that only to [paid subscribers](https://haveibeenpwned.com/API/Key), so it needs your key. Put it in `.env` and restart the worker:
+
+```sh
+NIGHTLOOM_HIBP_API_KEY=0123456789abcdef0123456789abcdef   # your key: 32 hex characters
+make up
+```
+
+The key stays in the worker's environment: it is never stored with a case, logged or shown, and backups do not include it (they never include `.env`). A malformed key stops the worker at start with a message naming the variable. Without a key the Shuttle stays listed and its jobs fail with a note saying what to set. The *Breaches of a site* Shuttle (`hibp-breaches`) uses HIBP's free public list and needs nothing. Like every Shuttle on an email address, `hibp-account` only runs in cases whose owner allowed person-related entities.
+
 ## Small hosts and Raspberry Pi
 
 A **Raspberry Pi 4B with 8 GB** runs Nightloom for a small team, with these settings:

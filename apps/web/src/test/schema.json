@@ -272,6 +272,16 @@
       "pairs": [["domain", "email"]]
     },
     {
+      "type": "BREACH_OF",
+      "note_required": false,
+      "pairs": [["breach", "domain"]]
+    },
+    {
+      "type": "EXPOSED_IN",
+      "note_required": false,
+      "pairs": [["email", "breach"]]
+    },
+    {
       "type": "ACCOUNT_OF",
       "note_required": false,
       "pairs": [
