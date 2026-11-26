@@ -1,7 +1,7 @@
 [project]
 name = "nightloom-shuttle-github"
 version = "0.3.0"
-description = "Built-in Nightloom Shuttles for public code on GitHub: an organization's repositories, a repository's commit authors and exposed secrets."
+description = "Built-in Nightloom Shuttles for public code on GitHub: an organization's repositories, a repository's commit authors and exposed secrets, and a username's public profile."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
@@ -15,6 +15,7 @@ dependencies = [
 github-repos = "nightloom_shuttle_github:GithubRepositoriesShuttle"
 github-commits = "nightloom_shuttle_github:GithubCommitsShuttle"
 github-secrets = "nightloom_shuttle_github:GithubSecretsShuttle"
+github-user = "nightloom_shuttle_github:GithubProfileShuttle"
 
 [build-system]
 requires = ["uv_build>=0.13.0,<0.14.0"]

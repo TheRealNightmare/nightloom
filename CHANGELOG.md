@@ -24,6 +24,8 @@ How releases are cut is described in [docs/RELEASING.md](docs/RELEASING.md).
 - Relationship types `CONTRIBUTED_TO` (Username or Email → Repository) and `USES_EMAIL` (Username → Email).
 - Exposed secrets: the **Exposed secrets in a repository (GitHub)** Shuttle (`github-secrets`, passive) scans the lines a public GitHub repository's latest commits added (10, or 30 with `NIGHTLOOM_GITHUB_TOKEN`) for likely secrets in precise formats (AWS, GitHub, GitLab, Slack, Stripe, Google, SendGrid, npm, OpenAI and Anthropic keys and tokens, unencrypted private keys). Each becomes an exposed secret located by repository, commit, file and line, with links to the commit and the line. The secret itself is never kept, in any form, and never tested.
 - Entity type `secret_exposure` (*Exposed secret*: `<repository>@<commit>/<path>#L<line>`, with `kind`, `commit_url`, `file_url`, `committed_at`) and relationship type `HAS_EXPOSURE` (Repository → SecretExposure).
+- Public profiles, both person-related (they run only in cases that allow it, never in an auto-pivot): **Public profile of a username (GitHub)** (`github-user`) reads a username's GitHub profile (display name, company, website, creation date, counts) as a SocialProfile; **Public profile of an email address (Gravatar)** (`gravatar`, new `shuttles/gravatar` package) looks an address up by its SHA-256 hash and adds its profile and the accounts its owner verified there. Neither keeps photos, locations, bios or descriptions.
+- Relationship types `HAS_PROFILE` (Username or Email → SocialProfile) and `LINKED_ACCOUNT` (SocialProfile → SocialProfile); SocialProfile properties `display_name`, `company`, `job_title`, `website`, `created_at`, `followers` and `public_repos`.
 
 ## [0.3.0] - 2026-11-23
 

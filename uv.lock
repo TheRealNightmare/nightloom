@@ -17,6 +17,7 @@ members = [
     "nightloom-shuttle-dns",
     "nightloom-shuttle-github",
     "nightloom-shuttle-gleif",
+    "nightloom-shuttle-gravatar",
     "nightloom-shuttle-hibp",
     "nightloom-shuttle-internetdb",
     "nightloom-shuttle-rdap",
@@ -2237,6 +2238,23 @@ requires-dist = [
 ]
 
 [[package]]
+name = "nightloom-shuttle-gravatar"
+version = "0.3.0"
+source = { editable = "shuttles/gravatar" }
+dependencies = [
+    { name = "httpx" },
+    { name = "nightloom-core" },
+    { name = "nightloom-sdk" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "nightloom-core", editable = "packages/core" },
+    { name = "nightloom-sdk", editable = "packages/sdk" },
+]
+
+[[package]]
 name = "nightloom-shuttle-hibp"
 version = "0.3.0"
 source = { editable = "shuttles/hibp" }
@@ -2411,6 +2429,7 @@ dependencies = [
     { name = "nightloom-shuttle-dns" },
     { name = "nightloom-shuttle-github" },
     { name = "nightloom-shuttle-gleif" },
+    { name = "nightloom-shuttle-gravatar" },
     { name = "nightloom-shuttle-hibp" },
     { name = "nightloom-shuttle-internetdb" },
     { name = "nightloom-shuttle-rdap" },
@@ -2433,6 +2452,7 @@ requires-dist = [
     { name = "nightloom-shuttle-dns", editable = "shuttles/dns" },
     { name = "nightloom-shuttle-github", editable = "shuttles/github" },
     { name = "nightloom-shuttle-gleif", editable = "shuttles/gleif" },
+    { name = "nightloom-shuttle-gravatar", editable = "shuttles/gravatar" },
     { name = "nightloom-shuttle-hibp", editable = "shuttles/hibp" },
     { name = "nightloom-shuttle-internetdb", editable = "shuttles/internetdb" },
     { name = "nightloom-shuttle-rdap", editable = "shuttles/rdap" },

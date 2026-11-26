@@ -1,6 +1,6 @@
 # nightloom-shuttle-github
 
-Built-in Nightloom Shuttles for **public code on GitHub**, through the [GitHub REST API](https://docs.github.com/en/rest). It holds an organization's repositories, a repository's commit authors and the likely secrets in its recent commits.
+Built-in Nightloom Shuttles for **public code on GitHub**, through the [GitHub REST API](https://docs.github.com/en/rest). It holds an organization's repositories, a repository's commit authors and the likely secrets in its recent commits, and a username's public profile.
 
 | Shuttle | Input | Asks | Findings |
 | --- | --- | --- | --- |
@@ -9,6 +9,8 @@ Built-in Nightloom Shuttles for **public code on GitHub**, through the [GitHub R
 | `github-commits` (*Commit authors of a repository*) | Repository (GitHub only) | `GET /repos/<owner>/<name>/commits?per_page=100` | The GitHub accounts GitHub linked to the latest 100 commits as Usernames (`platform` GitHub) and the commit email addresses as Emails, each `CONTRIBUTED_TO` the repository (the note: how many commits, the latest date), and `USES_EMAIL` from an account to an address GitHub linked to it. At most 50 of each, most commits first |
 
 | `github-secrets` (*Exposed secrets in a repository*) | Repository (GitHub only) | `GET /repos/<owner>/<name>/commits?per_page=10` (30 with a token), then `GET /repos/<owner>/<name>/commits/<sha>` for each | Each line those commits added that holds a likely secret, as a SecretExposure (`<repository>@<sha>/<path>#L<line>`, with `kind`, `commit_url`, `file_url`, `committed_at`) and `HAS_EXPOSURE` from the repository; at most 50. Rated **B3** (0.6): a pattern match is likely, not certain, to be a live secret |
+
+| `github-user` (*Public profile of a username*) | Username | `GET /users/<login>` | The account's public profile as a SocialProfile `https://github.com/<login>` (`platform` GitHub, `profile_url`, `display_name`, `company`, `website`, `created_at`, `followers`, `public_repos`), `HAS_PROFILE` from the Username: **A2** if the Username's platform is GitHub, **C3** (0.5) if it has none. Never the photo, location, bio or email address |
 
 A Repository is named `github.com/<owner>/<name>` (lower case) and carries `description` (cut to 200 characters), `language`, `topics`, `license` (SPDX ID), `stars`, `forks`, `fork`, `archived`, `homepage`, `default_branch`, `created_at`, `pushed_at` and `github_checked_at`.
 

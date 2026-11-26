@@ -507,10 +507,25 @@ class UsernameProperties(Properties):
 
 
 class SocialProfileProperties(Properties):
+    """A public profile on a platform.
+
+    The profile Shuttles add what the profile itself shows publicly:
+    ``display_name``, ``company`` and ``job_title`` (as typed by its owner),
+    a ``website``, when the account was ``created_at``, and counts of
+    ``followers`` and ``public_repos``. Never a photo, a location or a bio.
+    """
+
     platform: ShortText | None = None
     profile_url: (
         Annotated[str, StringConstraints(strip_whitespace=True, max_length=2048)] | None
     ) = None
+    display_name: ShortText | None = None
+    company: ShortText | None = None
+    job_title: ShortText | None = None
+    website: UrlText | None = None
+    created_at: AwareDatetime | None = None
+    followers: int | None = Field(default=None, ge=0)
+    public_repos: int | None = Field(default=None, ge=0)
 
 
 class LocationProperties(Properties):

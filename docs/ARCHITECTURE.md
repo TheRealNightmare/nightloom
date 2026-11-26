@@ -29,7 +29,7 @@ flowchart LR
 | `apps/worker` | Celery worker that runs Shuttle jobs (see [Jobs](#jobs-and-the-worker)) and releases (and expands) profile runs |
 | `packages/core` | Shared entity model (`nightloom-core`): entity types, canonical keys, relationship allow-list, provenance |
 | `packages/sdk` | Shuttle SDK (`nightloom-sdk`): the [Shuttle contract](#shuttle-contract), the guarded HTTP client, the registry, test helpers |
-| `shuttles/` | Built-in Shuttles, one package each: `registrable-domain` (no network), [`dns`](#the-dns-shuttle) and [`reverse-dns`](#the-reverse-dns-shuttle) (one package), [`crtsh`](#the-crtsh-shuttle), [`rdap`](#the-rdap-shuttle), [`ripestat`](#the-ripestat-shuttle), [`internetdb`](#the-internetdb-shuttle), [`gleif`](#the-gleif-shuttle), [`wikidata`](#the-wikidata-shuttle), [`hibp-breaches` and `hibp-account`](#the-have-i-been-pwned-shuttles), [`github-repos`, `github-commits` and `github-secrets`](#the-github-shuttles) and [`wayback`](#the-wayback-shuttle) |
+| `shuttles/` | Built-in Shuttles, one package each: `registrable-domain` (no network), [`dns`](#the-dns-shuttle) and [`reverse-dns`](#the-reverse-dns-shuttle) (one package), [`crtsh`](#the-crtsh-shuttle), [`rdap`](#the-rdap-shuttle), [`ripestat`](#the-ripestat-shuttle), [`internetdb`](#the-internetdb-shuttle), [`gleif`](#the-gleif-shuttle), [`wikidata`](#the-wikidata-shuttle), [`hibp-breaches` and `hibp-account`](#the-have-i-been-pwned-shuttles), [`github-repos`, `github-commits`, `github-secrets` and `github-user`](#the-github-shuttles), [`gravatar`](#the-gravatar-shuttle) and [`wayback`](#the-wayback-shuttle) |
 | PostgreSQL | Users, cases, jobs, audit log, encrypted API keys |
 | Neo4j | Entities and relationships |
 | Valkey (Redis-compatible) | Celery broker, rate-limit counters, result cache |
@@ -439,7 +439,7 @@ Each type is a Pydantic model (`nightloom_core.entities`) with a canonical `valu
 | `email` | `Email` | **person** | |
 | `username` | `Username` | **person** | `platform` |
 | `phone` | `Phone` | **person** | |
-| `social_profile` | `SocialProfile` | **person** | `platform`, `profile_url` |
+| `social_profile` | `SocialProfile` | **person** | `platform`, `profile_url`; from the profile Shuttles also `display_name`, `company`, `job_title`, `website`, `created_at`, `followers`, `public_repos` (never a photo, location or bio) |
 | `location` | `Location` | **person** (a place next to a person is sensitive) | `latitude`, `longitude`, `country` |
 | `image` | `Image` | **person** (images can show people) | `mime_type`, `sha256`, `width`, `height` |
 | `favicon` | `Favicon` | infrastructure | `sha256`, `md5`, `mime_type`, `size_bytes` (written by the [favicon Shuttle](#website-visits)) |
@@ -492,6 +492,8 @@ Relationship types (`nightloom_core.relationships`) have an explicit allow-list 
 | `CONTRIBUTED_TO` | Username or Email → Repository: authored commits there (the note says how many, and the latest date) |
 | `USES_EMAIL` | Username → Email: the account committed with the address, as the forge linked them |
 | `HAS_EXPOSURE` | Repository → SecretExposure: a likely secret was published there (the note: its kind) |
+| `HAS_PROFILE` | Username or Email → SocialProfile: the account or address has this public profile |
+| `LINKED_ACCOUNT` | SocialProfile → SocialProfile: the profile lists the target as another account of its owner (for Gravatar, one it verified) |
 | `BREACH_OF` | Breach → Domain: the breach was of that site |
 | `EXPOSED_IN` | Email → Breach: the address is among the breached accounts |
 | `SUBSIDIARY_OF` | Organization → Organization: the source is owned by the target (its parent company), as reported in the source's LEI record; the note says `direct parent`, `ultimate parent` or both |
@@ -858,7 +860,13 @@ Each `CONTRIBUTED_TO` note says how many of the commits read were theirs and the
 
 **The secret is never kept**: no value, prefix, suffix or hash leaves the scanning module, in a finding, a note, a log or an error; the tests check every 8-character piece of each fake secret against everything the Shuttle returns. Within one run the same secret is reported once (its most recent commit), using a salted in-memory fingerprint that is discarded with the run. Nothing is tested or used: whether a key still works is for its owner to find out ([ETHICS.md](../ETHICS.md)). At most 50 exposures are kept; files without a patch (binary or too large), commits too large to fetch and the history beyond the commits read are noted.
 
+**`github-user`** (*Public profile of a username*, input Username, passive, **person**, cached 24 h, `pivots: false`) reads `users/<login>` and yields the account's public profile as a SocialProfile named `https://github.com/<login>` (`platform` GitHub, `profile_url`, `display_name`, `company`, `website`, `created_at`, `followers`, `public_repos`) with `HAS_PROFILE` from the Username. Never kept: the photo, location, bio, public email address or other accounts the profile names. An organization account gets a note (the repositories Shuttle reads those). A Username is only a name: one whose `platform` is GitHub (the commit authors Shuttle sets it) is linked **A2**; one without a platform **C3** (0.5) with a note that the account may be someone else's; one on another platform gets a note and nothing else.
+
 **The token.** Without one, GitHub allows 60 requests an hour from the server's address (`github-repos` takes 2 to 7 a run, `github-commits` one, `github-secrets` 11). The operator may set `NIGHTLOOM_GITHUB_TOKEN` (a fine-grained token with no permissions reads public data) for 5,000; it is read from the worker's environment like the [HIBP key](#the-have-i-been-pwned-shuttles), checked at start and never stored, logged or shown. A used-up limit (403 or 429 with `x-ratelimit-remaining: 0`) waits only if the reset is at most 30 seconds away, else fails as `source_unavailable` with a note; `Retry-After` (secondary limits) is waited for at most twice; 401 fails with a note about the token.
+
+### The Gravatar Shuttle
+
+[`shuttles/gravatar`](../shuttles/gravatar/) (`gravatar`, *Public profile of an email address*, input Email, passive, **person**, cached 24 h, A2/0.9, `pivots: false`) asks Gravatar's [REST API](https://docs.gravatar.com/api/profiles/rest-api/) (`api.gravatar.com/v3/profiles/<hash>`, no key) by the SHA-256 hash of the trimmed, lower-cased address, so the address itself is never sent. A profile becomes a SocialProfile named by its address (`platform` Gravatar, `profile_url`, `display_name`, `job_title`, `company`) with `HAS_PROFILE` from the Email; each account its owner **verified** on Gravatar and did not hide (at most 20) becomes a SocialProfile with `LINKED_ACCOUNT` from it (**B2**, 0.8; note *verified on Gravatar*). Never kept: the avatar, location, description, pronouns, pronunciation, or the unverified links a profile lists. 404 is "no public profile"; 429 and 5xx are handled like the other Shuttles.
 
 ### The Wayback Shuttle
 
