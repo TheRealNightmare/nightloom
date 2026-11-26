@@ -1,6 +1,6 @@
 [project]
 name = "nightloom-shuttle-usernames"
-version = "0.3.0"
+version = "0.4.0"
 description = "Built-in Nightloom Shuttle: on which platforms a username exists (leads only)."
 readme = "README.md"
 requires-python = ">=3.12"

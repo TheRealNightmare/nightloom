@@ -1,6 +1,6 @@
 [project]
 name = "nightloom-shuttle-web"
-version = "0.3.0"
+version = "0.4.0"
 description = "Built-in Nightloom Shuttles that visit a site's public pages like a browser: its robots.txt, security.txt and sitemap, the technologies its home page uses, and its favicon hash. They run where a case allows website visits, or on verified domains."
 readme = "README.md"
 requires-python = ">=3.12"
