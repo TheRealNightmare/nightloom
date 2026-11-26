@@ -29,6 +29,7 @@ import { announceNode, focusOrder, nextFocus } from "./focusOrder";
 import type { Point, Rect } from "./geometry";
 import {
   attachInteractions,
+  focusCameraState,
   freezeFrame,
   graphCamera,
   moveCamera,
@@ -82,6 +83,22 @@ export interface GraphCanvasHandle {
   getCamera: () => GraphCamera | null;
   /** Moves the camera there over `durationMs` (0: at once). */
   setCamera: (camera: GraphCamera, durationMs: number) => void;
+  /**
+   * Frames the graph again, at once, if the camera is still where the last
+   * framing put it: for when nodes moved without the user (the saved pins
+   * arrived, the first layout settled). 2D only.
+   */
+  refitIfUnmoved?: () => void;
+}
+
+/** Whether two camera states are the same (to tell whether the user moved it). */
+function sameCamera(a: CameraState, b: CameraState): boolean {
+  return (
+    Math.abs(a.x - b.x) < 1e-6 &&
+    Math.abs(a.y - b.y) < 1e-6 &&
+    Math.abs(a.ratio - b.ratio) < 1e-6 &&
+    Math.abs(a.angle - b.angle) < 1e-6
+  );
 }
 
 export interface GraphCanvasProps {
@@ -380,13 +397,7 @@ export function GraphCanvas({
     const sigma = sigmaInstance;
     const fitted = fittedRef.current;
     if (!sigma || !fitted) return;
-    const now = sigma.getCamera().getState();
-    const untouched =
-      Math.abs(now.x - fitted.x) < 1e-6 &&
-      Math.abs(now.y - fitted.y) < 1e-6 &&
-      Math.abs(now.ratio - fitted.ratio) < 1e-6 &&
-      Math.abs(now.angle - fitted.angle) < 1e-6;
-    if (untouched) fit(sigma, 0);
+    if (sameCamera(sigma.getCamera().getState(), fitted)) fit(sigma, 0);
   }, [coverKey, frameCover, sigmaInstance, fit]);
   // (Before sigma exists the cover is only remembered: creation fits with it.)
 
@@ -738,10 +749,9 @@ export function GraphCanvas({
           }
           void sigma
             .getCamera()
-            .animate(
-              { x: position.x, y: position.y, ratio: FOCUS_RATIO },
-              { duration: CAMERA_DURATION_MS },
-            );
+            .animate(focusCameraState(sigma, position, FOCUS_RATIO, coverRef.current), {
+              duration: CAMERA_DURATION_MS,
+            });
         };
         tryFocus();
       },
@@ -752,6 +762,16 @@ export function GraphCanvas({
         releaseFrame(sigma);
         sigma.refresh();
         fit(sigma, CAMERA_DURATION_MS);
+      },
+      refitIfUnmoved() {
+        const sigma = sigmaRef.current;
+        const fitted = fittedRef.current;
+        // Not after a drag froze the frame, nor once the user moved the camera.
+        if (!sigma || !fitted || sigma.getCustomBBox()) return;
+        if (!sameCamera(sigma.getCamera().getState(), fitted)) return;
+        // sigma maps nodes with the extent of its last render: draw the moved ones first.
+        sigma.refresh();
+        fit(sigma, 0);
       },
       zoomIn() {
         const sigma = sigmaRef.current;

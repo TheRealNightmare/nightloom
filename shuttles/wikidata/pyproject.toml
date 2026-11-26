@@ -1,6 +1,6 @@
 [project]
 name = "nightloom-shuttle-wikidata"
-version = "0.3.0"
+version = "0.4.0"
 description = "Built-in Nightloom Shuttle: organizations' official websites, country, industry, parents and subsidiaries, and the organizations behind a domain (Wikidata)."
 readme = "README.md"
 requires-python = ">=3.12"

@@ -32,7 +32,7 @@ import {
   type Point,
   type Rect,
 } from "./geometry";
-import { fit2d, FIT_SHARE, MIN_FIT_EXTENT, type ScreenKnot } from "./framing";
+import { fit2d, FIT_SHARE, freeAreas, MIN_FIT_EXTENT, type ScreenKnot } from "./framing";
 import { pinchFactor, pixelDeltas, wheelAction, WheelClassifier, type WheelSetting } from "./wheel";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- any sigma instance
@@ -169,6 +169,33 @@ export function fittedCameraState(
   if (!fit) return null;
   const center = sigma.viewportToFramedGraph(fit.anchor, at);
   return { x: center.x, y: center.y, ratio: camera.getBoundedRatio(1 / fit.zoom), angle: 0 };
+}
+
+/**
+ * The camera that shows `point` (framed graph coordinates, as sigma's node
+ * display data) at `ratio` in the middle of the largest area the `covered`
+ * overlays leave free, rather than under the legend. The current rotation is kept.
+ */
+export function focusCameraState(
+  sigma: AnySigma,
+  point: { x: number; y: number },
+  ratio: number,
+  covered: readonly Rect[] = [],
+): { x: number; y: number; ratio: number } {
+  const { width, height } = sigma.getDimensions();
+  const centered = { x: point.x, y: point.y, ratio };
+  if (!(width > 0) || !(height > 0)) return centered;
+  const area = freeAreas(width, height, covered).reduce((best, free) =>
+    free.width * free.height > best.width * best.height ? free : best,
+  );
+  // The point sits at the canvas's center with the camera on it; the camera
+  // that moves it to the area's center is as far the other way.
+  const at = { cameraState: { ...centered, angle: sigma.getCamera().getState().angle } };
+  const target = sigma.viewportToFramedGraph(
+    { x: width - (area.x + area.width / 2), y: height - (area.y + area.height / 2) },
+    at,
+  );
+  return { x: target.x, y: target.y, ratio };
 }
 
 /** The camera in graph terms: the point at the center, graph units per pixel, the rotation. */

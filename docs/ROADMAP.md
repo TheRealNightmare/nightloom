@@ -73,7 +73,9 @@ Complete (0.3.0).
 - [x] Certificate Transparency monitoring: watched domains checked hourly with crt.sh, new certificates and names as alerts on the Graph tab
 - [x] Release v0.3 ([0.3.0](../CHANGELOG.md#030---2026-11-23))
 
-## Next: M4 — Organizations, people, leaks, code intel
+## M4 — Organizations, people, leaks, code intel
+
+Complete (0.4.0).
 
 Person-related Shuttles are opt-in per case (`allow_person_entities`), declare `sensitivity: person` and never run in an auto-pivot. Breach and code Shuttles keep metadata and locations, never passwords, credentials or secret values, and never test them.
 
@@ -89,9 +91,9 @@ Person-related Shuttles are opt-in per case (`allow_person_entities`), declare `
 - [x] Person-related Shuttles with guardrails (gated, never in auto-pivot)
   - [x] 4.7 Public profiles: a GitHub user's public profile (name, company, blog, repositories) and an email address's public Gravatar profile and linked accounts; no photos, no location
   - [x] 4.8 Username presence: whether a username exists on a curated list of platforms with public profile pages, as low-rated leads (the same name is not proof of the same person)
-- [ ] 4.9 Release v0.4
+- [x] Release v0.4 ([0.4.0](../CHANGELOG.md#040---2026-11-26))
 
-## M5 — Time
+## Next: M5 — Time
 
 - [ ] Timeline view
 - [ ] Change diffs

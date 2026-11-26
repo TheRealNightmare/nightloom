@@ -317,6 +317,13 @@ export function GraphView({
   );
   const pins = usePins(graph, layout, rejoin);
   const pinStore = pins.store;
+  // The saved pins arrive after the first view was framed, and move their nodes.
+  const pinsFramedRef = useRef(false);
+  useEffect(() => {
+    if (pinsFramedRef.current || !pinStore.loaded) return;
+    pinsFramedRef.current = true;
+    canvas2dRef.current?.refitIfUnmoved?.();
+  }, [pinStore, pins.version]);
 
   // The graph is an external, mutable store: bring it in line with what is
   // displayed (cheap, incremental) and keep a snapshot that changes whenever it does.
@@ -345,7 +352,12 @@ export function GraphView({
     const running = layoutRef.current;
     if (seen.nodes.size === 0) {
       running?.cancel();
-      layoutRef.current = startLayout(graph, { iterations: fullLayoutIterations(graph.order) });
+      const first = startLayout(graph, { iterations: fullLayoutIterations(graph.order) });
+      layoutRef.current = first;
+      // The first view was framed before the layout moved the nodes.
+      void first.done.then(() => {
+        canvas2dRef.current?.refitIfUnmoved?.();
+      });
       return;
     }
     // A layout still settling the graph takes the new items along with it.
