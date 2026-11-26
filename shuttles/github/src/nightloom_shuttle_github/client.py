@@ -9,7 +9,8 @@ needs:
   ``Accept: application/vnd.github+json`` and the API version header. An
   optional token (the operator's ``NIGHTLOOM_GITHUB_TOKEN``) goes in
   ``Authorization: Bearer``; it is never logged or put in an error.
-- **404** means "no such account or repository": ``None``.
+- **404** means "no such account or repository", and **409** "an empty
+  repository" (its commit list): both ``None``.
 - **Rate limits.** GitHub allows 60 requests an hour without a token. A
   403 or 429 with ``x-ratelimit-remaining: 0`` (the primary limit) waits
   for ``x-ratelimit-reset`` if that is at most
@@ -167,7 +168,8 @@ class GithubClient:
                 retries += 1
                 self.retries += 1
                 continue
-            if response.status_code == httpx.codes.NOT_FOUND:
+            # 404: no such account or repository; 409: an empty repository (no commits).
+            if response.status_code in (httpx.codes.NOT_FOUND, httpx.codes.CONFLICT):
                 return None
             if response.status_code == httpx.codes.UNAUTHORIZED:
                 raise TokenRefusedError("HTTP 401")
