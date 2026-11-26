@@ -20,6 +20,8 @@ How releases are cut is described in [docs/RELEASING.md](docs/RELEASING.md).
 - Relationship types `BREACH_OF` (Breach → Domain) and `EXPOSED_IN` (Email → Breach); Breach properties `title`, `added_at`, `verified`, `fabricated`, `spam_list` and `malware`.
 - Code intelligence: the **Repositories of an organization (GitHub)** Shuttle (`github-repos`, in the new `shuttles/github` package, passive) finds an organization's GitHub account (its `github_login` property, or a search for its name) and adds its public repositories (at most 100) with `HAS_REPOSITORY`, and its profile's website with `OWNS`. An ambiguous name adds nothing; private repositories, the account's email address and location are never kept. It works without a token (60 requests an hour); the operator can set `NIGHTLOOM_GITHUB_TOKEN` for more.
 - Entity type `repository` (a public repository on GitHub, GitLab, Codeberg or Bitbucket, named `github.com/<owner>/<name>`), relationship type `HAS_REPOSITORY` (Organization → Repository), and organization properties `github_login` and `github_checked_at`.
+- Commit authors: the **Commit authors of a repository (GitHub)** Shuttle (`github-commits`, person-related, passive) reads the latest 100 commits of a public GitHub repository and adds their GitHub accounts (Usernames) and commit email addresses (Emails), `CONTRIBUTED_TO` the repository, and `USES_EMAIL` where GitHub linked an address to an account. Bots and no-reply addresses are left out; author names, messages and code are never read. It runs only in cases that allow person-related entities, never in an auto-pivot.
+- Relationship types `CONTRIBUTED_TO` (Username or Email → Repository) and `USES_EMAIL` (Username → Email).
 
 ## [0.3.0] - 2026-11-23
 
