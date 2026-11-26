@@ -252,6 +252,19 @@
       "pairs": [["organization", "repository"]]
     },
     {
+      "type": "CONTRIBUTED_TO",
+      "note_required": false,
+      "pairs": [
+        ["email", "repository"],
+        ["username", "repository"]
+      ]
+    },
+    {
+      "type": "USES_EMAIL",
+      "note_required": false,
+      "pairs": [["username", "email"]]
+    },
+    {
       "type": "SUBSIDIARY_OF",
       "note_required": false,
       "pairs": [["organization", "organization"]]

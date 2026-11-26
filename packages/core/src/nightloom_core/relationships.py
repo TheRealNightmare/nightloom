@@ -34,6 +34,10 @@ class RelationType(StrEnum):
     OWNS = "OWNS"
     # The source organization's account on a code forge holds the target repository.
     HAS_REPOSITORY = "HAS_REPOSITORY"
+    # The source account or address authored commits in the target repository.
+    CONTRIBUTED_TO = "CONTRIBUTED_TO"
+    # The source account committed with the target address (its forge linked them).
+    USES_EMAIL = "USES_EMAIL"
     # The source organization is owned by the target (its parent company), as reported
     # in the source's Legal Entity Identifier record; the note says direct or ultimate.
     SUBSIDIARY_OF = "SUBSIDIARY_OF"
@@ -77,6 +81,8 @@ ALLOWED: dict[RelationType, frozenset[Pair]] = {
     RelationType.USES: _pairs([E.DOMAIN, E.URL, E.SERVICE], [E.TECHNOLOGY]),
     RelationType.OWNS: _pairs([E.ORGANIZATION], [E.DOMAIN, E.NETBLOCK, E.ASN]),
     RelationType.HAS_REPOSITORY: _pairs([E.ORGANIZATION], [E.REPOSITORY]),
+    RelationType.CONTRIBUTED_TO: _pairs([E.USERNAME, E.EMAIL], [E.REPOSITORY]),
+    RelationType.USES_EMAIL: _pairs([E.USERNAME], [E.EMAIL]),
     RelationType.SUBSIDIARY_OF: _pairs([E.ORGANIZATION], [E.ORGANIZATION]),
     RelationType.HOSTS: _pairs([E.DOMAIN], [E.URL]),
     RelationType.LOOKALIKE_OF: _pairs([E.DOMAIN], [E.DOMAIN]),

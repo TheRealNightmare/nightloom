@@ -29,7 +29,7 @@ flowchart LR
 | `apps/worker` | Celery worker that runs Shuttle jobs (see [Jobs](#jobs-and-the-worker)) and releases (and expands) profile runs |
 | `packages/core` | Shared entity model (`nightloom-core`): entity types, canonical keys, relationship allow-list, provenance |
 | `packages/sdk` | Shuttle SDK (`nightloom-sdk`): the [Shuttle contract](#shuttle-contract), the guarded HTTP client, the registry, test helpers |
-| `shuttles/` | Built-in Shuttles, one package each: `registrable-domain` (no network), [`dns`](#the-dns-shuttle) and [`reverse-dns`](#the-reverse-dns-shuttle) (one package), [`crtsh`](#the-crtsh-shuttle), [`rdap`](#the-rdap-shuttle), [`ripestat`](#the-ripestat-shuttle), [`internetdb`](#the-internetdb-shuttle), [`gleif`](#the-gleif-shuttle), [`wikidata`](#the-wikidata-shuttle), [`hibp-breaches` and `hibp-account`](#the-have-i-been-pwned-shuttles), [`github-repos`](#the-github-shuttles) and [`wayback`](#the-wayback-shuttle) |
+| `shuttles/` | Built-in Shuttles, one package each: `registrable-domain` (no network), [`dns`](#the-dns-shuttle) and [`reverse-dns`](#the-reverse-dns-shuttle) (one package), [`crtsh`](#the-crtsh-shuttle), [`rdap`](#the-rdap-shuttle), [`ripestat`](#the-ripestat-shuttle), [`internetdb`](#the-internetdb-shuttle), [`gleif`](#the-gleif-shuttle), [`wikidata`](#the-wikidata-shuttle), [`hibp-breaches` and `hibp-account`](#the-have-i-been-pwned-shuttles), [`github-repos` and `github-commits`](#the-github-shuttles) and [`wayback`](#the-wayback-shuttle) |
 | PostgreSQL | Users, cases, jobs, audit log, encrypted API keys |
 | Neo4j | Entities and relationships |
 | Valkey (Redis-compatible) | Celery broker, rate-limit counters, result cache |
@@ -487,6 +487,8 @@ Relationship types (`nightloom_core.relationships`) have an explicit allow-list 
 | `USES` | Domain, URL or Service → Technology |
 | `OWNS` | Organization → Domain, Netblock or ASN |
 | `HAS_REPOSITORY` | Organization → Repository: its account on a code forge holds the repository |
+| `CONTRIBUTED_TO` | Username or Email → Repository: authored commits there (the note says how many, and the latest date) |
+| `USES_EMAIL` | Username → Email: the account committed with the address, as the forge linked them |
 | `BREACH_OF` | Breach → Domain: the breach was of that site |
 | `EXPOSED_IN` | Email → Breach: the address is among the breached accounts |
 | `SUBSIDIARY_OF` | Organization → Organization: the source is owned by the target (its parent company), as reported in the source's LEI record; the note says `direct parent`, `ultimate parent` or both |
@@ -839,7 +841,17 @@ A Breach is named by HIBP's unique, stable name and carries `title`, `breach_dat
 
 GitHub's data about a repository is **A2** (0.9). The links from the organization are **A2** when found through `github_login` and **C2** (0.6) when found by matching names. The account's email address and location are never kept, and a private repository (a token with access could reveal one) never is either.
 
-**The token.** Without one, GitHub allows 60 requests an hour from the server's address (a run takes 2 to 7). The operator may set `NIGHTLOOM_GITHUB_TOKEN` (a fine-grained token with no permissions reads public data) for 5,000; it is read from the worker's environment like the [HIBP key](#the-have-i-been-pwned-shuttles), checked at start and never stored, logged or shown. A used-up limit (403 or 429 with `x-ratelimit-remaining: 0`) waits only if the reset is at most 30 seconds away, else fails as `source_unavailable` with a note; `Retry-After` (secondary limits) is waited for at most twice; 401 fails with a note about the token.
+**`github-commits`** (*Commit authors of a repository*, input Repository, passive, **person**, cached 24 h, `pivots: false`) reads the latest 100 commits on a GitHub repository's default branch (`repos/<owner>/<name>/commits`; a 404 or 409, an empty repository, is a note). Commit authors are people, so it runs only in cases that allow person-related entities, and it reads only what Git and GitHub publish with every commit:
+
+| Found | Becomes |
+| --- | --- |
+| the GitHub account GitHub linked to a commit (`author.login`) | a Username (`platform` GitHub) `CONTRIBUTED_TO` the repository: **A2** (0.9) |
+| the commit's author address (`commit.author.email`) | an Email `CONTRIBUTED_TO` the repository: **C3** (0.5), since anyone can set any address in Git |
+| an account and the address of a commit GitHub linked to it | `USES_EMAIL` from the Username to the Email: **B2** (0.8); GitHub links a commit only to an account that verified the address |
+
+Each `CONTRIBUTED_TO` note says how many of the commits read were theirs and the latest date. At most 50 accounts and 50 addresses are kept, those with the most commits first (a note says when there were more). Never read: author names (free text), commit messages, `Co-authored-by` lines, diffs. Bot accounts (`type: Bot`, `...[bot]`) and GitHub's no-reply addresses (`...@users.noreply.github.com`) are left out and counted. Repositories on other forges get a note.
+
+**The token.** Without one, GitHub allows 60 requests an hour from the server's address (`github-repos` takes 2 to 7 a run, `github-commits` one). The operator may set `NIGHTLOOM_GITHUB_TOKEN` (a fine-grained token with no permissions reads public data) for 5,000; it is read from the worker's environment like the [HIBP key](#the-have-i-been-pwned-shuttles), checked at start and never stored, logged or shown. A used-up limit (403 or 429 with `x-ratelimit-remaining: 0`) waits only if the reset is at most 30 seconds away, else fails as `source_unavailable` with a note; `Retry-After` (secondary limits) is waited for at most twice; 401 fails with a note about the token.
 
 ### The Wayback Shuttle
 
