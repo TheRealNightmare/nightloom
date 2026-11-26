@@ -29,7 +29,7 @@ flowchart LR
 | `apps/worker` | Celery worker that runs Shuttle jobs (see [Jobs](#jobs-and-the-worker)) and releases (and expands) profile runs |
 | `packages/core` | Shared entity model (`nightloom-core`): entity types, canonical keys, relationship allow-list, provenance |
 | `packages/sdk` | Shuttle SDK (`nightloom-sdk`): the [Shuttle contract](#shuttle-contract), the guarded HTTP client, the registry, test helpers |
-| `shuttles/` | Built-in Shuttles, one package each: `registrable-domain` (no network), [`dns`](#the-dns-shuttle) and [`reverse-dns`](#the-reverse-dns-shuttle) (one package), [`crtsh`](#the-crtsh-shuttle), [`rdap`](#the-rdap-shuttle), [`ripestat`](#the-ripestat-shuttle), [`internetdb`](#the-internetdb-shuttle), [`gleif`](#the-gleif-shuttle), [`wikidata`](#the-wikidata-shuttle), [`hibp-breaches` and `hibp-account`](#the-have-i-been-pwned-shuttles) and [`wayback`](#the-wayback-shuttle) |
+| `shuttles/` | Built-in Shuttles, one package each: `registrable-domain` (no network), [`dns`](#the-dns-shuttle) and [`reverse-dns`](#the-reverse-dns-shuttle) (one package), [`crtsh`](#the-crtsh-shuttle), [`rdap`](#the-rdap-shuttle), [`ripestat`](#the-ripestat-shuttle), [`internetdb`](#the-internetdb-shuttle), [`gleif`](#the-gleif-shuttle), [`wikidata`](#the-wikidata-shuttle), [`hibp-breaches` and `hibp-account`](#the-have-i-been-pwned-shuttles), [`github-repos`](#the-github-shuttles) and [`wayback`](#the-wayback-shuttle) |
 | PostgreSQL | Users, cases, jobs, audit log, encrypted API keys |
 | Neo4j | Entities and relationships |
 | Valkey (Redis-compatible) | Celery broker, rate-limit counters, result cache |
@@ -431,7 +431,7 @@ Each type is a Pydantic model (`nightloom_core.entities`) with a canonical `valu
 | `url` | `URL` | infrastructure | `status_code`, `title`, `content_type`; archive data, written by the [Wayback Shuttle](#the-wayback-shuttle): `first_captured`, `last_captured`, `capture_count`, `last_status`, `mimetype`, `archive_url` (only `https://web.archive.org/web/…`), `query_params` (parameter names only, at most 30 of at most 64 characters) |
 | `service` | `Service` | infrastructure | `product`, `version`, `banner` |
 | `technology` | `Technology` | infrastructure | `version`, `category` |
-| `organization` | `Organization` | organization | `country` (of the legal address), `industry`; its LEI record, written by the [GLEIF Shuttle](#the-gleif-shuttle): `lei`, `legal_name`, `jurisdiction` (ISO 3166-1 or 3166-2, such as `US-DE`), `legal_form`, `registered_as`, `entity_status`, `lei_status`, `gleif_checked_at`; `wikidata_id` and `wikidata_checked_at`, written by the [Wikidata Shuttle](#the-wikidata-shuttle) |
+| `organization` | `Organization` | organization | `country` (of the legal address), `industry`; its LEI record, written by the [GLEIF Shuttle](#the-gleif-shuttle): `lei`, `legal_name`, `jurisdiction` (ISO 3166-1 or 3166-2, such as `US-DE`), `legal_form`, `registered_as`, `entity_status`, `lei_status`, `gleif_checked_at`; `wikidata_id` and `wikidata_checked_at`, written by the [Wikidata Shuttle](#the-wikidata-shuttle); `github_login` and `github_checked_at`, written by the [GitHub repositories Shuttle](#the-github-shuttles) |
 | `crypto_wallet` | `CryptoWallet` | organization | |
 | `document` | `Document` | organization | `title`, `mime_type`, `sha256` |
 | `breach` | `Breach` | organization | `breach_date`, `record_count`, `data_classes` (metadata only, never leaked records); from the [HIBP Shuttles](#the-have-i-been-pwned-shuttles) also `title`, `added_at`, `verified`, `fabricated`, `spam_list`, `malware` |
@@ -443,6 +443,7 @@ Each type is a Pydantic model (`nightloom_core.entities`) with a canonical `valu
 | `location` | `Location` | **person** (a place next to a person is sensitive) | `latitude`, `longitude`, `country` |
 | `image` | `Image` | **person** (images can show people) | `mime_type`, `sha256`, `width`, `height` |
 | `favicon` | `Favicon` | infrastructure | `sha256`, `md5`, `mime_type`, `size_bytes` (written by the [favicon Shuttle](#website-visits)) |
+| `repository` | `Repository` | organization | `description`, `language`, `topics`, `license`, `stars`, `forks`, `fork`, `archived`, `homepage`, `default_branch`, `created_at`, `pushed_at`, `github_checked_at` (written by the [GitHub Shuttles](#the-github-shuttles)) |
 
 Properties are flat (strings, numbers, booleans, dates as ISO 8601, lists of strings or of integers), validated per type (unknown fields are refused) and stored on the node with a `prop_` prefix. A later observation overwrites the properties it carries and keeps the others.
 
@@ -463,6 +464,7 @@ Every entity has exactly one key, `<type>:<normalized>`, so the same thing found
 | Phone | E.164 via `phonenumbers` (`+442079460958`), valid numbers only. A number in national format needs an explicit default region (`phone_region` in the API); there is no implicit default |
 | CryptoWallet | `btc:<address>` (mainnet base58check P2PKH/P2SH or bech32/bech32m SegWit, checksums verified, bech32 lower-cased) or `eth:0x<40 hex>` (lower-cased) |
 | Favicon | the icon's MurmurHash3 as a signed 32-bit decimal number, Shodan's `http.favicon.hash` (`-1010568750`); an unsigned spelling (`3284398546`) or an `mmh3:` prefix is turned into the same value |
+| Repository | `<forge>/<owner>/<name>` in lower case (`github.com/example-org/widgets`) on GitHub, GitLab, Codeberg or Bitbucket; web addresses (anything after the name dropped), clone addresses (`.git`, `git@host:owner/name`) and `owner/name` (GitHub) are accepted |
 | Organization, Person, Technology, Location, Username, SocialProfile, Document, Image, Breach | NFKC, trimmed, inner whitespace collapsed (the display value keeps its case); the key is case-folded (`organization:acme corp`) |
 
 `parse_key()` accepts a key only if normalizing its own value gives the key back, so `GET /entities/domain:Example.org` is `422`, not a silent miss.
@@ -484,6 +486,7 @@ Relationship types (`nightloom_core.relationships`) have an explicit allow-list 
 | `RUNS_ON` | Service → IPAddress |
 | `USES` | Domain, URL or Service → Technology |
 | `OWNS` | Organization → Domain, Netblock or ASN |
+| `HAS_REPOSITORY` | Organization → Repository: its account on a code forge holds the repository |
 | `BREACH_OF` | Breach → Domain: the breach was of that site |
 | `EXPOSED_IN` | Email → Breach: the address is among the breached accounts |
 | `SUBSIDIARY_OF` | Organization → Organization: the source is owned by the target (its parent company), as reported in the source's LEI record; the note says `direct parent`, `ultimate parent` or both |
@@ -822,6 +825,22 @@ A Breach is named by HIBP's unique, stable name and carries `title`, `breach_dat
 
 **HTTP.** One request a run; one every 2 seconds (`hibp-breaches`) or 6 seconds (`hibp-account`, HIBP's smallest subscription allows 10 a minute). A 404 from `breachedaccount` means "in no breach"; 429 waits for `Retry-After` (at most twice, 30 seconds), 5xx is retried twice. Neither runs in an auto-pivot.
 
+### The GitHub Shuttles
+
+[`shuttles/github`](../shuttles/github/) reads public code on GitHub through its [REST API](https://docs.github.com/en/rest); its only host is `api.github.com`.
+
+**`github-repos`** (*Repositories of an organization*, input Organization, passive, organization, cached 24 h, `pivots: false`) finds the organization's GitHub account by its `github_login` property, or by searching organization accounts (`search/users?q=<name> type:org`, five results read) and keeping those whose display name or login equals the name, ignoring case and spacing. None is a note; several are a note listing their logins, and nothing is added. Only organization accounts (`/orgs/`, `type: Organization`) are read, never personal ones.
+
+| Found | Becomes |
+| --- | --- |
+| the account | `github_login` and `github_checked_at` on the organization |
+| the website on its profile (`blog`) | its registrable domain as a Domain the organization `OWNS` (note *website on its GitHub profile*): **B2** (0.8) when GitHub verified one of the organization's domains, else **C3** (0.5) |
+| its public repositories (`orgs/<login>/repos?type=public&sort=pushed`, at most 100) | Repositories with `HAS_REPOSITORY` from the organization |
+
+GitHub's data about a repository is **A2** (0.9). The links from the organization are **A2** when found through `github_login` and **C2** (0.6) when found by matching names. The account's email address and location are never kept, and a private repository (a token with access could reveal one) never is either.
+
+**The token.** Without one, GitHub allows 60 requests an hour from the server's address (a run takes 2 to 7). The operator may set `NIGHTLOOM_GITHUB_TOKEN` (a fine-grained token with no permissions reads public data) for 5,000; it is read from the worker's environment like the [HIBP key](#the-have-i-been-pwned-shuttles), checked at start and never stored, logged or shown. A used-up limit (403 or 429 with `x-ratelimit-remaining: 0`) waits only if the reset is at most 30 seconds away, else fails as `source_unavailable` with a note; `Retry-After` (secondary limits) is waited for at most twice; 401 fails with a note about the token.
+
 ### The Wayback Shuttle
 
 [`shuttles/wayback`](../shuttles/wayback/) (`wayback`, passive, infrastructure, `network=True`) lists what the Internet Archive's [Wayback Machine](https://web.archive.org) has captured under a domain, from its [CDX server](https://github.com/internetarchive/wayback/blob/master/wayback-cdx-server/README.md) (no API key). Old pages, forgotten subdomains and retired endpoints often survive only there.
@@ -956,7 +975,7 @@ In the web UI's *Jobs* panel, a running job's elapsed time stops at its deadline
 
 #### The result cache
 
-A passive Shuttle with a `cache_ttl_seconds` (DNS and reverse DNS 1 hour; crt.sh, RIPEstat, InternetDB, typosquats, GLEIF and HIBP 24 hours; RDAP, Wayback and Wikidata 7 days; registrable-domain never) does not ask its source again for the same entity while a recent result exists ([`result_cache.py`](../apps/api/src/nightloom_api/jobs/result_cache.py)).
+A passive Shuttle with a `cache_ttl_seconds` (DNS and reverse DNS 1 hour; crt.sh, RIPEstat, InternetDB, typosquats, GLEIF, HIBP and GitHub 24 hours; RDAP, Wayback and Wikidata 7 days; registrable-domain never) does not ask its source again for the same entity while a recent result exists ([`result_cache.py`](../apps/api/src/nightloom_api/jobs/result_cache.py)).
 
 - **What is stored.** After a live run **succeeds** (not failed, cancelled, cut by the deadline or over the findings limit), the worker stores what the Shuttle *yielded*, in order, and its notes (PostgreSQL table `result_cache`, migration `0009`), within the job's deadline and never at the cost of the job. These are the raw findings, before any check that depends on the case.
 - **Key.** SHA-256 of the scope, the Shuttle's **name and version** (a new version never reuses an older one's results), the input entity's canonical key and the run's options (none yet; normalized, so their order never matters).

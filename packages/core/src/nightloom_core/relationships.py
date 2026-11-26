@@ -32,6 +32,8 @@ class RelationType(StrEnum):
     RUNS_ON = "RUNS_ON"
     USES = "USES"
     OWNS = "OWNS"
+    # The source organization's account on a code forge holds the target repository.
+    HAS_REPOSITORY = "HAS_REPOSITORY"
     # The source organization is owned by the target (its parent company), as reported
     # in the source's Legal Entity Identifier record; the note says direct or ultimate.
     SUBSIDIARY_OF = "SUBSIDIARY_OF"
@@ -74,6 +76,7 @@ ALLOWED: dict[RelationType, frozenset[Pair]] = {
     RelationType.RUNS_ON: _pairs([E.SERVICE], [E.IP_ADDRESS]),
     RelationType.USES: _pairs([E.DOMAIN, E.URL, E.SERVICE], [E.TECHNOLOGY]),
     RelationType.OWNS: _pairs([E.ORGANIZATION], [E.DOMAIN, E.NETBLOCK, E.ASN]),
+    RelationType.HAS_REPOSITORY: _pairs([E.ORGANIZATION], [E.REPOSITORY]),
     RelationType.SUBSIDIARY_OF: _pairs([E.ORGANIZATION], [E.ORGANIZATION]),
     RelationType.HOSTS: _pairs([E.DOMAIN], [E.URL]),
     RelationType.LOOKALIKE_OF: _pairs([E.DOMAIN], [E.DOMAIN]),

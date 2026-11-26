@@ -628,6 +628,7 @@ def test_every_type_has_a_normalizer() -> None:
         E.PHONE,
         E.CRYPTO_WALLET,
         E.FAVICON,
+        E.REPOSITORY,
     }
     assert covered | n.TEXT_TYPES == set(EntityType)
     assert not covered & n.TEXT_TYPES
@@ -726,3 +727,45 @@ def test_tricky_addresses_have_fixed_keys() -> None:
     """The exact canonical keys, identical on every supported Python version."""
     keys = {raw: n.normalize(EntityType.IP_ADDRESS, raw).key for raw in TRICKY_ADDRESSES}
     assert keys == {raw: f"ip_address:{out}" for raw, out in TRICKY_ADDRESSES.items()}
+
+
+@pytest.mark.parametrize(
+    ("value", "canonical"),
+    [
+        ("github.com/Example-Org/Widgets", "github.com/example-org/widgets"),
+        ("https://github.com/example-org/widgets", "github.com/example-org/widgets"),
+        (
+            "https://www.github.com/example-org/widgets/tree/main/src?x=1#l2",
+            "github.com/example-org/widgets",
+        ),
+        ("https://github.com/example-org/widgets.git", "github.com/example-org/widgets"),
+        ("git@github.com:example-org/widgets.git", "github.com/example-org/widgets"),
+        ("ssh://git@github.com/example-org/widgets.git", "github.com/example-org/widgets"),
+        ("example-org/widgets", "github.com/example-org/widgets"),
+        ("https://gitlab.com/example/tools", "gitlab.com/example/tools"),
+        ("codeberg.org/example/site.github.io", "codeberg.org/example/site.github.io"),
+        ("bitbucket.org/example/app", "bitbucket.org/example/app"),
+    ],
+)
+def test_repositories(value: str, canonical: str) -> None:
+    normalized = n.normalize(E.REPOSITORY, value)
+    assert normalized.value == canonical
+    assert normalized.key == f"repository:{canonical}"
+    assert n.parse_key(normalized.key) == (E.REPOSITORY, canonical)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "widgets",
+        "github.com/example-org",
+        "https://example.org/example-org/widgets",
+        "github.com/-bad/widgets",
+        "github.com/example-org/..",
+        "github.com/example org/widgets",
+        "github.com/example-org/wid!gets",
+    ],
+)
+def test_invalid_repositories(value: str) -> None:
+    with pytest.raises(n.NormalizationError):
+        n.normalize(E.REPOSITORY, value)

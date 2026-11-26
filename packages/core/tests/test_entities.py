@@ -34,6 +34,7 @@ ORGANIZATION_TYPES = {
     EntityType.CRYPTO_WALLET,
     EntityType.DOCUMENT,
     EntityType.BREACH,
+    EntityType.REPOSITORY,
 }
 
 
@@ -325,6 +326,35 @@ def test_lei_properties_of_organizations() -> None:
 def test_invalid_lei_properties(properties: dict[str, Any]) -> None:
     with pytest.raises(ValidationError):
         build_entity(EntityType.ORGANIZATION, "Example Holdings", properties)
+
+
+def test_repository_and_github_properties() -> None:
+    repository = build_entity(
+        EntityType.REPOSITORY,
+        "https://github.com/Example-Org/Widgets.git",
+        {
+            "description": "Widgets for everyone",
+            "language": "Python",
+            "topics": ["osint", "graph"],
+            "license": "Apache-2.0",
+            "stars": 12,
+            "forks": 3,
+            "fork": False,
+            "archived": False,
+            "homepage": "https://widgets.example.org/",
+            "default_branch": "main",
+            "pushed_at": "2026-11-20T08:00:00Z",
+        },
+    )
+    assert repository.value == "github.com/example-org/widgets"
+    assert repository.stored_properties()["topics"] == ["osint", "graph"]
+    org = build_entity(EntityType.ORGANIZATION, "Example Org", {"github_login": " Example-Org "})
+    assert org.stored_properties() == {"github_login": "example-org"}
+    for bad in ("-example", "example--org", "a" * 40, "example_org"):
+        with pytest.raises(ValidationError):
+            build_entity(EntityType.ORGANIZATION, "Example Org", {"github_login": bad})
+    with pytest.raises(ValidationError):
+        build_entity(EntityType.REPOSITORY, "github.com/a/b", {"stars": -1})
 
 
 def test_breach_properties() -> None:

@@ -18,6 +18,8 @@ How releases are cut is described in [docs/RELEASING.md](docs/RELEASING.md).
 - The side panel's *Public records* links an organization to its LEI record on GLEIF's search site and to its Wikidata item.
 - Breaches: the new `shuttles/hibp` package, breach metadata from Have I Been Pwned (CC BY 4.0), never passwords or leaked records. **Breaches of a site** (`hibp-breaches`, Domain, no key) lists a site's breaches from HIBP's public list; **Breaches of an email address** (`hibp-account`, Email, person-related) lists the breaches an address is in, with the operator's paid HIBP key in `NIGHTLOOM_HIBP_API_KEY`, and leaves out sensitive breaches. Neither runs in an auto-pivot.
 - Relationship types `BREACH_OF` (Breach → Domain) and `EXPOSED_IN` (Email → Breach); Breach properties `title`, `added_at`, `verified`, `fabricated`, `spam_list` and `malware`.
+- Code intelligence: the **Repositories of an organization (GitHub)** Shuttle (`github-repos`, in the new `shuttles/github` package, passive) finds an organization's GitHub account (its `github_login` property, or a search for its name) and adds its public repositories (at most 100) with `HAS_REPOSITORY`, and its profile's website with `OWNS`. An ambiguous name adds nothing; private repositories, the account's email address and location are never kept. It works without a token (60 requests an hour); the operator can set `NIGHTLOOM_GITHUB_TOKEN` for more.
+- Entity type `repository` (a public repository on GitHub, GitLab, Codeberg or Bitbucket, named `github.com/<owner>/<name>`), relationship type `HAS_REPOSITORY` (Organization → Repository), and organization properties `github_login` and `github_checked_at`.
 
 ## [0.3.0] - 2026-11-23
 

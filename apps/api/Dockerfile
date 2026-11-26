@@ -33,6 +33,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=shuttles/active/pyproject.toml,target=shuttles/active/pyproject.toml \
     --mount=type=bind,source=shuttles/crtsh/pyproject.toml,target=shuttles/crtsh/pyproject.toml \
     --mount=type=bind,source=shuttles/dns/pyproject.toml,target=shuttles/dns/pyproject.toml \
+    --mount=type=bind,source=shuttles/github/pyproject.toml,target=shuttles/github/pyproject.toml \
     --mount=type=bind,source=shuttles/gleif/pyproject.toml,target=shuttles/gleif/pyproject.toml \
     --mount=type=bind,source=shuttles/hibp/pyproject.toml,target=shuttles/hibp/pyproject.toml \
     --mount=type=bind,source=shuttles/internetdb/pyproject.toml,target=shuttles/internetdb/pyproject.toml \

@@ -222,6 +222,17 @@ make up
 
 The key stays in the worker's environment: it is never stored with a case, logged or shown, and backups do not include it (they never include `.env`). A malformed key stops the worker at start with a message naming the variable. Without a key the Shuttle stays listed and its jobs fail with a note saying what to set. The *Breaches of a site* Shuttle (`hibp-breaches`) uses HIBP's free public list and needs nothing. Like every Shuttle on an email address, `hibp-account` only runs in cases whose owner allowed person-related entities.
 
+## GitHub token (optional)
+
+The GitHub Shuttles work without a token, but GitHub then allows only 60 API requests an hour from your server (a lookup of an organization's repositories takes 2 to 7). For 5,000 an hour, create a [fine-grained token](https://github.com/settings/personal-access-tokens) with **no permissions** (it reads public data only, which is all Nightloom needs) and put it in `.env`:
+
+```sh
+NIGHTLOOM_GITHUB_TOKEN=github_pat_...
+make up
+```
+
+Like the HIBP key, it stays in the worker's environment: never stored with a case, logged or shown. A malformed token stops the worker at start with a message naming the variable; one GitHub refuses fails the job with a note.
+
 ## Small hosts and Raspberry Pi
 
 A **Raspberry Pi 4B with 8 GB** runs Nightloom for a small team, with these settings:
