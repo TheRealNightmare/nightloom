@@ -8,7 +8,7 @@ license = "Apache-2.0"
 dependencies = [
     "idna>=3.20",
     "phonenumbers>=9.0.43",
-    "pydantic>=2.14.3",
+    "pydantic>=2.14.4",
     "tldextract>=5.4.0",
 ]
 
