@@ -165,6 +165,7 @@ def test_built_in_shuttles_cache_lifetimes() -> None:
         "hibp-account": day,
         "github-repos": day,
         "github-commits": day,
+        "github-secrets": day,
         # Evidence belongs to one case: never reused.
         "screenshot": 0,
     }

@@ -1,12 +1,14 @@
 # nightloom-shuttle-github
 
-Built-in Nightloom Shuttles for **public code on GitHub**, through the [GitHub REST API](https://docs.github.com/en/rest). It holds an organization's repositories and a repository's commit authors; exposed secrets follow (see the roadmap).
+Built-in Nightloom Shuttles for **public code on GitHub**, through the [GitHub REST API](https://docs.github.com/en/rest). It holds an organization's repositories, a repository's commit authors and the likely secrets in its recent commits.
 
 | Shuttle | Input | Asks | Findings |
 | --- | --- | --- | --- |
 | `github-repos` (*Repositories of an organization*) | Organization | `GET /orgs/<login>` (found by the `github_login` property, or `GET /search/users?q=<name> type:org`), then `GET /orgs/<login>/repos?type=public&sort=pushed` | On the organization: `github_login`, `github_checked_at`. The website on its profile as a Domain it `OWNS`. Its public repositories (at most 100, most recently pushed first) as Repositories with `HAS_REPOSITORY` |
 
 | `github-commits` (*Commit authors of a repository*) | Repository (GitHub only) | `GET /repos/<owner>/<name>/commits?per_page=100` | The GitHub accounts GitHub linked to the latest 100 commits as Usernames (`platform` GitHub) and the commit email addresses as Emails, each `CONTRIBUTED_TO` the repository (the note: how many commits, the latest date), and `USES_EMAIL` from an account to an address GitHub linked to it. At most 50 of each, most commits first |
+
+| `github-secrets` (*Exposed secrets in a repository*) | Repository (GitHub only) | `GET /repos/<owner>/<name>/commits?per_page=10` (30 with a token), then `GET /repos/<owner>/<name>/commits/<sha>` for each | Each line those commits added that holds a likely secret, as a SecretExposure (`<repository>@<sha>/<path>#L<line>`, with `kind`, `commit_url`, `file_url`, `committed_at`) and `HAS_EXPOSURE` from the repository; at most 50. Rated **B3** (0.6): a pattern match is likely, not certain, to be a live secret |
 
 A Repository is named `github.com/<owner>/<name>` (lower case) and carries `description` (cut to 200 characters), `language`, `topics`, `license` (SPDX ID), `stars`, `forks`, `fork`, `archived`, `homepage`, `default_branch`, `created_at`, `pushed_at` and `github_checked_at`.
 
@@ -18,6 +20,8 @@ A Repository is named `github.com/<owner>/<name>` (lower case) and carries `desc
 A link found through the property is rated **A2** (0.9); one found by matching names **C2** (0.6). GitHub's own data about a repository is **A2**. The profile's website is **B2** (0.8) when GitHub verified one of the organization's domains, else **C3** (0.5).
 
 ## Guardrails
+
+- **Secrets are never kept or tested.** `github-secrets` scans only added lines, with precise rules for well-known formats (see `secrets.py`; no generic or entropy rules, and documentation placeholders are skipped). The secret never leaves `secrets.py`: no value, prefix, suffix or hash goes into a finding, a note, a log or an error. The same secret in several commits is reported once, using a salted fingerprint that exists only during the run. Whether a key still works is for its owner to find out: report it to them.
 
 - **Commit authors are people.** `github-commits` has the `person` sensitivity: it runs only in cases whose owner allowed person-related entities, and never in an auto-pivot. It reads only the account and the address published with each commit: never author names (free text), commit messages, `Co-authored-by` lines or code. Bot accounts and GitHub's no-reply addresses are left out (a note counts them). A linked account's `CONTRIBUTED_TO` is **A2** and `USES_EMAIL` **B2** (GitHub links a commit to an account only for a verified address); an address's own `CONTRIBUTED_TO` is **C3** (0.5), because anyone can put any address in a commit.
 
@@ -37,6 +41,6 @@ GitHub allows 60 API requests an hour from one address without a token, and a ru
 
 ## Tests
 
-`shuttles/github/tests/` answer from a fake GitHub (`httpx.MockTransport` behind the SDK's guarded client) with fictional accounts and repositories. `test_github_repos.py` covers both ways of finding an account, ambiguous and missing names, private and malformed repositories, the website, the caps, the token (never in a note or an error), rate limits, 5xx and that no request goes anywhere but `api.github.com`. `test_github_commits.py` covers linked and unlinked authors, bots, no-reply addresses, the caps, non-GitHub and empty repositories and the errors. Tests marked `network` read the real `github` organization and `octocat/hello-world`; they run only with `make test-network`, never in CI.
+`shuttles/github/tests/` answer from a fake GitHub (`httpx.MockTransport` behind the SDK's guarded client) with fictional accounts and repositories. `test_github_repos.py` covers both ways of finding an account, ambiguous and missing names, private and malformed repositories, the website, the caps, the token (never in a note or an error), rate limits, 5xx and that no request goes anywhere but `api.github.com`. `test_github_secrets.py` covers every rule, placeholders, line numbers, deduplication, grouping, the caps and the token's larger window, and checks every 8-character piece of each fake secret against all the Shuttle returns; its fake secrets are built at run time, so no scanner takes the file for a leak. `test_github_commits.py` covers linked and unlinked authors, bots, no-reply addresses, the caps, non-GitHub and empty repositories and the errors. Tests marked `network` read the real `github` organization and `octocat/hello-world`; they run only with `make test-network`, never in CI.
 
 Licensed under the Apache License 2.0, like the rest of Nightloom.

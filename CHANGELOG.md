@@ -22,6 +22,8 @@ How releases are cut is described in [docs/RELEASING.md](docs/RELEASING.md).
 - Entity type `repository` (a public repository on GitHub, GitLab, Codeberg or Bitbucket, named `github.com/<owner>/<name>`), relationship type `HAS_REPOSITORY` (Organization → Repository), and organization properties `github_login` and `github_checked_at`.
 - Commit authors: the **Commit authors of a repository (GitHub)** Shuttle (`github-commits`, person-related, passive) reads the latest 100 commits of a public GitHub repository and adds their GitHub accounts (Usernames) and commit email addresses (Emails), `CONTRIBUTED_TO` the repository, and `USES_EMAIL` where GitHub linked an address to an account. Bots and no-reply addresses are left out; author names, messages and code are never read. It runs only in cases that allow person-related entities, never in an auto-pivot.
 - Relationship types `CONTRIBUTED_TO` (Username or Email → Repository) and `USES_EMAIL` (Username → Email).
+- Exposed secrets: the **Exposed secrets in a repository (GitHub)** Shuttle (`github-secrets`, passive) scans the lines a public GitHub repository's latest commits added (10, or 30 with `NIGHTLOOM_GITHUB_TOKEN`) for likely secrets in precise formats (AWS, GitHub, GitLab, Slack, Stripe, Google, SendGrid, npm, OpenAI and Anthropic keys and tokens, unencrypted private keys). Each becomes an exposed secret located by repository, commit, file and line, with links to the commit and the line. The secret itself is never kept, in any form, and never tested.
+- Entity type `secret_exposure` (*Exposed secret*: `<repository>@<commit>/<path>#L<line>`, with `kind`, `commit_url`, `file_url`, `committed_at`) and relationship type `HAS_EXPOSURE` (Repository → SecretExposure).
 
 ## [0.3.0] - 2026-11-23
 

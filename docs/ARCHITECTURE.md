@@ -29,7 +29,7 @@ flowchart LR
 | `apps/worker` | Celery worker that runs Shuttle jobs (see [Jobs](#jobs-and-the-worker)) and releases (and expands) profile runs |
 | `packages/core` | Shared entity model (`nightloom-core`): entity types, canonical keys, relationship allow-list, provenance |
 | `packages/sdk` | Shuttle SDK (`nightloom-sdk`): the [Shuttle contract](#shuttle-contract), the guarded HTTP client, the registry, test helpers |
-| `shuttles/` | Built-in Shuttles, one package each: `registrable-domain` (no network), [`dns`](#the-dns-shuttle) and [`reverse-dns`](#the-reverse-dns-shuttle) (one package), [`crtsh`](#the-crtsh-shuttle), [`rdap`](#the-rdap-shuttle), [`ripestat`](#the-ripestat-shuttle), [`internetdb`](#the-internetdb-shuttle), [`gleif`](#the-gleif-shuttle), [`wikidata`](#the-wikidata-shuttle), [`hibp-breaches` and `hibp-account`](#the-have-i-been-pwned-shuttles), [`github-repos` and `github-commits`](#the-github-shuttles) and [`wayback`](#the-wayback-shuttle) |
+| `shuttles/` | Built-in Shuttles, one package each: `registrable-domain` (no network), [`dns`](#the-dns-shuttle) and [`reverse-dns`](#the-reverse-dns-shuttle) (one package), [`crtsh`](#the-crtsh-shuttle), [`rdap`](#the-rdap-shuttle), [`ripestat`](#the-ripestat-shuttle), [`internetdb`](#the-internetdb-shuttle), [`gleif`](#the-gleif-shuttle), [`wikidata`](#the-wikidata-shuttle), [`hibp-breaches` and `hibp-account`](#the-have-i-been-pwned-shuttles), [`github-repos`, `github-commits` and `github-secrets`](#the-github-shuttles) and [`wayback`](#the-wayback-shuttle) |
 | PostgreSQL | Users, cases, jobs, audit log, encrypted API keys |
 | Neo4j | Entities and relationships |
 | Valkey (Redis-compatible) | Celery broker, rate-limit counters, result cache |
@@ -444,6 +444,7 @@ Each type is a Pydantic model (`nightloom_core.entities`) with a canonical `valu
 | `image` | `Image` | **person** (images can show people) | `mime_type`, `sha256`, `width`, `height` |
 | `favicon` | `Favicon` | infrastructure | `sha256`, `md5`, `mime_type`, `size_bytes` (written by the [favicon Shuttle](#website-visits)) |
 | `repository` | `Repository` | organization | `description`, `language`, `topics`, `license`, `stars`, `forks`, `fork`, `archived`, `homepage`, `default_branch`, `created_at`, `pushed_at`, `github_checked_at` (written by the [GitHub Shuttles](#the-github-shuttles)) |
+| `secret_exposure` | `SecretExposure` | organization | `kind`, `commit_url`, `file_url`, `committed_at`: where a likely secret was published, never the secret (written by the [exposed secrets Shuttle](#the-github-shuttles)) |
 
 Properties are flat (strings, numbers, booleans, dates as ISO 8601, lists of strings or of integers), validated per type (unknown fields are refused) and stored on the node with a `prop_` prefix. A later observation overwrites the properties it carries and keeps the others.
 
@@ -465,6 +466,7 @@ Every entity has exactly one key, `<type>:<normalized>`, so the same thing found
 | CryptoWallet | `btc:<address>` (mainnet base58check P2PKH/P2SH or bech32/bech32m SegWit, checksums verified, bech32 lower-cased) or `eth:0x<40 hex>` (lower-cased) |
 | Favicon | the icon's MurmurHash3 as a signed 32-bit decimal number, Shodan's `http.favicon.hash` (`-1010568750`); an unsigned spelling (`3284398546`) or an `mmh3:` prefix is turned into the same value |
 | Repository | `<forge>/<owner>/<name>` in lower case (`github.com/example-org/widgets`) on GitHub, GitLab, Codeberg or Bitbucket; web addresses (anything after the name dropped), clone addresses (`.git`, `git@host:owner/name`) and `owner/name` (GitHub) are accepted |
+| SecretExposure | `<repository>@<40-hex commit, lower case>/<path>#L<line>`; the path keeps its case and may contain spaces, but no empty, `.` or `..` part, control characters or surrounding spaces |
 | Organization, Person, Technology, Location, Username, SocialProfile, Document, Image, Breach | NFKC, trimmed, inner whitespace collapsed (the display value keeps its case); the key is case-folded (`organization:acme corp`) |
 
 `parse_key()` accepts a key only if normalizing its own value gives the key back, so `GET /entities/domain:Example.org` is `422`, not a silent miss.
@@ -489,6 +491,7 @@ Relationship types (`nightloom_core.relationships`) have an explicit allow-list 
 | `HAS_REPOSITORY` | Organization → Repository: its account on a code forge holds the repository |
 | `CONTRIBUTED_TO` | Username or Email → Repository: authored commits there (the note says how many, and the latest date) |
 | `USES_EMAIL` | Username → Email: the account committed with the address, as the forge linked them |
+| `HAS_EXPOSURE` | Repository → SecretExposure: a likely secret was published there (the note: its kind) |
 | `BREACH_OF` | Breach → Domain: the breach was of that site |
 | `EXPOSED_IN` | Email → Breach: the address is among the breached accounts |
 | `SUBSIDIARY_OF` | Organization → Organization: the source is owned by the target (its parent company), as reported in the source's LEI record; the note says `direct parent`, `ultimate parent` or both |
@@ -851,7 +854,11 @@ GitHub's data about a repository is **A2** (0.9). The links from the organizatio
 
 Each `CONTRIBUTED_TO` note says how many of the commits read were theirs and the latest date. At most 50 accounts and 50 addresses are kept, those with the most commits first (a note says when there were more). Never read: author names (free text), commit messages, `Co-authored-by` lines, diffs. Bot accounts (`type: Bot`, `...[bot]`) and GitHub's no-reply addresses (`...@users.noreply.github.com`) are left out and counted. Repositories on other forges get a note.
 
-**The token.** Without one, GitHub allows 60 requests an hour from the server's address (`github-repos` takes 2 to 7 a run, `github-commits` one). The operator may set `NIGHTLOOM_GITHUB_TOKEN` (a fine-grained token with no permissions reads public data) for 5,000; it is read from the worker's environment like the [HIBP key](#the-have-i-been-pwned-shuttles), checked at start and never stored, logged or shown. A used-up limit (403 or 429 with `x-ratelimit-remaining: 0`) waits only if the reset is at most 30 seconds away, else fails as `source_unavailable` with a note; `Retry-After` (secondary limits) is waited for at most twice; 401 fails with a note about the token.
+**`github-secrets`** (*Exposed secrets in a repository*, input Repository, passive, organization, cached 24 h, B3/0.6, `pivots: false`) lists a GitHub repository's latest commits (10 without a token, 30 with one, since each commit is one more request), fetches each (`repos/<owner>/<name>/commits/<sha>`) and scans the **added** lines of its patches with a short list of precise rules ([`secrets.py`](../shuttles/github/src/nightloom_shuttle_github/secrets.py)): AWS access key IDs, GitHub, GitLab, Slack and npm tokens, Stripe live keys, Google, SendGrid, OpenAI and Anthropic API keys, and unencrypted private key blocks. Generic patterns (`password = ...`, high entropy) are not used, and documentation placeholders (`EXAMPLE`, `xxxx`, runs of one character) are skipped. Each line with a likely secret becomes a SecretExposure (`<repository>@<sha>/<path>#L<line>`) with `kind` (several on one line are listed together), `commit_url`, `file_url` and `committed_at`, and `HAS_EXPOSURE` from the repository.
+
+**The secret is never kept**: no value, prefix, suffix or hash leaves the scanning module, in a finding, a note, a log or an error; the tests check every 8-character piece of each fake secret against everything the Shuttle returns. Within one run the same secret is reported once (its most recent commit), using a salted in-memory fingerprint that is discarded with the run. Nothing is tested or used: whether a key still works is for its owner to find out ([ETHICS.md](../ETHICS.md)). At most 50 exposures are kept; files without a patch (binary or too large), commits too large to fetch and the history beyond the commits read are noted.
+
+**The token.** Without one, GitHub allows 60 requests an hour from the server's address (`github-repos` takes 2 to 7 a run, `github-commits` one, `github-secrets` 11). The operator may set `NIGHTLOOM_GITHUB_TOKEN` (a fine-grained token with no permissions reads public data) for 5,000; it is read from the worker's environment like the [HIBP key](#the-have-i-been-pwned-shuttles), checked at start and never stored, logged or shown. A used-up limit (403 or 429 with `x-ratelimit-remaining: 0`) waits only if the reset is at most 30 seconds away, else fails as `source_unavailable` with a note; `Retry-After` (secondary limits) is waited for at most twice; 401 fails with a note about the token.
 
 ### The Wayback Shuttle
 

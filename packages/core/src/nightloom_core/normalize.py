@@ -564,6 +564,38 @@ def normalize_repository(value: str) -> str:
     return f"{host}/{owner}/{name}"
 
 
+# --- secret exposures ---------------------------------------------------------------------
+
+SECRET_EXPOSURE_INVALID = (
+    "An exposed secret is located as <repository>@<40-character commit>/<path>#L<line>."  # noqa: S105
+)
+_EXPOSURE = re.compile(
+    r"(?P<repository>[^@]+)@(?P<sha>[0-9a-fA-F]{40})/(?P<path>.+)#L(?P<line>[1-9][0-9]{0,6})"
+)
+MAX_EXPOSURE_PATH = 500
+
+
+def normalize_secret_exposure(value: str) -> str:
+    """``<repository>@<sha>/<path>#L<line>``: the repository normalized, the commit in lower
+    case, the path kept as it is (paths are case-sensitive) but checked."""
+    # Not _token(): a file path may contain spaces (control characters are refused below).
+    _check_length(value)
+    match = _EXPOSURE.fullmatch(value.strip())
+    if match is None:
+        raise NormalizationError(SECRET_EXPOSURE_INVALID)
+    repository = normalize_repository(match["repository"])
+    path = match["path"]
+    parts = path.split("/")
+    if (
+        len(path) > MAX_EXPOSURE_PATH
+        or any(part in ("", ".", "..") for part in parts)
+        or _has_control(path)
+        or path != path.strip()
+    ):
+        raise NormalizationError(SECRET_EXPOSURE_INVALID)
+    return f"{repository}@{match['sha'].lower()}/{path}#L{match['line']}"
+
+
 def normalize_crypto_wallet(value: str) -> str:
     """A wallet address prefixed with its chain: ``btc:<address>`` or ``eth:0x<hex>``.
 
@@ -675,6 +707,8 @@ def normalize(
             canonical = normalize_favicon(value)
         case EntityType.REPOSITORY:
             canonical = normalize_repository(value)
+        case EntityType.SECRET_EXPOSURE:
+            canonical = normalize_secret_exposure(value)
         case _:
             display = normalize_text(value)
             return Normalized(entity_type, display, f"{entity_type.value}:{text_key(display)}")

@@ -28,7 +28,7 @@ async def test_every_signed_in_role_reads_the_schema(
     assert response.status_code == 200
     assert response.headers["cache-control"] == "private, max-age=300"
     body = response.json()
-    assert len(body["entity_types"]) == 21
+    assert len(body["entity_types"]) == 22
     assert body["manual_defaults"]["source"] == "manual"
 
 

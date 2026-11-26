@@ -51,6 +51,7 @@ class EntityType(StrEnum):
     BREACH = "breach"
     FAVICON = "favicon"
     REPOSITORY = "repository"
+    SECRET_EXPOSURE = "secret_exposure"  # noqa: S105 (a type name, not a secret)
 
 
 class Sensitivity(StrEnum):
@@ -556,6 +557,21 @@ class RepositoryProperties(Properties):
     github_checked_at: AwareDatetime | None = None
 
 
+class SecretExposureProperties(Properties):
+    """Where a likely secret was published: never the secret itself.
+
+    ``kind`` names the format that matched ("AWS access key ID", "Private
+    key"...), ``commit_url`` and ``file_url`` point at the commit and the line
+    on the forge, and ``committed_at`` is the commit's date. Nothing here
+    holds the value, any part of it or a hash of it.
+    """
+
+    kind: ShortText | None = None
+    commit_url: UrlText | None = None
+    file_url: UrlText | None = None
+    committed_at: AwareDatetime | None = None
+
+
 class FaviconProperties(Properties):
     """The icon file a site serves. Its MurmurHash3 is the entity's value."""
 
@@ -900,6 +916,24 @@ class Repository(EntityBase):
     properties_model = RepositoryProperties
 
 
+class SecretExposure(EntityBase):
+    """A likely secret published in a public repository's history.
+
+    The value locates it: ``<repository>@<commit sha>/<path>#L<line>``
+    (``github.com/example-org/widgets@<40 hex>/config/settings.py#L12``).
+    The secret's value is never part of an entity.
+    """
+
+    type: Literal[EntityType.SECRET_EXPOSURE] = EntityType.SECRET_EXPOSURE
+    entity_type = EntityType.SECRET_EXPOSURE
+    label = "SecretExposure"
+    sensitivity = Sensitivity.ORGANIZATION
+    display_name = "Exposed secret"
+    hint = "Where a likely secret was published: repository, commit, file and line."
+    example = "github.com/example-org/widgets@" + "0" * 40 + "/config/settings.py#L12"
+    properties_model = SecretExposureProperties
+
+
 ENTITY_MODELS: dict[EntityType, type[EntityBase]] = {
     model.entity_type: model
     for model in (
@@ -924,6 +958,7 @@ ENTITY_MODELS: dict[EntityType, type[EntityBase]] = {
         Breach,
         Favicon,
         Repository,
+        SecretExposure,
     )
 }
 
@@ -948,7 +983,8 @@ AnyEntity = Annotated[
     | Image
     | Breach
     | Favicon
-    | Repository,
+    | Repository
+    | SecretExposure,
     Field(discriminator="type"),
 ]
 
@@ -1013,6 +1049,8 @@ __all__ = [
     "Properties",
     "Repository",
     "RepositoryProperties",
+    "SecretExposure",
+    "SecretExposureProperties",
     "Sensitivity",
     "Service",
     "SocialProfile",
