@@ -4,8 +4,9 @@
 // screen at 1600×1000.
 //
 // Fictional data only: example.org / example.com / example.net names, the
-// RFC 5737 IPv4 and RFC 3849 IPv6 documentation ranges, AS64496–AS64511, no
-// real people. Deterministic: every entity is pinned at a fixed position (no
+// RFC 5737 IPv4 and RFC 3849 IPv6 documentation ranges, AS64496–AS64511, an
+// invented company (Example Ltd, its LEI made up with valid check digits, its
+// Wikidata item the Wikidata Sandbox), no real people. Deterministic: every entity is pinned at a fixed position (no
 // force layout), the stored dates are set to fixed values afterwards, the
 // page clock is fixed, the sign-in loom runs on a fake clock for a fixed time,
 // and the only jobs (and the one profile run) run Shuttles that need no
@@ -43,7 +44,70 @@ const LAST_SEEN = "2026-11-17T16:40:00Z";
 
 // --- the demo case ----------------------------------------------------------------------
 
-/** [type, value, first seen (UTC date), x, y]: the layout is fixed, as pins. */
+// What the GLEIF, Wikidata, GitHub and HIBP Shuttles would have written.
+const ORGANIZATION = {
+  legal_name: "EXAMPLE LTD",
+  lei: "9845001EXAMPLE0LTD03",
+  jurisdiction: "GB",
+  country: "GB",
+  legal_form: "Private limited company",
+  registered_as: "01234567",
+  entity_status: "ACTIVE",
+  lei_status: "ISSUED",
+  gleif_checked_at: "2026-11-12T10:12:00Z",
+  wikidata_id: "Q4115189",
+  wikidata_checked_at: "2026-11-12T10:13:00Z",
+  github_login: "example-ltd",
+  github_checked_at: "2026-11-12T10:14:00Z",
+};
+const SHOP_API = {
+  description: "Back end of the Example shop: orders, carts and payments.",
+  language: "Python",
+  topics: ["shop", "api"],
+  license: "Apache-2.0",
+  stars: 12,
+  forks: 3,
+  fork: false,
+  archived: false,
+  default_branch: "main",
+  created_at: "2025-08-04T09:30:00Z",
+  pushed_at: "2026-11-09T17:02:00Z",
+  github_checked_at: "2026-11-12T10:14:00Z",
+};
+const WEBSITE = {
+  description: "The www.example.org site.",
+  language: "TypeScript",
+  homepage: "https://www.example.org",
+  stars: 4,
+  forks: 1,
+  fork: false,
+  archived: false,
+  default_branch: "main",
+  created_at: "2024-02-20T11:00:00Z",
+  pushed_at: "2026-10-28T08:45:00Z",
+  github_checked_at: "2026-11-12T10:14:00Z",
+};
+const EXPOSURE_COMMIT = "3f9a1c2e7b4d5a6f8091a2b3c4d5e6f708192a3b";
+const EXPOSURE = `github.com/example-ltd/shop-api@${EXPOSURE_COMMIT}/config/settings.py#L12`;
+const EXPOSURE_PROPERTIES = {
+  kind: "Stripe live secret key",
+  commit_url: `https://github.com/example-ltd/shop-api/commit/${EXPOSURE_COMMIT}`,
+  file_url: `https://github.com/example-ltd/shop-api/blob/${EXPOSURE_COMMIT}/config/settings.py#L12`,
+  committed_at: "2026-11-09T16:58:00Z",
+};
+const BREACH = {
+  title: "Example Shop",
+  breach_date: "2025-03-14",
+  record_count: 48211,
+  data_classes: ["Email addresses", "Names", "Purchases"],
+  added_at: "2025-04-02T08:00:00Z",
+  verified: true,
+  fabricated: false,
+  spam_list: false,
+  malware: false,
+};
+
+/** [type, value, first seen (UTC date), x, y, properties?]: the layout is fixed, as pins. */
 const ENTITIES = [
   ["domain", "example.org", "2024-02-12", 0, 0],
   ["domain", "www.example.org", "2024-02-12", -200, -130],
@@ -73,6 +137,12 @@ const ENTITIES = [
   // A lookalike of example.org with a copy of its login page (typosquats, screenshots).
   ["domain", "examp1e.org", "2026-11-03", -900, 260],
   ["url", "https://examp1e.org/login", "2026-11-03", -780, 70],
+  // The company behind the domains, its public code and a breach of its shop (M4 Shuttles).
+  ["organization", "Example Ltd", "2026-11-12", 760, 430, ORGANIZATION],
+  ["repository", "github.com/example-ltd/shop-api", "2026-11-12", 1020, 330, SHOP_API],
+  ["repository", "github.com/example-ltd/website", "2026-11-12", 920, 640, WEBSITE],
+  ["secret_exposure", EXPOSURE, "2026-11-13", 1260, 520, EXPOSURE_PROPERTIES],
+  ["breach", "ExampleShop", "2026-10-20", 340, 250, BREACH],
 ];
 
 /** [type, source value, target value]. */
@@ -108,6 +178,13 @@ const RELATIONSHIPS = [
   ["ALIAS_OF", "cdn.example.net", "shop.example.com"],
   ["LOOKALIKE_OF", "examp1e.org", "example.org"],
   ["HOSTS", "examp1e.org", "https://examp1e.org/login"],
+  ["OWNS", "Example Ltd", "example.org"],
+  ["OWNS", "Example Ltd", "example.com"],
+  ["OWNS", "Example Ltd", "example.net"],
+  ["HAS_REPOSITORY", "Example Ltd", "github.com/example-ltd/shop-api"],
+  ["HAS_REPOSITORY", "Example Ltd", "github.com/example-ltd/website"],
+  ["HAS_EXPOSURE", "github.com/example-ltd/shop-api", EXPOSURE],
+  ["BREACH_OF", "ExampleShop", "example.com"],
 ];
 
 /** The login page and its copy on the lookalike: [URL, brand shown on the page]. */
@@ -342,8 +419,12 @@ try {
   }
 
   const keys = new Map();
-  for (const [type, value] of ENTITIES) {
-    const entity = await apiCall(setup, "POST", `/cases/${demoId}/entities`, { type, value });
+  for (const [type, value, , , , properties] of ENTITIES) {
+    const entity = await apiCall(setup, "POST", `/cases/${demoId}/entities`, {
+      type,
+      value,
+      ...(properties === undefined ? {} : { properties }),
+    });
     keys.set(value, entity.key);
   }
   for (const [type, source, target] of RELATIONSHIPS) {
@@ -576,6 +657,31 @@ try {
   });
   await shot(looks, "screenshot-light.png");
   await looks.context().close();
+
+  // The company: its records at GLEIF and Wikidata, then a secret its code exposed.
+  const select = async (page, search, text) => {
+    await page.getByRole("combobox", { name: "Search entities" }).fill(search);
+    await page.getByRole("option").filter({ hasText: text }).first().click();
+    return page.getByRole("complementary", { name: "Details" });
+  };
+  const company = await open("light", `/cases/${demoId}/graph`);
+  await graphReady(company);
+  const companyDetails = await select(company, "Example Ltd", "Example Ltd");
+  const records = companyDetails.getByRole("heading", { name: "Public records" });
+  await records.waitFor();
+  await records.evaluate((element) => {
+    element.scrollIntoView({ block: "center" });
+  });
+  await shot(company, "organization-light.png");
+  await company.context().close();
+
+  const leak = await open("dark", `/cases/${demoId}/graph`);
+  await graphReady(leak);
+  const leakDetails = await select(leak, "settings.py", "settings.py");
+  await leakDetails.getByText(EXPOSURE_PROPERTIES.kind).first().waitFor();
+  await showGraph(leak);
+  await shot(leak, "exposed-secret-dark.png");
+  await leak.context().close();
 
   // Certificate monitoring: example.org is watched, and its last check found new names.
   // (Added last: the alert shows above the graph in every capture after this.)
