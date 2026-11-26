@@ -29,7 +29,7 @@ test("an admin adds a scan profile, runs it on a domain and pivots from it", asy
   await expect(table.getByText("Quick domain recon")).toBeVisible();
   await page.getByRole("button", { name: "New profile" }).click();
   const dialog = page.getByRole("dialog", { name: "New scan profile" });
-  await dialog.getByLabel("Name").fill(profileName);
+  await dialog.getByLabel("Name", { exact: true }).fill(profileName);
   await dialog.getByRole("checkbox", { name: /Registrable domain/ }).check();
   await dialog.getByRole("checkbox", { name: /DNS records/ }).check();
   await dialog.getByRole("button", { name: "Save profile" }).click();
