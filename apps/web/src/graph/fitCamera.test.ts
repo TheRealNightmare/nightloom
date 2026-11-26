@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { FakeSigma, VIEWPORT } from "../test/sigmaMock";
 import { fit2d, FIT_SHARE, freeAreas, MIN_FIT_EXTENT, type ScreenKnot } from "./framing";
 import type { Rect } from "./geometry";
-import { fittedCameraState, type AnySigma } from "./interactions";
+import { fittedCameraState, focusCameraState, type AnySigma } from "./interactions";
 
 const W = 1000;
 const H = 600;
@@ -186,5 +186,37 @@ describe("fittedCameraState (2D framing of the visible graph)", () => {
   it("is null when no node is visible", () => {
     const sigma = sigmaWith({ a: [0, 0] });
     expect(fittedCameraState(sigma as unknown as AnySigma, [])).toBeNull();
+  });
+});
+
+describe("focusCameraState (flying to one node)", () => {
+  const point = { x: 120, y: -40 };
+  const sigma = () =>
+    new FakeSigma(
+      {
+        nodes: () => [],
+        edges: () => [],
+        hasNode: () => false,
+        getNodeAttributes: () => ({ x: 0, y: 0 }),
+      },
+      document.createElement("div"),
+    );
+  const shown = (fake: FakeSigma, state: { x: number; y: number; ratio: number }) =>
+    fake.graphToViewport(point, { cameraState: { ...state, angle: 0 } });
+
+  it("puts the node in the middle of the canvas when nothing covers it", () => {
+    const fake = sigma();
+    const state = focusCameraState(fake as unknown as AnySigma, point, 0.7);
+    expect(state).toEqual({ x: 120, y: -40, ratio: 0.7 });
+  });
+
+  it("puts the node in the middle of the largest free area, not under the legend", () => {
+    const fake = sigma();
+    const cover = [{ x: 0, y: 450, width: VIEWPORT.width, height: 150 }];
+    const state = focusCameraState(fake as unknown as AnySigma, point, 0.7, cover);
+    expect(state.ratio).toBe(0.7);
+    const at = shown(fake, state);
+    expect(at.x).toBeCloseTo(VIEWPORT.width / 2, 6);
+    expect(at.y).toBeCloseTo(450 / 2, 6);
   });
 });
