@@ -8,7 +8,13 @@ How releases are cut is described in [docs/RELEASING.md](docs/RELEASING.md).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-26
+
+Organizations, people, leaks and code. Ten new Shuttles look up a company's legal records at GLEIF and its facts on Wikidata, list the breaches of a site or an email address from Have I Been Pwned, find an organization's public GitHub repositories, their commit authors and the secrets their history exposes, and read the public profiles behind a username or an email address. Everything about people is opt-in per case and never followed by auto-pivot; breach and code Shuttles keep metadata and locations, never passwords or secret values.
+
 ### Added
+
+#### Organizations
 
 - Legal entity records: the **Legal entity record (GLEIF)** Shuttle (`gleif`, in the new `shuttles/gleif` package, passive) looks up an organization's Legal Entity Identifier at GLEIF (free, no API key, CC0 data) by its exact legal name, an LEI given as its name, or its `lei` property. It adds the LEI, legal name, jurisdiction, legal form, business register number, entity and LEI status and country to the organization, and the parent companies and direct subsidiaries (at most 50) reported to GLEIF. A name that matches several companies adds nothing; the job note lists their LEIs. It never keeps a sole proprietor's (a person's) record or any street address, and never runs in an auto-pivot.
 - Relationship type `SUBSIDIARY_OF` (Organization → Organization: the source is owned by the target; the note says direct or ultimate parent).
@@ -16,17 +22,47 @@ How releases are cut is described in [docs/RELEASING.md](docs/RELEASING.md).
 - Organization facts: the **Organization facts (Wikidata)** Shuttle (`wikidata`, in the new `shuttles/wikidata` package, passive) reads Wikidata (free, no key, CC0). For an organization, found by its exact English name or alias, an item ID as its name, or its `wikidata_id` or `lei` property: its official websites as Domains it `OWNS`, its country, LEI and industry, and its parent organizations and subsidiaries with `SUBSIDIARY_OF`. For a domain: the organizations whose official website it is. An ambiguous name adds nothing (the note lists the item IDs), items that are people are never kept, and it never runs in an auto-pivot.
 - Organization properties `wikidata_id` and `wikidata_checked_at`.
 - The side panel's *Public records* links an organization to its LEI record on GLEIF's search site and to its Wikidata item.
+
+#### Breaches
+
 - Breaches: the new `shuttles/hibp` package, breach metadata from Have I Been Pwned (CC BY 4.0), never passwords or leaked records. **Breaches of a site** (`hibp-breaches`, Domain, no key) lists a site's breaches from HIBP's public list; **Breaches of an email address** (`hibp-account`, Email, person-related) lists the breaches an address is in, with the operator's paid HIBP key in `NIGHTLOOM_HIBP_API_KEY`, and leaves out sensitive breaches. Neither runs in an auto-pivot.
 - Relationship types `BREACH_OF` (Breach → Domain) and `EXPOSED_IN` (Email → Breach); Breach properties `title`, `added_at`, `verified`, `fabricated`, `spam_list` and `malware`.
+
+#### Code intelligence
+
 - Code intelligence: the **Repositories of an organization (GitHub)** Shuttle (`github-repos`, in the new `shuttles/github` package, passive) finds an organization's GitHub account (its `github_login` property, or a search for its name) and adds its public repositories (at most 100) with `HAS_REPOSITORY`, and its profile's website with `OWNS`. An ambiguous name adds nothing; private repositories, the account's email address and location are never kept. It works without a token (60 requests an hour); the operator can set `NIGHTLOOM_GITHUB_TOKEN` for more.
 - Entity type `repository` (a public repository on GitHub, GitLab, Codeberg or Bitbucket, named `github.com/<owner>/<name>`), relationship type `HAS_REPOSITORY` (Organization → Repository), and organization properties `github_login` and `github_checked_at`.
 - Commit authors: the **Commit authors of a repository (GitHub)** Shuttle (`github-commits`, person-related, passive) reads the latest 100 commits of a public GitHub repository and adds their GitHub accounts (Usernames) and commit email addresses (Emails), `CONTRIBUTED_TO` the repository, and `USES_EMAIL` where GitHub linked an address to an account. Bots and no-reply addresses are left out; author names, messages and code are never read. It runs only in cases that allow person-related entities, never in an auto-pivot.
 - Relationship types `CONTRIBUTED_TO` (Username or Email → Repository) and `USES_EMAIL` (Username → Email).
 - Exposed secrets: the **Exposed secrets in a repository (GitHub)** Shuttle (`github-secrets`, passive) scans the lines a public GitHub repository's latest commits added (10, or 30 with `NIGHTLOOM_GITHUB_TOKEN`) for likely secrets in precise formats (AWS, GitHub, GitLab, Slack, Stripe, Google, SendGrid, npm, OpenAI and Anthropic keys and tokens, unencrypted private keys). Each becomes an exposed secret located by repository, commit, file and line, with links to the commit and the line. The secret itself is never kept, in any form, and never tested.
 - Entity type `secret_exposure` (*Exposed secret*: `<repository>@<commit>/<path>#L<line>`, with `kind`, `commit_url`, `file_url`, `committed_at`) and relationship type `HAS_EXPOSURE` (Repository → SecretExposure).
+
+#### People
+
+Person-related Shuttles run only in cases whose owner allowed person-related entities (with a recorded reason), never in an auto-pivot, and keep no photos or locations.
+
 - Public profiles, both person-related (they run only in cases that allow it, never in an auto-pivot): **Public profile of a username (GitHub)** (`github-user`) reads a username's GitHub profile (display name, company, website, creation date, counts) as a SocialProfile; **Public profile of an email address (Gravatar)** (`gravatar`, new `shuttles/gravatar` package) looks an address up by its SHA-256 hash and adds its profile and the accounts its owner verified there. Neither keeps photos, locations, bios or descriptions.
 - Relationship types `HAS_PROFILE` (Username or Email → SocialProfile) and `LINKED_ACCOUNT` (SocialProfile → SocialProfile); SocialProfile properties `display_name`, `company`, `job_title`, `website`, `created_at`, `followers` and `public_repos`.
 - Username presence: the **Username on other platforms** Shuttle (`username-presence`, new `shuttles/usernames` package, person-related, passive) asks twelve platforms with clear existence checks (GitHub, GitLab, Codeberg, Hacker News, Docker Hub, npm, PyPI, DEV, Lobsters, Keybase, Chess.com, Lichess) whether an account with the name exists, and adds each one found as a SocialProfile rated C4, with a note that the same name is not proof of the same person. Only existence is read. It runs only in cases that allow person-related entities, never in an auto-pivot.
+
+### Changed
+
+- The worker reads two new optional settings, `NIGHTLOOM_HIBP_API_KEY` and `NIGHTLOOM_GITHUB_TOKEN`, passed to it by `deploy/compose.yaml`. A malformed value stops the worker at start with a message naming the variable; neither is ever stored with a case, logged or shown.
+- Two new entity types, `repository` and `secret_exposure`, and nine new relationship types (`SUBSIDIARY_OF`, `BREACH_OF`, `EXPOSED_IN`, `HAS_REPOSITORY`, `CONTRIBUTED_TO`, `USES_EMAIL`, `HAS_EXPOSURE`, `HAS_PROFILE`, `LINKED_ACCOUNT`) appear in `GET /schema` and in the graph's menus for adding entities and relationships.
+
+### Upgrading from 0.3.0
+
+- No migrations: the new types and properties need nothing in PostgreSQL or Neo4j. Back up first, as always ([Upgrades](docs/DEPLOYMENT.md#upgrades)).
+- Optional: set `NIGHTLOOM_HIBP_API_KEY` in `.env` for *Breaches of an email address* ([Breaches of an email address](docs/DEPLOYMENT.md#breaches-of-an-email-address-optional)), and `NIGHTLOOM_GITHUB_TOKEN` for more than 60 GitHub requests an hour ([GitHub token](docs/DEPLOYMENT.md#github-token-optional)). Without them those Shuttles fail with a note (HIBP) or work more slowly (GitHub); nothing else changes.
+- The person-related Shuttles stay unavailable in existing cases until an owner turns on **Allow person entities** in the case's *Settings* (the reason is recorded in the case activity).
+
+### Known limitations
+
+- Code intelligence covers GitHub only; Repository entities from GitLab, Codeberg or Bitbucket can be added by hand but no Shuttle reads them yet. Commit authors read the latest 100 commits, exposed secrets the latest 10 (30 with a token): older history is not searched.
+- Secret detection matches precise key formats only, so generic passwords, high-entropy strings and keys of other services are missed, and a secret already removed in a later commit is still reported (the commit link shows where it was added).
+- Username presence asks a fixed list of twelve platforms and only says that an account with the name exists, never that it belongs to the same person.
+- GLEIF and Wikidata add data only for an exact name match; a company known by another name needs its LEI or Wikidata item ID.
+- Single-node deployment only (one host running the whole Compose stack).
 
 ## [0.3.0] - 2026-11-23
 
@@ -208,7 +244,8 @@ First release: self-hosted, passive collection of public infrastructure data int
 - Single-node deployment only (one host running the whole Compose stack).
 - Backups stop Neo4j briefly, because Neo4j Community Edition can only be dumped while stopped.
 
-[Unreleased]: https://github.com/TheRealNightmare/nightloom/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/TheRealNightmare/nightloom/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/TheRealNightmare/nightloom/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/TheRealNightmare/nightloom/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/TheRealNightmare/nightloom/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/TheRealNightmare/nightloom/releases/tag/v0.1.0
