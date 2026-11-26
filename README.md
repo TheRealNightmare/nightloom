@@ -36,6 +36,8 @@ All data in these pictures is fictional (`example.org`, documentation IP ranges 
 | Verified domains (light) | Scan profiles (dark) |
 | ![A certificate alert above the graph in the dark theme: example.org has two new certificates and three new names, staging.example.org, vpn.example.org and the lookalike examp1e.org, with Show in graph and Mark seen.](docs/images/certificate-alerts-dark.png) | ![A login page selected in the light theme: the side panel shows its screenshot and, under Looks like, the copy of the page on the lookalike examp1e.org.](docs/images/screenshot-light.png) |
 | Certificate monitoring alert (dark) | Screenshot and pages that look alike (light) |
+| ![The organization Example Ltd selected in the light theme: the graph highlights its two GitHub repositories and the three domains it owns, and the side panel shows its LEI record details and Public records links to GLEIF and Wikidata.](docs/images/organization-light.png) | ![An exposed secret selected in the dark theme: the graph highlights it next to the repository github.com/example-ltd/shop-api, and the side panel shows its kind, Stripe live secret key, with links to the commit and the line, never the secret itself.](docs/images/exposed-secret-dark.png) |
+| An organization's public records (light) | An exposed secret in a repository (dark) |
 
 ## Quick deploy
 
