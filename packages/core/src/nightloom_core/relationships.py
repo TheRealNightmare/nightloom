@@ -38,6 +38,8 @@ class RelationType(StrEnum):
     CONTRIBUTED_TO = "CONTRIBUTED_TO"
     # The source account committed with the target address (its forge linked them).
     USES_EMAIL = "USES_EMAIL"
+    # A likely secret was published in the source repository at the target location.
+    HAS_EXPOSURE = "HAS_EXPOSURE"
     # The source organization is owned by the target (its parent company), as reported
     # in the source's Legal Entity Identifier record; the note says direct or ultimate.
     SUBSIDIARY_OF = "SUBSIDIARY_OF"
@@ -83,6 +85,7 @@ ALLOWED: dict[RelationType, frozenset[Pair]] = {
     RelationType.HAS_REPOSITORY: _pairs([E.ORGANIZATION], [E.REPOSITORY]),
     RelationType.CONTRIBUTED_TO: _pairs([E.USERNAME, E.EMAIL], [E.REPOSITORY]),
     RelationType.USES_EMAIL: _pairs([E.USERNAME], [E.EMAIL]),
+    RelationType.HAS_EXPOSURE: _pairs([E.REPOSITORY], [E.SECRET_EXPOSURE]),
     RelationType.SUBSIDIARY_OF: _pairs([E.ORGANIZATION], [E.ORGANIZATION]),
     RelationType.HOSTS: _pairs([E.DOMAIN], [E.URL]),
     RelationType.LOOKALIKE_OF: _pairs([E.DOMAIN], [E.DOMAIN]),

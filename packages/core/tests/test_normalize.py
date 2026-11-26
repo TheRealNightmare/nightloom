@@ -629,6 +629,7 @@ def test_every_type_has_a_normalizer() -> None:
         E.CRYPTO_WALLET,
         E.FAVICON,
         E.REPOSITORY,
+        E.SECRET_EXPOSURE,
     }
     assert covered | n.TEXT_TYPES == set(EntityType)
     assert not covered & n.TEXT_TYPES
@@ -769,3 +770,34 @@ def test_repositories(value: str, canonical: str) -> None:
 def test_invalid_repositories(value: str) -> None:
     with pytest.raises(n.NormalizationError):
         n.normalize(E.REPOSITORY, value)
+
+
+SHA = "0123456789ABCDEF0123456789abcdef01234567"
+
+
+def test_secret_exposures() -> None:
+    normalized = n.normalize(
+        E.SECRET_EXPOSURE, f"https://github.com/Example-Org/Widgets@{SHA}/Config/Settings.py#L12"
+    )
+    expected = f"github.com/example-org/widgets@{SHA.lower()}/Config/Settings.py#L12"
+    assert normalized.value == expected
+    assert n.parse_key(normalized.key) == (E.SECRET_EXPOSURE, expected)
+    spaced = n.normalize(E.SECRET_EXPOSURE, f"github.com/a/b@{SHA}/keys/id rsa#L1")
+    assert spaced.value.endswith("/keys/id rsa#L1")
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        f"github.com/example-org/widgets@{SHA[:7]}/a.py#L1",
+        f"github.com/example-org/widgets@{SHA}/a.py",
+        f"github.com/example-org/widgets@{SHA}/a.py#L0",
+        f"github.com/example-org/widgets@{SHA}/../etc/passwd#L1",
+        f"github.com/example-org/widgets@{SHA}//a.py#L1",
+        f"github.com/example-org/widgets@{SHA}/a\x01.py#L1",
+        f"example.org/x/y@{SHA}/a.py#L1",
+    ],
+)
+def test_invalid_secret_exposures(value: str) -> None:
+    with pytest.raises(n.NormalizationError):
+        n.normalize(E.SECRET_EXPOSURE, value)

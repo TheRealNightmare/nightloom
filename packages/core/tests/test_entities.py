@@ -35,6 +35,7 @@ ORGANIZATION_TYPES = {
     EntityType.DOCUMENT,
     EntityType.BREACH,
     EntityType.REPOSITORY,
+    EntityType.SECRET_EXPOSURE,
 }
 
 
@@ -57,7 +58,10 @@ def test_display_metadata(entity_type: EntityType) -> None:
     # The example is a valid value of its type, and documentation-safe.
     entity = build_entity(entity_type, model.example)
     assert entity.key == normalize(entity_type, model.example).key
-    assert "@" not in model.example or "example.org" in model.example
+    # An "@" means an address, which must be a documentation one; an exposure's "@" joins
+    # its repository and commit instead.
+    if entity_type is not EntityType.SECRET_EXPOSURE:
+        assert "@" not in model.example or "example.org" in model.example
 
 
 def test_display_names_are_unique() -> None:
