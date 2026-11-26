@@ -23,6 +23,7 @@ dependencies = [
     "nightloom-shuttle-ripestat",
     "nightloom-shuttle-registrable-domain",
     "nightloom-shuttle-screenshot",
+    "nightloom-shuttle-usernames",
     "nightloom-shuttle-wayback",
     "nightloom-shuttle-web",
     "nightloom-shuttle-wikidata",
@@ -48,6 +49,7 @@ nightloom-shuttle-rdap = { workspace = true }
 nightloom-shuttle-ripestat = { workspace = true }
 nightloom-shuttle-registrable-domain = { workspace = true }
 nightloom-shuttle-screenshot = { workspace = true }
+nightloom-shuttle-usernames = { workspace = true }
 nightloom-shuttle-wayback = { workspace = true }
 nightloom-shuttle-web = { workspace = true }
 nightloom-shuttle-wikidata = { workspace = true }

@@ -168,6 +168,7 @@ def test_built_in_shuttles_cache_lifetimes() -> None:
         "github-secrets": day,
         "github-user": day,
         "gravatar": day,
+        "username-presence": 7 * day,
         # Evidence belongs to one case: never reused.
         "screenshot": 0,
     }
