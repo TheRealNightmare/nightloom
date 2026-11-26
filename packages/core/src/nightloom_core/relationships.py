@@ -40,6 +40,10 @@ class RelationType(StrEnum):
     USES_EMAIL = "USES_EMAIL"
     # A likely secret was published in the source repository at the target location.
     HAS_EXPOSURE = "HAS_EXPOSURE"
+    # The source account or address has the target public profile.
+    HAS_PROFILE = "HAS_PROFILE"
+    # The source profile lists the target as another account of its owner.
+    LINKED_ACCOUNT = "LINKED_ACCOUNT"
     # The source organization is owned by the target (its parent company), as reported
     # in the source's Legal Entity Identifier record; the note says direct or ultimate.
     SUBSIDIARY_OF = "SUBSIDIARY_OF"
@@ -86,6 +90,8 @@ ALLOWED: dict[RelationType, frozenset[Pair]] = {
     RelationType.CONTRIBUTED_TO: _pairs([E.USERNAME, E.EMAIL], [E.REPOSITORY]),
     RelationType.USES_EMAIL: _pairs([E.USERNAME], [E.EMAIL]),
     RelationType.HAS_EXPOSURE: _pairs([E.REPOSITORY], [E.SECRET_EXPOSURE]),
+    RelationType.HAS_PROFILE: _pairs([E.USERNAME, E.EMAIL], [E.SOCIAL_PROFILE]),
+    RelationType.LINKED_ACCOUNT: _pairs([E.SOCIAL_PROFILE], [E.SOCIAL_PROFILE]),
     RelationType.SUBSIDIARY_OF: _pairs([E.ORGANIZATION], [E.ORGANIZATION]),
     RelationType.HOSTS: _pairs([E.DOMAIN], [E.URL]),
     RelationType.LOOKALIKE_OF: _pairs([E.DOMAIN], [E.DOMAIN]),

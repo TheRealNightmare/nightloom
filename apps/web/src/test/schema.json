@@ -278,6 +278,19 @@
       "pairs": [["repository", "secret_exposure"]]
     },
     {
+      "type": "HAS_PROFILE",
+      "note_required": false,
+      "pairs": [
+        ["email", "social_profile"],
+        ["username", "social_profile"]
+      ]
+    },
+    {
+      "type": "LINKED_ACCOUNT",
+      "note_required": false,
+      "pairs": [["social_profile", "social_profile"]]
+    },
+    {
       "type": "SUBSIDIARY_OF",
       "note_required": false,
       "pairs": [["organization", "organization"]]
