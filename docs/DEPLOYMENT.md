@@ -31,12 +31,12 @@ The limits are ceilings, not reservations. An idle stack uses much less.
 3. **Get the release and create the secrets.** Check out the release you want to run (see [Releases](https://github.com/TheRealNightmare/nightloom/releases)), so the Compose files match its images:
 
    ```sh
-   git clone --branch v0.3.0 https://github.com/TheRealNightmare/nightloom.git
+   git clone --branch v0.4.0 https://github.com/TheRealNightmare/nightloom.git
    cd nightloom
    make secrets ARGS="--domain nightloom.example.org --acme-email you@example.org"
    ```
 
-   See [Secrets](#secrets) for what this does. It also sets `NIGHTLOOM_VERSION=0.3.0`, the checkout's version.
+   See [Secrets](#secrets) for what this does. It also sets `NIGHTLOOM_VERSION=0.4.0`, the checkout's version.
 4. **Download the images and start the stack:**
 
    ```sh
@@ -170,12 +170,12 @@ make restore BACKUP=backups/nightloom-20261119T031500Z.tar.gz
 
 ## Upgrades
 
-Read the [release notes](https://github.com/TheRealNightmare/nightloom/releases) of every version between yours and the new one first: a new major version of PostgreSQL or Neo4j needs a backup and restore, and the notes will say so. Then, for example to 0.3.0:
+Read the [release notes](https://github.com/TheRealNightmare/nightloom/releases) of every version between yours and the new one first: a new major version of PostgreSQL or Neo4j needs a backup and restore, and the notes will say so. Then, for example to 0.4.0:
 
 ```sh
 make backup                                   # always back up first
-git fetch --tags && git checkout v0.3.0       # the Compose files of the new release
-sed -i 's/^NIGHTLOOM_VERSION=.*/NIGHTLOOM_VERSION=0.3.0/' .env
+git fetch --tags && git checkout v0.4.0       # the Compose files of the new release
+sed -i 's/^NIGHTLOOM_VERSION=.*/NIGHTLOOM_VERSION=0.4.0/' .env
 make deploy-pull                              # download the new images
 make up                                       # docker compose ... up -d: recreates what changed
 ```
@@ -189,6 +189,8 @@ docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml --env-file .en
 ```
 
 `/api/v1/ready` must answer `200` and `/api/v1/health` show the new `version`; the account menu in the web UI shows it too. To go back, restore the backup you made with the old version's checkout and `NIGHTLOOM_VERSION`. Pinned third-party images (Caddy, cloudflared, the databases) only change with a Nightloom release.
+
+**From 0.3.0 to 0.4.0**: the steps above are all; there are no migrations. Two settings are new and optional: `NIGHTLOOM_HIBP_API_KEY` for *Breaches of an email address* ([Breaches of an email address (optional)](#breaches-of-an-email-address-optional)) and `NIGHTLOOM_GITHUB_TOKEN` for more GitHub requests ([GitHub token (optional)](#github-token-optional)). The person-related Shuttles run only in cases whose owner turns on **Allow person entities**, which stays off in existing cases.
 
 **From 0.2.0 to 0.3.0**: the steps above are all. `migrate` applies migrations `0013` and `0014` (the per-case *Allow website visits* switch, Certificate Transparency watches and alerts). Website visits stay off in existing cases until an owner turns them on. The Screenshot Shuttle needs the optional browser service ([Screenshots (optional)](#screenshots-optional)): add `SCREENSHOTS=1` to the `make` commands to run it; without it, Screenshot jobs fail with a note and nothing else changes. Screenshots are kept in the object storage with the case, so they are in its backups.
 
