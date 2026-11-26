@@ -50,6 +50,11 @@ Person-related Shuttles run only in cases whose owner allowed person-related ent
 - The worker reads two new optional settings, `NIGHTLOOM_HIBP_API_KEY` and `NIGHTLOOM_GITHUB_TOKEN`, passed to it by `deploy/compose.yaml`. A malformed value stops the worker at start with a message naming the variable; neither is ever stored with a case, logged or shown.
 - Two new entity types, `repository` and `secret_exposure`, and nine new relationship types (`SUBSIDIARY_OF`, `BREACH_OF`, `EXPOSED_IN`, `HAS_REPOSITORY`, `CONTRIBUTED_TO`, `USES_EMAIL`, `HAS_EXPOSURE`, `HAS_PROFILE`, `LINKED_ACCOUNT`) appear in `GET /schema` and in the graph's menus for adding entities and relationships.
 
+### Fixed
+
+- The graph's first view is framed again once the saved pins have loaded and the first layout has settled, if the camera was not moved meanwhile: before, it kept the framing of the nodes' earlier places, so part of the graph could sit under the toolbar or the legend.
+- Picking an entity in the graph's search puts it in the middle of the space the legend and controls leave free, no longer just above the legend.
+
 ### Upgrading from 0.3.0
 
 - No migrations: the new types and properties need nothing in PostgreSQL or Neo4j. Back up first, as always ([Upgrades](docs/DEPLOYMENT.md#upgrades)).

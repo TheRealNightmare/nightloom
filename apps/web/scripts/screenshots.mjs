@@ -659,9 +659,11 @@ try {
   await looks.context().close();
 
   // The company: its records at GLEIF and Wikidata, then a secret its code exposed.
+  // Picking a search result flies the camera to it: wait until it has landed.
   const select = async (page, search, text) => {
     await page.getByRole("combobox", { name: "Search entities" }).fill(search);
     await page.getByRole("option").filter({ hasText: text }).first().click();
+    await page.waitForTimeout(1200);
     return page.getByRole("complementary", { name: "Details" });
   };
   const company = await open("light", `/cases/${demoId}/graph`);
@@ -669,16 +671,22 @@ try {
   const companyDetails = await select(company, "Example Ltd", "Example Ltd");
   const records = companyDetails.getByRole("heading", { name: "Public records" });
   await records.waitFor();
+  // Scrolls the side panel to it, then the page back to the top.
   await records.evaluate((element) => {
     element.scrollIntoView({ block: "center" });
   });
+  await showGraph(company);
   await shot(company, "organization-light.png");
   await company.context().close();
 
   const leak = await open("dark", `/cases/${demoId}/graph`);
   await graphReady(leak);
   const leakDetails = await select(leak, "settings.py", "settings.py");
-  await leakDetails.getByText(EXPOSURE_PROPERTIES.kind).first().waitFor();
+  const kind = leakDetails.getByText(EXPOSURE_PROPERTIES.kind).first();
+  await kind.waitFor();
+  await kind.evaluate((element) => {
+    element.scrollIntoView({ block: "center" });
+  });
   await showGraph(leak);
   await shot(leak, "exposed-secret-dark.png");
   await leak.context().close();
