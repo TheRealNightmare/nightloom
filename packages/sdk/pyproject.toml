@@ -9,7 +9,7 @@ dependencies = [
     "httpcore>=1.0.9",
     "httpx>=0.28.1",
     "nightloom-core",
-    "pydantic>=2.14.3",
+    "pydantic>=2.14.4",
 ]
 
 [build-system]

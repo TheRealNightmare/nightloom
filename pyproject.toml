@@ -14,14 +14,14 @@ members = ["apps/api", "apps/worker", "packages/core", "packages/sdk", "shuttles
 dev = [
     "celery-types>=0.26.0",
     "httpx>=0.28",
-    "hypothesis>=6.170.15",
+    "hypothesis>=6.170.17",
     "lxml>=6.1.3",
     "mypy>=1.18",
     "pre-commit>=4.3",
     "pytest>=8.4",
     "pytest-asyncio>=1.2",
     "pytest-cov>=7.0",
-    "ruff>=0.17.5",
+    "ruff>=0.17.6",
     "types-aiobotocore[s3]>=2.25.1,<2.26",
 ]
 
