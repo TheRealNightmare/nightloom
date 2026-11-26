@@ -16,6 +16,7 @@ dependencies = [
     "nightloom-shuttle-dns",
     "nightloom-shuttle-github",
     "nightloom-shuttle-gleif",
+    "nightloom-shuttle-gravatar",
     "nightloom-shuttle-hibp",
     "nightloom-shuttle-internetdb",
     "nightloom-shuttle-rdap",
@@ -40,6 +41,7 @@ nightloom-shuttle-crtsh = { workspace = true }
 nightloom-shuttle-dns = { workspace = true }
 nightloom-shuttle-github = { workspace = true }
 nightloom-shuttle-gleif = { workspace = true }
+nightloom-shuttle-gravatar = { workspace = true }
 nightloom-shuttle-hibp = { workspace = true }
 nightloom-shuttle-internetdb = { workspace = true }
 nightloom-shuttle-rdap = { workspace = true }
