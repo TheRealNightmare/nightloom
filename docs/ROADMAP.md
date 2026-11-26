@@ -87,7 +87,7 @@ Person-related Shuttles are opt-in per case (`allow_person_entities`), declare `
   - [x] 4.5 Commit authors: the usernames and email addresses in a public repository's recent history (person-gated)
   - [x] 4.6 Exposed secrets: likely secrets in a public repository's recent history, recorded by kind, file and commit link only: never the value, never tested
 - [ ] Person-related Shuttles with guardrails (gated, never in auto-pivot)
-  - [ ] 4.7 Public profiles: a GitHub user's public profile (name, company, blog, repositories) and an email address's public Gravatar profile and linked accounts; no photos, no location
+  - [x] 4.7 Public profiles: a GitHub user's public profile (name, company, blog, repositories) and an email address's public Gravatar profile and linked accounts; no photos, no location
   - [ ] 4.8 Username presence: whether a username exists on a curated list of platforms with public profile pages, as low-rated leads (the same name is not proof of the same person)
 - [ ] 4.9 Release v0.4
 
