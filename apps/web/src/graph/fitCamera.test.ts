@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { FakeSigma, VIEWPORT } from "../test/sigmaMock";
+import { FakeCamera, FakeSigma, VIEWPORT } from "../test/sigmaMock";
 import { fit2d, FIT_SHARE, freeAreas, MIN_FIT_EXTENT, type ScreenKnot } from "./framing";
 import type { Rect } from "./geometry";
 import { fittedCameraState, focusCameraState, type AnySigma } from "./interactions";
@@ -116,6 +116,23 @@ describe("fit2d", () => {
     expect(pair?.zoom).toBe(2.5);
   });
 
+  it("never zooms out further than `minZoom`, and centers the graph at the zoom it keeps", () => {
+    // 4000 px wide: it would need a zoom of about 0.2 to fit.
+    const knots = [
+      { x: -1500, y: 300, radius: 8 },
+      { x: 2500, y: 300, radius: 8 },
+    ];
+    const fit = fit2d(knots, W, H, [LEGEND, CONTROLS], Infinity, FIT_SHARE, 0.5);
+    if (!fit) throw new Error("no fit");
+    expect(fit.zoom).toBe(0.5);
+    // The graph's middle lands in the middle of the free area at that zoom.
+    const middle = { x: 500, y: 300 };
+    const areaX = fit.area.x + fit.area.width / 2;
+    const areaY = fit.area.y + fit.area.height / 2;
+    expect(W / 2 + (middle.x - fit.anchor.x) * fit.zoom).toBeCloseTo(areaX, 9);
+    expect(H / 2 + (middle.y - fit.anchor.y) * fit.zoom).toBeCloseTo(areaY, 9);
+  });
+
   it("is null without knots", () => {
     expect(fit2d([], W, H, [], 1)).toBeNull();
   });
@@ -186,6 +203,128 @@ describe("fittedCameraState (2D framing of the visible graph)", () => {
   it("is null when no node is visible", () => {
     const sigma = sigmaWith({ a: [0, 0] });
     expect(fittedCameraState(sigma as unknown as AnySigma, [])).toBeNull();
+  });
+
+  it("centers a graph too large for the farthest camera in the free area", () => {
+    const sigma = sigmaWith({ a: [-20000, 0], b: [20000, 0] });
+    const cover = [{ x: 0, y: 450, width: VIEWPORT.width, height: 150 }];
+    const state = fittedCameraState(sigma as unknown as AnySigma, ["a", "b"], cover);
+    if (!state) throw new Error("no fit");
+    expect(state.ratio).toBe(sigma.camera.maxRatio);
+    const middle = shownAt(sigma, { x: 0, y: 0 }, state);
+    expect(middle.x).toBeCloseTo(VIEWPORT.width / 2, 6);
+    expect(middle.y).toBeCloseTo(450 / 2, 6);
+  });
+});
+
+/**
+ * Like sigma 4: the graph's extent is framed into the unit square (an extent
+ * of 0, one entity or all on one spot, counts as 1 unit), and the unit square
+ * spans the canvas's smaller side at camera ratio 1. Unrotated.
+ */
+class FramedSigma {
+  readonly camera = new FakeCamera();
+  private readonly positions: Record<string, [number, number]>;
+  constructor(positions: Record<string, [number, number]>) {
+    this.positions = positions;
+  }
+  private extent() {
+    const xs = Object.values(this.positions).map(([x]) => x);
+    const ys = Object.values(this.positions).map(([, y]) => y);
+    return { x: [Math.min(...xs), Math.max(...xs)], y: [Math.min(...ys), Math.max(...ys)] };
+  }
+  private frame({ x, y }: { x: number; y: number }) {
+    const { x: ex, y: ey } = this.extent();
+    const [minX = 0, maxX = 0] = ex;
+    const [minY = 0, maxY = 0] = ey;
+    const span = Math.max(maxX - minX, maxY - minY) || 1;
+    return { x: 0.5 + (x - (minX + maxX) / 2) / span, y: 0.5 + (y - (minY + maxY) / 2) / span };
+  }
+  private get side() {
+    return Math.min(VIEWPORT.width, VIEWPORT.height);
+  }
+  getDimensions() {
+    return { ...VIEWPORT };
+  }
+  getCamera() {
+    return this.camera;
+  }
+  getBBox() {
+    return this.extent();
+  }
+  getGraph() {
+    return {
+      hasNode: (node: string) => node in this.positions,
+      getNodeAttributes: (node: string) => {
+        const [x, y] = this.positions[node] ?? [0, 0];
+        return { x, y };
+      },
+    };
+  }
+  getNodeDisplayData() {
+    return { size: 8 };
+  }
+  graphToViewport(
+    point: { x: number; y: number },
+    at: { cameraState: { x: number; y: number; ratio: number } },
+  ) {
+    const framed = this.frame(point);
+    const { x, y, ratio } = at.cameraState;
+    return {
+      x: VIEWPORT.width / 2 + ((framed.x - x) / ratio) * this.side,
+      y: VIEWPORT.height / 2 - ((framed.y - y) / ratio) * this.side,
+    };
+  }
+  viewportToFramedGraph(
+    point: { x: number; y: number },
+    at: { cameraState: { x: number; y: number; ratio: number } },
+  ) {
+    const { x, y, ratio } = at.cameraState;
+    return {
+      x: x + ((point.x - VIEWPORT.width / 2) * ratio) / this.side,
+      y: y - ((point.y - VIEWPORT.height / 2) * ratio) / this.side,
+    };
+  }
+}
+
+describe("fittedCameraState with sigma's framing of the graph's extent", () => {
+  const cover = [{ x: 0, y: 450, width: VIEWPORT.width, height: 150 }];
+  const at = (state: { x: number; y: number; ratio: number }) => ({ cameraState: state });
+
+  it("frames a lone entity in the middle of the free area, at the minimum extent's scale", () => {
+    // Before: the minimum extent was measured as 200 framed units, so the
+    // camera went as far out as it can and the anchor sent the knot off screen.
+    const sigma = new FramedSigma({ a: [100, 0] });
+    const state = fittedCameraState(sigma as unknown as AnySigma, ["a"], cover);
+    if (!state) throw new Error("no fit");
+    const shown = sigma.graphToViewport({ x: 100, y: 0 }, at(state));
+    expect(shown.x).toBeCloseTo(VIEWPORT.width / 2, 6);
+    expect(shown.y).toBeCloseTo(450 / 2, 6);
+    // The frame (standing for the minimum extent) spans 85% of the smaller side.
+    expect(state.ratio).toBeCloseTo(1 / FIT_SHARE, 6);
+  });
+
+  it("frames entities on one spot the same way", () => {
+    const sigma = new FramedSigma({ a: [5, 5], b: [5, 5] });
+    const state = fittedCameraState(sigma as unknown as AnySigma, ["a", "b"]);
+    if (!state) throw new Error("no fit");
+    const shown = sigma.graphToViewport({ x: 5, y: 5 }, at(state));
+    expect(shown.x).toBeCloseTo(VIEWPORT.width / 2, 6);
+    expect(shown.y).toBeCloseTo(VIEWPORT.height / 2, 6);
+    expect(state.ratio).toBeCloseTo(1 / FIT_SHARE, 6);
+  });
+
+  it("keeps a tiny graph centered when its minimum extent is beyond the farthest camera", () => {
+    // 2 units wide: sigma blows it up to the frame, so 200 units would be 100
+    // frames; the camera stops at its largest ratio and still centers it.
+    const sigma = new FramedSigma({ a: [0, 0], b: [2, 0] });
+    const state = fittedCameraState(sigma as unknown as AnySigma, ["a", "b"], cover);
+    if (!state) throw new Error("no fit");
+    expect(state.ratio).toBe(sigma.camera.maxRatio);
+    const a = sigma.graphToViewport({ x: 0, y: 0 }, at(state));
+    const b = sigma.graphToViewport({ x: 2, y: 0 }, at(state));
+    expect((a.x + b.x) / 2).toBeCloseTo(VIEWPORT.width / 2, 6);
+    expect(a.y).toBeCloseTo(450 / 2, 6);
   });
 });
 
