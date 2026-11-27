@@ -155,17 +155,22 @@ export function fittedCameraState(
     const size = (sigma.getNodeDisplayData(node) as { size?: number } | undefined)?.size;
     knots.push({ x: point.x, y: point.y, radius: size ?? DEFAULT_KNOT_RADIUS });
   }
-  // Pixels the minimum extent spans in the reset view.
+  // Pixels the minimum extent spans in the reset view. sigma frames a graph
+  // without extent (one entity, or all on one spot) as if it were one unit
+  // wide, so there the frame stands for the minimum extent.
+  const bbox = sigma.getBBox();
+  const flat = bbox.x[0] === bbox.x[1] && bbox.y[0] === bbox.y[1];
   const origin = sigma.graphToViewport({ x: 0, y: 0 }, at);
-  const far = sigma.graphToViewport({ x: MIN_FIT_EXTENT, y: 0 }, at);
+  const far = sigma.graphToViewport({ x: flat ? 1 : MIN_FIT_EXTENT, y: 0 }, at);
   const minExtentPx = Math.hypot(far.x - origin.x, far.y - origin.y);
   const camera = sigma.getCamera();
-  // Nor closer than the camera may go (its minimum ratio).
+  // Nor closer, or farther, than the camera may go (its ratio bounds).
   const maxZoom = Math.min(
     minExtentPx > 0 ? (FIT_SHARE * Math.min(width, height)) / minExtentPx : Infinity,
     1 / camera.getBoundedRatio(0),
   );
-  const fit = fit2d(knots, width, height, covered, maxZoom);
+  const minZoom = 1 / camera.getBoundedRatio(Infinity);
+  const fit = fit2d(knots, width, height, covered, maxZoom, FIT_SHARE, minZoom);
   if (!fit) return null;
   const center = sigma.viewportToFramedGraph(fit.anchor, at);
   return { x: center.x, y: center.y, ratio: camera.getBoundedRatio(1 / fit.zoom), angle: 0 };

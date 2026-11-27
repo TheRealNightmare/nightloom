@@ -99,7 +99,7 @@ export interface Fit2d {
  * The 2D framing of `knots` (as the reset view draws them) on a `width` ×
  * `height` canvas whose `covered` rectangles are hidden by overlays: zoomed
  * so the knots' bounds fill `share` of the best free area (the one that
- * shows them largest) without exceeding `maxZoom`, and centered in it.
+ * shows them largest) between `minZoom` and `maxZoom`, and centered in it.
  * Knot radii are pixels whatever the zoom. Null when there is no knot.
  */
 export function fit2d(
@@ -109,6 +109,7 @@ export function fit2d(
   covered: readonly Rect[],
   maxZoom: number,
   share = FIT_SHARE,
+  minZoom = 0,
 ): Fit2d | null {
   if (knots.length === 0) return null;
   let minX = Infinity;
@@ -143,7 +144,10 @@ export function fit2d(
     if (better) best = { zoom, area };
   }
   if (best === null || !(best.zoom > 0) || !Number.isFinite(best.zoom)) return null;
-  const { zoom, area } = best;
+  // The camera cannot go farther out than minZoom: the anchor is worked out
+  // for the zoom it will really have, or the graph lands off-center.
+  const zoom = Math.max(best.zoom, minZoom);
+  const { area } = best;
   const centerX = (minX + maxX) / 2;
   const centerY = (minY + maxY) / 2;
   const areaX = area.x + area.width / 2;

@@ -8,6 +8,10 @@ How releases are cut is described in [docs/RELEASING.md](docs/RELEASING.md).
 
 ## [Unreleased]
 
+### Fixed
+
+- A case graph with a single entity (or with all its entities on one spot) no longer opens on an empty 2D canvas: the entity is framed in the middle of the free area. A graph too large or too small for the camera's zoom limits is now centered there too, rather than pushed aside.
+
 ## [0.4.0] - 2026-11-26
 
 Organizations, people, leaks and code. Ten new Shuttles look up a company's legal records at GLEIF and its facts on Wikidata, list the breaches of a site or an email address from Have I Been Pwned, find an organization's public GitHub repositories, their commit authors and the secrets their history exposes, and read the public profiles behind a username or an email address. Everything about people is opt-in per case and never followed by auto-pivot; breach and code Shuttles keep metadata and locations, never passwords or secret values.
